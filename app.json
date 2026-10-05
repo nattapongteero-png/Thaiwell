@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "ThaiWell AI",
+    "slug": "thaiwell-ai",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.healthflow.thaiwell"
+    },
+    "android": {
+      "package": "com.healthflow.thaiwell"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset"
+    ]
+  }
+}

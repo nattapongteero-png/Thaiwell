@@ -1,0 +1,39 @@
+diff --git a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.dev.js b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.dev.js
+index 95ff3e5..ee2a149 100644
+--- a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.dev.js
++++ b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.dev.js
+@@ -265,7 +265,7 @@ function CanvasImpl({
+       ...style
+     },
+     children: [width > 0 && /*#__PURE__*/jsxRuntime.jsx(expoGl.GLView, {
+-      msaaSamples: antialias ? 4 : 0,
++      msaaSamples: 0,
+       onContextCreate: onContextCreate,
+       style: reactNative.StyleSheet.absoluteFill
+     }), /*#__PURE__*/jsxRuntime.jsx(_View, {
+diff --git a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.prod.js b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.prod.js
+index 9d18598..3921346 100644
+--- a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.prod.js
++++ b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.cjs.prod.js
+@@ -265,7 +265,7 @@ function CanvasImpl({
+       ...style
+     },
+     children: [width > 0 && /*#__PURE__*/jsxRuntime.jsx(expoGl.GLView, {
+-      msaaSamples: antialias ? 4 : 0,
++      msaaSamples: 0,
+       onContextCreate: onContextCreate,
+       style: reactNative.StyleSheet.absoluteFill
+     }), /*#__PURE__*/jsxRuntime.jsx(_View, {
+diff --git a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.esm.js b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.esm.js
+index 2a39a1d..b3f7a8e 100644
+--- a/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.esm.js
++++ b/node_modules/@react-three/fiber/native/dist/react-three-fiber-native.esm.js
+@@ -241,7 +241,7 @@ function CanvasImpl({
+       ...style
+     },
+     children: [width > 0 && /*#__PURE__*/jsx(GLView, {
+-      msaaSamples: antialias ? 4 : 0,
++      msaaSamples: 0,
+       onContextCreate: onContextCreate,
+       style: StyleSheet.absoluteFill
+     }), /*#__PURE__*/jsx(_View, {

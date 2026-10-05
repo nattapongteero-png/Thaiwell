@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+
+# ตำราต้นฉบับ (เอกสารของหน่วยงานอื่น) — ไม่เผยแพร่ใน repo · แอปใช้ assets/kb/kb.txt ที่สร้างจาก scripts/build-kb.py
+knowledge hub/
+
+# iOS native build
+ios/Pods/
+ios/build/
+**/xcuserdata/
+*.xcuserstate
