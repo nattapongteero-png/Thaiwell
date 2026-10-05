@@ -4,6 +4,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { componentTokens, fontFamily, radius, space, typeScale } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
+import { AIBall } from './AIBall';
 import { Icon, type IconName } from './Icon';
 import { Text } from './Text';
 
@@ -159,7 +160,8 @@ const aiBubbleStyle = (): ViewStyle => {
 export function AIThreadMessage({ text, children, time, header }: { text?: string; children?: React.ReactNode; time?: string; header?: React.ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'flex-start' }}>
-      <AIOrb size="sm" />
+      {/* avatar = ลูกแก้ว AI แบบเดียวกับปุ่ม AI (นิ่ง ไม่ให้ทุกข้อความเคลื่อนไหวพร้อมกัน) */}
+      <AIBall size={componentTokens.orb.sm} still />
       <View style={{ flex: 1, gap: space[2], paddingTop: header ? space[2] : 0 }}>
         {header}
         {/* เฉพาะข้อความมีพื้น — การ์ด/ตัวเลือกด้านล่างมีพื้นของตัวเองอยู่แล้ว */}
@@ -204,16 +206,18 @@ export function DayDivider({ label }: { label: string }) {
 }
 
 /** ปุ่มตอบกลับด่วน / คำแนะนำในแชท */
-export function ReplyChips({ options, onPick, selected }: { options: string[]; onPick?: (o: string) => void; selected?: string }) {
+/** ตัวเลือกตอบในแชท — รูปแบบเดียวทุกคำถาม · selected = ข้อที่เลือก (หลายข้อได้) */
+export function ReplyChips({ options, onPick, selected }: { options: string[]; onPick?: (o: string) => void; selected?: string | string[] }) {
   const { colors } = useTheme();
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
       {options.map((o) => {
-        const sel = o === selected;
+        const sel = Array.isArray(selected) ? selected.includes(o) : o === selected;
         return (
           <Pressable
             key={o}
             accessibilityRole="button"
+            accessibilityState={{ selected: sel }}
             onPress={() => onPick?.(o)}
             style={{
               paddingHorizontal: space[3],
@@ -307,7 +311,8 @@ export function ChatComposer({
         style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
       >
         <Animated.View style={{ alignItems: 'center', justifyContent: 'center', transform: [{ scale: pop }] }}>
-          <AIOrb size="md" listening={hasText} />
+          {/* ลูกแก้ว AI แบบเดียวกับปุ่ม AI (FAB) — ไม่มีดาว เพราะมีไอคอนไมค์/ส่งวางทับ */}
+          <AIBall size={componentTokens.orb.md} stars={false} />
           <Animated.View pointerEvents="none" style={{ position: 'absolute', opacity: micOpacity, transform: [{ scale: micScale }, { rotate: micRotate }] }}>
             <Icon name="mic" size="md" color={colors.text.inverse} />
           </Animated.View>
@@ -327,6 +332,34 @@ export function ChatComposer({
         style={[typeScale.bodyMd, { flex: 1, color: colors.text.primary, paddingVertical: 0, paddingRight: space[3] }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
       />
     </View>
+  );
+}
+
+/**
+ * EdgeFade — เนื้อหาที่เลื่อนจางหายที่ขอบบน/ล่าง (ใต้ header / เหนือปุ่มด้านล่าง) แบบเดียวกับหน้าแรก
+ * จางที่ตัวเนื้อหาเอง ไม่ใช่แผ่นทับ · เว็บ CSS mask · native MaskedView + แถบไล่ความทึบ (View ล้วน ไม่กระทบภาพ GL)
+ */
+export function EdgeFade({ top = 20, bottom = 28, horizontal, children }: { top?: number; bottom?: number; /** แนวนอน: top = ขอบซ้าย · bottom = ขอบขวา */ horizontal?: boolean; children: React.ReactNode }) {
+  if (Platform.OS === 'web') {
+    const mask = `linear-gradient(to ${horizontal ? 'right' : 'bottom'}, transparent 0, black ${top}px, black calc(100% - ${bottom}px), transparent 100%)`;
+    return <View style={[{ flex: 1 }, { maskImage: mask, WebkitMaskImage: mask } as object]}>{children}</View>;
+  }
+  const STEPS = 10;
+  const ramp = (h: number, up: boolean) =>
+    Array.from({ length: STEPS }, (_, i) => <View key={i} style={{ [horizontal ? 'width' : 'height']: h / STEPS, backgroundColor: '#000', opacity: up ? (i + 1) / STEPS : (STEPS - i) / STEPS }} />);
+  return (
+    <MaskedView
+      style={{ flex: 1 }}
+      maskElement={
+        <View style={{ flex: 1, flexDirection: horizontal ? 'row' : 'column' }}>
+          {ramp(top, true)}
+          <View style={{ flex: 1, backgroundColor: '#000' }} />
+          {ramp(bottom, false)}
+        </View>
+      }
+    >
+      {children}
+    </MaskedView>
   );
 }
 

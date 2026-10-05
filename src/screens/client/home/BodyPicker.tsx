@@ -1,0 +1,287 @@
+import React from 'react';
+import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Line } from 'react-native-svg';
+import { Body3D, Button, Icon, Text, componentTokens, useTheme, type Body3DHandle, type BodyPoint, type BodyRegion } from '../../../design-system';
+import { radius, space } from '../../../design-system/tokens';
+
+/**
+ * หน้าเลือกจุดที่ปวดจากหุ่น (เปิดจากปุ่ม "ชี้จุดบนหุ่น" ในแชทประเมิน / แตะหุ่นเล็กในการ์ดประเมิน)
+ * แตะบนหุ่น = เพิ่มจุด · แตะจุดเดิม หรือ ✕ ที่ pill = เอาออก · ลากซ้าย-ขวา = หมุน
+ * จุดที่เห็นอยู่มี pill + เส้นชี้ไปที่จุด · รายการทั้งหมดอยู่เหนือปุ่มยืนยัน (รวมจุดที่หมุนไปอยู่ด้านหลัง)
+ */
+export type BodySelection = Record<string, BodyPoint[]>;
+
+const DRAG_SLOP = 6;
+/** สัดส่วน canvas หุ่น (เท่าหน้าแรก — หุ่นกางแขน) */
+const ASPECT = 0.53;
+const PILL_H = 32;
+const near = (a: BodyPoint, b: BodyPoint) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < componentTokens.body3d.pinRadius * 3;
+
+export function BodyPicker({
+  visible,
+  title,
+  initial,
+  labelOf,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  title: string;
+  initial: BodySelection;
+  /** ส่วนของร่างกายที่แตะ → ชื่อคำตอบ (เช่น ปวดไหล่ซ้าย) */
+  labelOf: (region: BodyRegion) => string;
+  onClose: () => void;
+  onConfirm: (sel: BodySelection) => void;
+}) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const bodyRef = React.useRef<Body3DHandle>(null);
+  const [sel, setSel] = React.useState<BodySelection>(initial);
+  React.useEffect(() => {
+    if (visible) setSel(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+  const [stageH, setStageH] = React.useState(0);
+  const bodyH = stageH;
+  const bodyW = Math.min(winW, Math.round(bodyH * ASPECT));
+  const labels = React.useMemo(() => Object.keys(sel), [sel]);
+  const count = labels.length;
+
+  /* ตำแหน่ง pill: จุดที่เห็นอยู่ของแต่ละรายการ → ซ้าย/ขวาตามฝั่งของจุด · เรียงไม่ให้ซ้อนกัน */
+  const [pos, setPos] = React.useState<Record<string, { x: number; y: number } | null>>({});
+  React.useEffect(() => {
+    if (!visible) return;
+    const id = setInterval(() => {
+      const next: Record<string, { x: number; y: number } | null> = {};
+      for (const l of labels) {
+        const vis = sel[l].map((p) => bodyRef.current?.projectPoint(p)).filter((q): q is { x: number; y: number; visible: boolean } => !!q && q.visible);
+        next[l] = vis.length ? { x: vis.reduce((n, q) => n + q.x, 0) / vis.length, y: vis.reduce((n, q) => n + q.y, 0) / vis.length } : null;
+      }
+      setPos((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
+    }, 150);
+    return () => clearInterval(id);
+  }, [visible, sel, labels]);
+  const pills = React.useMemo(() => {
+    const items = labels.filter((l) => pos[l]).map((l) => ({ l, p: pos[l]!, left: pos[l]!.x < winW / 2 }));
+    const out: { l: string; p: { x: number; y: number }; left: boolean; y: number }[] = [];
+    for (const side of [true, false]) {
+      let last = -Infinity;
+      items
+        .filter((it) => it.left === side)
+        .sort((a, b) => a.p.y - b.p.y)
+        .forEach((it) => {
+          const y = Math.max(it.p.y - PILL_H / 2, last + PILL_H + space[2]);
+          last = y;
+          out.push({ ...it, y });
+        });
+    }
+    return out;
+  }, [labels, pos, winW]);
+
+  const remove = (label: string) =>
+    setSel((cur) => {
+      const out = { ...cur };
+      delete out[label];
+      return out;
+    });
+  const onTap = (pageX: number, pageY: number) => {
+    const res = bodyRef.current?.pickAt(pageX, pageY);
+    if (!res) return;
+    const hitLabel = labels.find((k) => sel[k].some((pt) => near(pt, res.point)));
+    if (hitLabel) {
+      setSel((cur) => {
+        const rest = cur[hitLabel].filter((pt) => !near(pt, res.point));
+        const out = { ...cur };
+        if (rest.length) out[hitLabel] = rest;
+        else delete out[hitLabel];
+        return out;
+      });
+      return;
+    }
+    if (!res.region) return;
+    const label = labelOf(res.region);
+    setSel((cur) => ({ ...cur, [label]: [...(cur[label] ?? []), res.point] }));
+  };
+
+  /* ลาก = หมุน · แตะ = เลือก (เว็บ pointer · native gesture handler) */
+  const start = React.useRef<{ x: number; y: number } | null>(null);
+  const moved = React.useRef(false);
+  const web = {
+    onPointerDown: (e: PointerEvent) => {
+      start.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
+      moved.current = false;
+      bodyRef.current?.beginRotate();
+    },
+    onPointerMove: (e: PointerEvent) => {
+      if (!start.current) return;
+      const dx = e.nativeEvent.clientX - start.current.x;
+      const dy = e.nativeEvent.clientY - start.current.y;
+      if (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP) moved.current = true;
+      // แบบ ThaiWellAI: ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
+      if (moved.current) bodyRef.current?.rotateTo(dx / 80, dy / 160);
+    },
+    onPointerUp: (e: PointerEvent) => {
+      if (start.current && !moved.current) onTap(e.nativeEvent.clientX, e.nativeEvent.clientY);
+      start.current = null;
+      bodyRef.current?.endRotate();
+    },
+    // ล้อเมาส์ / trackpad = ซูม
+    onWheel: (e: { nativeEvent: { deltaY: number }; preventDefault?: () => void }) => {
+      bodyRef.current?.beginZoom();
+      bodyRef.current?.zoomTo(Math.exp(-e.nativeEvent.deltaY / 400));
+    },
+  };
+  const onTapRef = React.useRef(onTap);
+  onTapRef.current = onTap;
+  const gesture = React.useMemo(
+    () =>
+      Gesture.Simultaneous(
+        // สองนิ้วถ่าง/หุบ = ซูม (พร้อมกับลากได้)
+        Gesture.Pinch()
+          .runOnJS(true)
+          .onStart(() => bodyRef.current?.beginZoom())
+          .onUpdate((e) => bodyRef.current?.zoomTo(e.scale)),
+        Gesture.Race(
+        Gesture.Pan()
+          .runOnJS(true)
+          .minDistance(DRAG_SLOP)
+          .onStart(() => bodyRef.current?.beginRotate())
+          // ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
+          .onUpdate((e) => bodyRef.current?.rotateTo(e.translationX / 80, e.translationY / 160))
+          .onFinalize(() => bodyRef.current?.endRotate()),
+        Gesture.Tap()
+          .runOnJS(true)
+          .maxDistance(DRAG_SLOP)
+          .onEnd((e, ok) => ok && onTapRef.current(e.absoluteX, e.absoluteY)),
+        ),
+      ),
+    [],
+  );
+
+  // ปุ่มมุมมองแบบ ThaiWellAI: หน้า · ขวา · หลัง · ซ้าย (หันไปมุมนั้น + กลับระดับสายตา/ไม่ซูม)
+  const VIEWS = [
+    { key: 'front', label: 'หน้า' },
+    { key: 'right', label: 'ขวา' },
+    { key: 'back', label: 'หลัง' },
+    { key: 'left', label: 'ซ้าย' },
+  ] as const;
+  const [side, setSide] = React.useState<(typeof VIEWS)[number]['key']>('front');
+  const turn = (s: (typeof VIEWS)[number]['key']) => {
+    setSide(s);
+    bodyRef.current?.face(s);
+    bodyRef.current?.resetView();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface.canvas }}>
+        {/* หัว: ชื่อ + ปิด */}
+        <View style={{ paddingTop: insets.top + space[3], paddingHorizontal: space[5], flexDirection: 'row', alignItems: 'flex-start', gap: space[3] }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="titleLg">{title}</Text>
+            <Text variant="bodySm" tone="secondary">
+              เลือกได้หลายจุด ลากเพื่อหมุน ถ่างสองนิ้วเพื่อซูม
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ปิด"
+            onPress={onClose}
+            style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}
+          >
+            <Icon name="x" />
+          </Pressable>
+        </View>
+
+        {/* หุ่น + ชั้นรับแตะ/ลาก */}
+        <View style={{ flex: 1 }} onLayout={(e) => setStageH(Math.round(e.nativeEvent.layout.height))}>
+          {bodyH > 0 ? (
+            <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: (winW - bodyW) / 2, width: bodyW, height: bodyH }}>
+              <Body3D ref={bodyRef} interactive={false} width={bodyW} height={bodyH} restAngle={0} pins={[]} marks={Object.values(sel).flat()} />
+            </View>
+          ) : null}
+          {Platform.OS === 'web' ? (
+            <View {...web} accessibilityLabel="หุ่นสำหรับเลือกจุดที่ปวด แตะเพื่อเลือก ลากเพื่อหมุน" style={[StyleSheet.absoluteFill, { touchAction: 'none', cursor: 'grab' } as object]} />
+          ) : (
+            <GestureDetector gesture={gesture}>
+              <View accessibilityLabel="หุ่นสำหรับเลือกจุดที่ปวด แตะเพื่อเลือก ลากเพื่อหมุน" style={StyleSheet.absoluteFill} />
+            </GestureDetector>
+          )}
+          {/* ด้านหน้า / ด้านหลัง */}
+          <View style={{ position: 'absolute', top: space[2], right: space[5], flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.full, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
+            {VIEWS.map(({ key: s, label }) => (
+              <Pressable
+                key={s}
+                accessibilityRole="button"
+                accessibilityLabel={`ดูด้าน${label}`}
+                accessibilityState={{ selected: side === s }}
+                onPress={() => turn(s)}
+                style={{ paddingHorizontal: space[3], height: 32, borderRadius: radius.full, justifyContent: 'center', backgroundColor: side === s ? colors.text.primary : 'transparent' }}
+              >
+                <Text variant="labelSm" color={side === s ? colors.text.inverse : colors.text.secondary}>
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* pill + เส้นชี้ไปที่จุด (พิกัดจอ) */}
+        {/* iOS: pointerEvents บน Svg ไม่มีผล → Svg เต็มจอจะกินทุกการแตะ ต้องห่อด้วย View ที่ไม่รับแตะ */}
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <Svg style={StyleSheet.absoluteFill} width={winW} height={winH}>
+          {pills.map(({ l, p, left, y }) => {
+            const px = left ? space[5] + 120 : winW - space[5] - 120;
+            return (
+              <React.Fragment key={l}>
+                <Line x1={px} y1={y + PILL_H / 2} x2={p.x} y2={p.y} stroke={colors.text.primary} strokeWidth={1.5} />
+                <Circle cx={p.x} cy={p.y} r={5} fill={colors.text.primary} stroke="#FFFFFF" strokeWidth={2} />
+              </React.Fragment>
+            );
+          })}
+        </Svg>
+        </View>
+        {pills.map(({ l, left, y }) => (
+          <View
+            key={l}
+            style={{
+              position: 'absolute',
+              top: y,
+              ...(left ? { left: space[5] } : { right: space[5] }),
+              width: 120,
+              height: PILL_H,
+              borderRadius: radius.full,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingLeft: space[3],
+              paddingRight: 4,
+              backgroundColor: colors.text.primary,
+            }}
+          >
+            <Text variant="labelSm" color={colors.text.inverse} numberOfLines={1} style={{ flex: 1 }}>
+              {l}
+            </Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`เอา ${l} ออก`} onPress={() => remove(l)} hitSlop={6} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="x" size="xs" color={colors.text.inverse} />
+            </Pressable>
+          </View>
+        ))}
+
+        {/* ยืนยัน */}
+        <View style={{ paddingHorizontal: space[5], paddingTop: space[3], paddingBottom: insets.bottom + space[4], gap: space[3], backgroundColor: colors.surface.canvas }}>
+          {/* ชื่อจุดอยู่ที่ pill ที่ชี้ออกจากหุ่นแล้ว · ยังไม่เลือก = คำแนะนำ */}
+          {count ? null : (
+            <Text variant="bodySm" tone="secondary" align="center">
+              แตะบนหุ่นตรงที่ปวด
+            </Text>
+          )}
+          <Button label={count ? `ยืนยัน ${count} จุด` : 'ยืนยัน'} disabled={!count} onPress={() => onConfirm(sel)} />
+        </View>
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}

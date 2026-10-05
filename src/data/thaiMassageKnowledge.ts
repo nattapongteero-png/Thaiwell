@@ -174,6 +174,7 @@ export const SYMPTOM_GROUPS: SymptomGroup[] = [
 
 /** จับคู่ chip อาการบนหน้าแรก → กลุ่มอาการ (ใช้ต่อใน AI Interview / Care Suggestion) */
 export const CHIP_TO_GROUP: Record<string, string> = {
+  'ปวดคอ-บ่า': 'office',
   ปวดคอ: 'office',
   ปวดไหล่: 'frozen_shoulder',
   ปวดหลัง: 'herniated_disc',

@@ -36,17 +36,18 @@ export function SymptomChip({
         flexDirection: 'row',
         alignItems: 'center',
         gap: t.gap,
-        paddingHorizontal: t.padding,
-        paddingVertical: t.paddingY,
+        // หน้าตาเดียวกับตัวเลือกในแชท (ReplyChips): แคปซูลขาว ขอบบาง · เลือก = พื้นสีแบรนด์ ตัวขาว
+        paddingHorizontal: space[3],
+        paddingVertical: space[2],
         borderRadius: t.radius,
         borderWidth: 1,
         borderColor: selected ? colors.brand.primary : colors.border.subtle,
-        backgroundColor: selected ? colors.brand.subtle : colors.surface.default,
+        backgroundColor: selected ? colors.brand.primary : colors.glass.strong,
         opacity: pressed ? 0.8 : 1,
       })}
     >
-      {dot ? <EllipseDot width={t.dot} height={t.dot} color={colors.brand.primary} /> : null}
-      <Text variant="labelXs" color={selected ? colors.brand.onSubtle : colors.text.secondary}>
+      {dot ? <EllipseDot width={t.dot} height={t.dot} color={selected ? colors.brand.onPrimary : colors.brand.primary} /> : null}
+      <Text variant="labelMd" color={selected ? colors.brand.onPrimary : colors.text.primary}>
         {label}
       </Text>
     </Pressable>
@@ -244,7 +245,8 @@ export function PainScoreCard({
 }) {
   const { colors } = useTheme();
   const t = componentTokens.painCard;
-  const compact = typeof width === 'number' && width < 180;
+  // ป้ายสั้นแบบเดียวกันทุกการ์ด: ก่อน / หลัง (ตัด "รักษา" / "นวด")
+  const shortStage = stageLabel.replace(/(นวด|รักษา)$/, '') || stageLabel;
   const [trackW, setTrackW] = React.useState<number>(t.width);
   const trackWRef = React.useRef(trackW);
   trackWRef.current = trackW;
@@ -270,8 +272,11 @@ export function PainScoreCard({
   const thumbLeft = (value / max) * trackW - t.thumb / 2;
   // โหมดแตะจุด: กราฟสูงขึ้นให้มีที่วางตัวเลขเหนือจุด
   // โหมดเทียบก่อน/หลัง: กราฟไม่ยกขึ้นซ้อนตัวเลข (มีตัวเลข 2 ค่าเต็มแถว)
-  const chartH = onPick ? t.chartHeight + t.chartLift + space[4] : before !== undefined ? t.chartHeight : t.chartHeight + t.chartLift;
-  const chartBelow = onPick ? t.chartHeight + space[2] : before !== undefined ? t.chartHeight - space[5] : t.chartHeight - space[4];
+  // การ์ดแสดงผล (ไม่ได้ให้เลือกคะแนน) ใช้รูปแบบเดียวกันทั้งค่าเดียวและก่อน/หลัง: pill + ตัวเลขขนาดกลาง + กราฟไม่ซ้อนตัวเลข
+  const display = !onChange && !onPick;
+  const unified = before !== undefined || display;
+  const chartH = onPick ? t.chartHeight + t.chartLift + space[4] : unified ? t.chartHeight : t.chartHeight + t.chartLift;
+  const chartBelow = onPick ? t.chartHeight + space[2] : unified ? t.chartHeight - space[5] : t.chartHeight - space[4];
 
   return (
     <View
@@ -295,12 +300,18 @@ export function PainScoreCard({
           // เทียบก่อน/หลังในการ์ดเดียว (ค่าเล็กลง วางคู่กัน)
           <View style={{ flexDirection: 'row', gap: space[2] }}>
             {/* การ์ดแคบ (เช่น ในแชท) → ป้ายสั้นลงไม่ให้ pill ชนกัน */}
-            <ScoreBlock value={before} label={compact ? 'ก่อน' : 'ก่อนรักษา'} max={max} hollow />
-            <ScoreBlock value={value} label={compact ? stageLabel.replace(/(นวด|รักษา)$/, '') || stageLabel : stageLabel} max={max} />
+            <ScoreBlock value={before} label="ก่อน" max={max} hollow />
+            <ScoreBlock value={value} label={shortStage} max={max} />
           </View>
         ) : null}
         {before !== undefined ? <DeltaPill before={before} after={value} /> : null}
-        {before !== undefined ? null : (
+        {before === undefined && display ? (
+          // ค่าเดียว (เช่น ก่อนรักษา) — รูปแบบเดียวกับการ์ดก่อน/หลัง
+          <View style={{ flexDirection: 'row' }}>
+            <ScoreBlock value={value} label={shortStage} max={max} hollow={/ก่อน/.test(stageLabel)} />
+          </View>
+        ) : null}
+        {unified ? null : (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[2] }}>
           {/* คะแนนที่เลือก = จุดเด่นของการ์ด (ใหญ่กว่า displayXl) · lineHeight เผื่อฟอนต์ไทยไม่ให้ iOS ตัดหัว */}
           <Text variant="displayXl" style={{ fontSize: SCORE.size, lineHeight: SCORE.line }} accessibilityLabel={`คะแนนปวด ${value} จาก ${max}`}>

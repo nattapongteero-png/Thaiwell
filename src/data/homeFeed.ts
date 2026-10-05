@@ -30,9 +30,9 @@ export type ThreadCard =
   | { type: 'safety'; level: 'green' | 'amber' | 'red'; items: { id: string; title: string; evidence: string; source: string }[] }
   | { type: 'element' }
   | { type: 'plan'; title: string; by: string; approved: boolean; adjustments: string[]; points: string[] }
-  | { type: 'appointment'; time: string; place: string; queue: string; waitMin: number }
+  | { type: 'appointment'; time: string; place: string; queue?: string; waitMin?: number; /** นัดที่จองไว้ (ไม่ใช่วันนี้) */ date?: string; therapist?: string; service?: string; /** นัดของเรื่องไหน (เช็กอิน/เลื่อนนัดของเรื่องนั้น) */ caseId?: string; draftId?: string }
   | { type: 'selfcare'; name: string; dosage: string; streak: number }
-  | { type: 'guideline'; condition?: string; methods: string[]; points: string[]; pins?: BodyPin[]; caution?: string; ref: string }
+  | { type: 'guideline'; condition?: string; methods: string[]; points: string[]; pins?: BodyPin[]; caution?: string; ref: string; /** จองไว้แล้ว → ไม่เสนอให้จองอีก */ booked?: boolean }
   /** ขั้นต่อไปหลังประเมิน: จองนวด (หรือพบแพทย์ถ้ามีสัญญาณอันตราย) */
   | { type: 'book'; service: string; red: boolean }
   /** หน้าแรกแบบแชท (ยังไม่มีข้อมูล): คำถามแนะนำว่าสนใจเรื่องอะไร */
@@ -43,6 +43,11 @@ export type ThreadCard =
   | { type: 'fuAsk'; sessionId: string; pin: string; label: string; before: number }
   /** ติดตามผล: อาการผิดปกติหลังนวด */
   | { type: 'fuAdverse' }
+  /** จองกับ AI ในแชท: สถานที่ที่แนะนำ → เวลาว่าง → ยืนยัน */
+  | { type: 'placePick'; options: { id: string; name: string; km: number; reason: string; slot: string }[] }
+  | { type: 'therapistPick'; placeId: string; /** บริการที่จอง → แสดงเฉพาะคนที่ลงตารางรับบริการนี้ */ service?: 'royal' | 'royal+compress' | 'relax'; options: { id: string; name: string; role: string; next: string; recommended: boolean }[] }
+  | { type: 'slotPick'; placeId: string; therapistId: string; options: string[] }
+  | { type: 'bookConfirm'; placeId: string; therapistId: string; name: string; day: string; time: string; service: string; therapist: string; topic: string }
   /** อาการยังไม่ดีขึ้น → ถามว่าตรงไหนยังปวด (ให้ผู้ให้บริการเน้น) */
   | { type: 'fuWhere'; options: string[] }
   /** สรุปประวัติการรักษาของเรื่องหนึ่งแบบ bento ในแชท */
@@ -57,7 +62,7 @@ export type ThreadCard =
       plan: { summary: string; cautions: string[]; style: string; minutes: string; phases: { title: string; minutes: string; steps: string[] }[]; aftercare: string[] };
       refs: { f: string; p: number; quote: string }[];
     }
-  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'assess' };
+  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' };
 
 /* ---------- การประเมินอาการในแชท ----------
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)
@@ -267,7 +272,7 @@ export function assessmentResults(a: Assessment, symptoms: string[], related: st
       day: 'today',
       from: 'ai',
       text: 'นัดของคุณวันนี้ค่ะ',
-      card: { type: 'appointment', time: '10:30', place: 'คลินิกแพทย์แผนไทย · ห้องนวด 2', queue: 'A12', waitMin: 25 },
+      card: { type: 'appointment', time: '10:30', place: 'คลินิกแพทย์แผนไทย · ห้องนวด 2', queue: 'A12', waitMin: 25, caseId: TREATMENT_CASES.find((c) => c.appointment.today)?.id },
       source: 'ระบบนัดหมาย',
       time: t,
     });
@@ -437,10 +442,12 @@ export interface TreatmentCase {
   /** ผู้ให้บริการประจำใบนี้ */
   therapist: string;
   /** ดูแลตัวเองที่บ้าน (ท่าแนะนำของโรคนี้) */
-  /** daysDone/days = ทำท่าที่บ้านกี่วัน จากทั้งหมดกี่วันตั้งแต่เริ่มรักษา (ต้นแบบ: ข้อมูลตัวอย่าง) */
-  selfCare: { title: string; minutes: number; doneToday: boolean; daysDone?: number; days?: number };
+  /** groupId = กลุ่มอาการใน SYMPTOM_GROUPS (มีภาพท่ายืด) · ไม่มี = ท่าอื่น เช่น ฝึกหายใจ */
+  selfCare: { title: string; minutes: number; doneToday: boolean; groupId?: string };
   /** แชทของเรื่องนี้ (มาจากใบร่าง) */
   chatId?: string;
+  /** สถานที่ที่รักษาเรื่องนี้ (นัดครั้งถัดไปต้องที่เดิม) · ไม่ระบุ = คลินิกหลัก */
+  clinic?: string;
 }
 
 const DM_AREAS: FollowUpArea[] = [
@@ -472,7 +479,7 @@ export const TREATMENT_CASES: TreatmentCase[] = [
     prep: ['ตรวจน้ำตาลก่อนนวด', 'วัดความดันก่อนนวด'],
     course: { done: 5, total: 8 },
     therapist: 'พท.ป. มาลี ใจดี',
-    selfCare: { title: 'ยืดคอ-บ่า', minutes: 5, doneToday: false, daysDone: 52, days: 78 },
+    selfCare: { title: 'ท่าแก้เกียจ', minutes: 5, doneToday: false, groupId: 'office' },
   },
   {
     id: 'case-lung',
@@ -490,7 +497,8 @@ export const TREATMENT_CASES: TreatmentCase[] = [
     prep: ['พกยาพ่นติดตัว', 'งดอาหารหนัก 1 ชม.'],
     course: { done: 3, total: 6 },
     therapist: 'พท.ป. สมชาย สุขใจ',
-    selfCare: { title: 'หายใจลึก 4-7-8', minutes: 3, doneToday: true, daysDone: 21, days: 30 },
+    // ภูมิแพ้: นวดใบหน้า (ทาแป้งข้างจมูก · ถูหน้าหู) ช่วยเลือดไหลเวียนบริเวณใบหน้า-โพรงจมูก
+    selfCare: { title: 'ท่านวดกล้ามเนื้อใบหน้า', minutes: 3, doneToday: true, groupId: 'paralysis' },
   },
 ];
 
@@ -515,7 +523,7 @@ export const ARCHIVED_CASES: TreatmentCase[] = [
     prep: [],
     course: { done: 6, total: 6 },
     therapist: 'พท.ป. มาลี ใจดี',
-    selfCare: { title: 'ยืดหลัง', minutes: 5, doneToday: false, daysDone: 40, days: 60 },
+    selfCare: { title: 'ท่าชูหัตถ์วาดหลัง', minutes: 5, doneToday: false, groupId: 'herniated_disc' },
   },
 ];
 

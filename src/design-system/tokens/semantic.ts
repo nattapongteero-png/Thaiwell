@@ -37,7 +37,8 @@ export interface ColorTokens {
   /** ลูกแก้ว AI */
   orb: { from: string; to: string; core: string; glow: string };
   /** Floating capsule tab bar */
-  dock: { bg: string; border: string; item: string; activeBg: string; activeFg: string };
+  /** tab menu แบบ dock ของ ThaiWell back-office: แก้วฝ้า · แท็บที่เลือก = pill ขาวมีเงา ไอคอนเขียว */
+  dock: { bg: string; border: string; item: string; activeBg: string; activeFg: string; fg: string; label: string };
 }
 
 export const wireframeColors: ColorTokens = {
@@ -87,7 +88,7 @@ export const wireframeColors: ColorTokens = {
   gradient: { top: p.neutral[100], mid: p.neutral[50], bottom: p.neutral[50] },
   glass: { bg: 'rgba(255,255,255,0.8)', border: p.neutral[200], strong: p.white },
   orb: { from: p.neutral[500], to: p.neutral[800], core: p.neutral[900], glow: 'rgba(0,0,0,0.12)' },
-  dock: { bg: p.white, border: p.neutral[200], item: p.neutral[100], activeBg: p.neutral[900], activeFg: p.white },
+  dock: { bg: 'rgba(255,255,255,0.55)', border: 'rgba(255,255,255,0.7)', item: p.neutral[100], activeBg: p.white, activeFg: '#15803D', fg: 'rgba(44,62,43,0.82)', label: '#2C3E2B' },
 };
 
 /** Brand = UI จริงตาม Figma (teal + gray) */
@@ -139,7 +140,7 @@ export const brandColors: ColorTokens = {
   // การ์ดในแชทซ้อนหน้าหุ่น 3D → ทึบพอไม่ให้สีผิวหุ่นทะลุเป็นแผ่นชมพู
   glass: { bg: 'rgba(255,255,255,0.94)', border: 'rgba(255,255,255,0.9)', strong: 'rgba(255,255,255,0.97)' },
   orb: { from: '#5EEAD4', to: p.violet[500], core: '#1E1B4B', glow: 'rgba(110,75,209,0.28)' },
-  dock: { bg: 'rgba(255,255,255,0.92)', border: p.gray[200], item: p.gray[100], activeBg: p.teal[600], activeFg: p.white },
+  dock: { bg: 'rgba(255,255,255,0.55)', border: 'rgba(255,255,255,0.7)', item: p.gray[100], activeBg: p.white, activeFg: '#15803D', fg: 'rgba(44,62,43,0.82)', label: '#2C3E2B' },
 };
 
 export type ThemeName = 'wireframe' | 'brand';

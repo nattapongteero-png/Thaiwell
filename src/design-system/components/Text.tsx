@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'react-native';
+import { Text as RNText, StyleSheet, type TextProps as RNTextProps, type TextStyle } from 'react-native';
 import { typeScale, type TypeVariant, type ColorTokens } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -17,12 +17,13 @@ export interface TextProps extends RNTextProps {
  * - รองรับ Dynamic Type แต่จำกัดไม่เกิน 1.6x เพื่อไม่ให้ layout พัง
  */
 export function Text({ variant = 'bodyMd', tone = 'primary', color, align, style, ...rest }: TextProps) {
-  const { colors } = useTheme();
-  return (
-    <RNText
-      maxFontSizeMultiplier={1.6}
-      {...rest}
-      style={[typeScale[variant], { color: color ?? colors.text[tone], textAlign: align }, style]}
-    />
-  );
+  const { colors, textScale } = useTheme();
+  const base = [typeScale[variant], { color: color ?? colors.text[tone], textAlign: align }, style];
+  // ตัวอักษรขนาดใหญ่: ขยายทั้งขนาดและระยะบรรทัดตามกัน (ภาษาไทยต้องมีระยะบรรทัดพอ ไม่ให้สระ/วรรณยุกต์โดนตัด)
+  let scaled: TextStyle | undefined;
+  if (textScale !== 1) {
+    const f = StyleSheet.flatten(base) as TextStyle;
+    scaled = { ...(f.fontSize ? { fontSize: f.fontSize * textScale } : null), ...(f.lineHeight ? { lineHeight: f.lineHeight * textScale } : null) };
+  }
+  return <RNText maxFontSizeMultiplier={1.6} {...rest} style={scaled ? [...base, scaled] : base} />;
 }

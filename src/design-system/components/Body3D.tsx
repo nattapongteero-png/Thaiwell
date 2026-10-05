@@ -1,53 +1,78 @@
 import React from 'react';
-import { PanResponder, Platform, View, type PointerEvent } from 'react-native';
+import { Animated, PanResponder, PixelRatio, Platform, View, type PointerEvent } from 'react-native';
+import { BodySilhouette, useDelayedLoading } from './Skeleton';
 import { Asset } from 'expo-asset';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
+
+/* ผิวหุ่นมี 90,000 สามเหลี่ยม → ยิงรังสีแบบไล่ทุกสามเหลี่ยมช้ามากบน iOS (Hermes) จนแอปค้าง
+ * ใช้ BVH (three-mesh-bvh, JS ล้วน) สร้างดัชนีครั้งเดียวตอนโหลดโมเดล → ยิงรังสี/แตะ/หาตำแหน่งจุด เร็วขึ้นหลายสิบเท่า */
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 import { componentTokens, palette } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /**
- * Body3D — หุ่น 3D ยืน ผิวหนังตามสรีระจริง (BodyParts3D 4.0 ผ่าน human-atlas · CC BY 4.0 · สร้างด้วย scripts/build-anatomy-glb.mjs)
+ * Body3D — หุ่น 3D ยืน ผิวหนังตามสรีระจริง (body_male.glb + normal/AO map ที่ bake ไว้ · จาก ThaiWellAI)
  * - จุดปวด/จุดรักษา = ระบายสีลงบนผิวบริเวณนั้นโดยตรง (เช่น ปวดไหล่ → หัวไหล่เป็นสีแดง) ไม่ใช้หมุดวงกลม
  * - ลากซ้าย/ขวาเพื่อหมุนดูรอบตัว · แตะที่ผิวหุ่น → ได้จุด + ส่วนของร่างกาย (หน้าจอใช้ผูกกับ chip อาการ)
- * - พิกัดต้นฉบับ: เมตร · Y ขึ้น · หน้าไป +z · +x = ซ้ายของผู้ป่วย
+ * - พิกัดของหุ่น (MODEL SPACE): เมตร · Y ขึ้น · เท้าที่ y=0 · กลางตัว x=0 · หน้าไป +z · +x = ซ้ายของผู้ป่วย
+ *   (ไฟล์ต้นฉบับวางหุ่นไว้ที่ x≈-2.26 → bake ตำแหน่ง node ลง geometry แล้วจัดกลางใหม่ใน bakeModel)
  */
 
-const MODEL = require('../../../assets/models/anatomy_male.glb');
-/** node ผิวหนัง (ผิว + ริมฝีปาก) */
-const SKIN_NODES = ['FJ2810', 'FJ2814'];
+const MODEL = require('../../../assets/models/body_male.glb');
+/** แผนที่รายละเอียดผิว (กล้ามเนื้อ/รอยพับ + เงาตามซอก) — ใช้ UV ของ glb */
+const NORMAL_MAP = require('../../../assets/models/body_male_normal.jpg');
+const AO_MAP = require('../../../assets/models/body_male_ao.jpg');
 /**
- * ระยะจากแกนกลางหุ่นถึงขอบขวาสุด (ปลายมือ) ที่มุมพัก REST_ANGLE เมื่อหุ่นสูง 2 หน่วย — ใช้จัดหุ่นชิดขอบขวาของจอ
- * วัดจากภาพหน้าจอจริง · ถ้าเปลี่ยน REST_ANGLE ต้องวัดใหม่
+ * ระยะจากแกนกลางหุ่นถึงขอบขวาสุด (ปลายมือซ้ายของผู้ป่วย) ที่มุมพัก REST_ANGLE ในหน่วยของฉาก (ระนาบ z=0 · รวม perspective)
+ * คำนวณจากจุดยอดของโมเดลที่สเกล fitScale · ถ้าเปลี่ยน REST_ANGLE / โมเดล / FIT_HALF_WIDTH ต้องคำนวณใหม่
  */
-export const FIGURE_RIGHT_EXTENT = 0.34;
+export const FIGURE_RIGHT_EXTENT = 0.497;
+/**
+ * หุ่นนี้กางแขน (A-pose) กว้างกว่าเดิม → ถ้าสูง 2 หน่วย มือจะล้นกรอบ canvas (สัดส่วน 232×583)
+ * จึงย่อให้ปลายมือ ณ ทุกมุมหมุนไม่เกินครึ่งความกว้าง canvas นี้ (หน่วยของฉาก) แต่ไม่สูงเกิน 2 หน่วย
+ */
+// canvas สัดส่วน 0.53 (HomeScreen BODY_ASPECT) → ครึ่งความกว้างที่ z=0 ≈ 0.58 หน่วย · เผื่อขอบเล็กน้อย
+const FIT_HALF_WIDTH = 0.56;
 
-/** จุดอ้างอิงบนโครงกระดูก (เมตร, พิกัดต้นฉบับ) — คำนวณจากกระดูกจริงใน BodyParts3D */
+/**
+ * จุดอ้างอิงบนโครงร่าง (เมตร, พิกัดของหุ่น) — วัดจากภาคตัดขวางของ mesh จริง (กึ่งกลางแขน/ขาในแต่ละระดับ)
+ * ใช้แยกส่วนของร่างกายจากจุดแตะ (ท่อนที่ใกล้ที่สุด) → ระดับ y ของจุดเชื่อม = เส้นแบ่งส่วน:
+ * head = ระดับคาง (ใบหน้าเป็น "ศีรษะ") · neck = โคนคอ · chest = ใต้แนวกล้ามอก · shoulder = ปลายหัวไหล่ (ตัวหุ่นกางแขน)
+ */
 const LANDMARK = {
-  headTop: [0, 1.7, -0.02],
-  head: [0, 1.62, -0.02],
-  neck: [0, 1.49, -0.035],
-  chest: [0, 1.31, 0.03],
-  belly: [0, 1.07, -0.02],
-  pelvis: [0, 0.93, -0.03],
-  shoulderL: [0.17, 1.4, -0.02],
-  shoulderR: [-0.17, 1.4, -0.02],
-  elbowL: [0.21, 1.11, -0.02],
-  elbowR: [-0.21, 1.11, -0.02],
-  wristL: [0.25, 0.89, 0],
-  wristR: [-0.25, 0.89, 0],
-  handL: [0.27, 0.74, 0.03],
-  handR: [-0.27, 0.74, 0.03],
-  hipL: [0.09, 0.89, -0.02],
-  hipR: [-0.09, 0.89, -0.02],
-  kneeL: [0.08, 0.46, 0],
-  kneeR: [-0.08, 0.46, 0],
-  ankleL: [0.07, 0.07, -0.02],
-  ankleR: [-0.07, 0.07, -0.02],
-  toesL: [0.09, 0.01, 0.1],
-  toesR: [-0.09, 0.01, 0.1],
+  headTop: [0, 1.69, 0.04],
+  head: [0, 1.485, 0.04],
+  neck: [0, 1.42, 0],
+  chest: [0, 1.16, 0.02],
+  belly: [0, 1.06, 0.03],
+  pelvis: [0, 0.92, 0.02],
+  shoulderL: [0.235, 1.34, -0.01],
+  shoulderR: [-0.235, 1.34, -0.01],
+  elbowL: [0.3, 1.08, 0],
+  elbowR: [-0.3, 1.08, 0],
+  wristL: [0.375, 0.88, 0.067],
+  wristR: [-0.375, 0.88, 0.067],
+  handL: [0.42, 0.77, 0.11],
+  handR: [-0.42, 0.77, 0.11],
+  hipL: [0.09, 0.87, 0.02],
+  hipR: [-0.09, 0.87, 0.02],
+  kneeL: [0.13, 0.47, -0.01],
+  kneeR: [-0.13, 0.47, -0.01],
+  ankleL: [0.17, 0.09, -0.055],
+  ankleR: [-0.17, 0.09, -0.055],
+  toesL: [0.21, 0.015, 0.1],
+  toesR: [-0.21, 0.015, 0.1],
+  // ส้นเท้า + กลางสะบัก: ท่อนเสริมให้แตะส้นเท้า = เท้า (ไม่ใช่น่อง) · แตะสะบัก = หลัง (ไม่ใช่ไหล่)
+  heelL: [0.17, 0.03, -0.08],
+  heelR: [-0.17, 0.03, -0.08],
+  scapL: [0.1, 1.27, -0.03],
+  scapR: [-0.1, 1.27, -0.03],
 } satisfies Record<string, [number, number, number]>;
 type Landmark = keyof typeof LANDMARK;
 
@@ -108,67 +133,64 @@ export type BodyPin =
   | 'thighBackRight';
 
 /**
- * ตำแหน่งบนร่างกาย: จุดศูนย์กลางภายใน (base, เมตร) · ทิศหันออก (dir — ใช้ตัดสินว่าอยู่ด้านหลังไหม)
+ * ตำแหน่งบนร่างกาย: จุดกลางบนผิว (base, เมตร · ยิงรังสีจากในส่วนนั้นออกไปหาผิว mesh จริง แล้วถอยเข้าใน 4 มม.)
+ * dir = ทิศหันออก (ใช้ตัดสินว่าอยู่ด้านหลังไหม / หมุนหุ่นให้เห็น)
  * area = รัศมีบริเวณที่ระบายสี (x, y, z เมตร) — ทรงรีตามรูปร่างส่วนนั้น เช่น หลังกว้างและสูง หัวไหล่เป็นโดม
  */
 const PIN_ANCHOR: Record<BodyPin, { base: [number, number, number]; dir: [number, number, number]; area: [number, number, number] }> = {
-  head: { base: [0, 1.65, 0], dir: [0, 0.35, 1], area: [0.09, 0.07, 0.1] },
-  templeLeft: { base: [0.064, 1.62, 0.02], dir: [1, 0, 0.35], area: [0.025, 0.025, 0.025] },
-  occiputLeft: { base: [0.03, 1.6, -0.115], dir: [0.4, 0, -1], area: [0.035, 0.035, 0.035] },
-  noseLeft: { base: [0.012, 1.58, 0.085], dir: [0.12, 0, 1], area: [0.015, 0.02, 0.02] },
-  eyeLeft: { base: [0.03, 1.596, 0.04], dir: [0.3, 0, 1], area: [0.018, 0.014, 0.02] },
-  eyeRight: { base: [-0.031, 1.596, 0.04], dir: [-0.3, 0, 1], area: [0.018, 0.014, 0.02] },
-  neck: { base: [0, 1.48, 0], dir: [0, 0, 1], area: [0.055, 0.05, 0.06] },
-  neckBack: { base: [0, 1.48, -0.04], dir: [0, 0, -1], area: [0.055, 0.05, 0.06] },
-  shoulderLeft: { base: [0.18, 1.39, -0.02], dir: [0.3, 1, 0], area: [0.06, 0.07, 0.07] },
-  shoulderRight: { base: [-0.18, 1.39, -0.02], dir: [-0.3, 1, 0], area: [0.06, 0.07, 0.07] },
-  // บ่า = ช่วงระหว่างคอกับปลายไหล่ (กล้ามเนื้อ trapezius)
-  trapLeft: { base: [0.09, 1.43, -0.04], dir: [0.15, 1, -0.2], area: [0.06, 0.045, 0.06] },
-  trapRight: { base: [-0.09, 1.43, -0.04], dir: [-0.15, 1, -0.2], area: [0.06, 0.045, 0.06] },
-  chest: { base: [0, 1.31, 0.05], dir: [0, 0, 1], area: [0.12, 0.08, 0.08] },
-  back: { base: [0, 1.29, -0.06], dir: [0, 0, -1], area: [0.12, 0.12, 0.08] },
-  lowerBack: { base: [0, 1.06, -0.04], dir: [0, 0, -1], area: [0.11, 0.08, 0.08] },
-  // ทั้งร่างกาย (ซ้าย = +x ของผู้ป่วย · ขวา = สะท้อนจากซ้าย)
-  // จุดสัญญาณ: ร่องไหปลาร้า (สัญญาณ 4 หัวไหล่) · ใต้พับเข่า (สัญญาณ 4 ขาด้านใน)
-  clavicleLeft: { base: [0.09, 1.41, 0.05], dir: [0.2, 0.4, 1], area: [0.03, 0.025, 0.03] },
-  clavicleRight: { base: [-0.09, 1.41, 0.05], dir: [-0.2, 0.4, 1], area: [0.03, 0.025, 0.03] },
-  kneeBackLeft: { base: [0.08, 0.45, -0.075], dir: [0, 0, -1], area: [0.045, 0.045, 0.05] },
-  kneeBackRight: { base: [-0.08, 0.45, -0.075], dir: [0, 0, -1], area: [0.045, 0.045, 0.05] },
-  // ต้นขาด้านหลัง (แนวร้าวจากหลังลงขา)
-  thighBackLeft: { base: [0.09, 0.68, -0.06], dir: [0, 0, -1], area: [0.06, 0.12, 0.05] },
-  thighBackRight: { base: [-0.09, 0.68, -0.06], dir: [0, 0, -1], area: [0.06, 0.12, 0.05] },
-  templeRight: { base: [-0.064, 1.62, 0.02], dir: [-1, 0, 0.35], area: [0.025, 0.025, 0.025] },
-  occiputRight: { base: [-0.03, 1.6, -0.115], dir: [-0.4, 0, -1], area: [0.035, 0.035, 0.035] },
-  jaw: { base: [0, 1.555, 0.06], dir: [0, -0.3, 1], area: [0.05, 0.025, 0.04] },
-  belly: { base: [0, 1.07, 0.07], dir: [0, 0, 1], area: [0.1, 0.08, 0.06] },
-  scapulaLeft: { base: [0.085, 1.3, -0.08], dir: [0.2, 0, -1], area: [0.05, 0.065, 0.05] },
-  scapulaRight: { base: [-0.085, 1.3, -0.08], dir: [-0.2, 0, -1], area: [0.05, 0.065, 0.05] },
-  ribLeft: { base: [0.11, 1.17, 0.03], dir: [0.7, 0, 0.7], area: [0.05, 0.06, 0.07] },
-  ribRight: { base: [-0.11, 1.17, 0.03], dir: [-0.7, 0, 0.7], area: [0.05, 0.06, 0.07] },
-  hipLeft: { base: [0.1, 0.9, -0.07], dir: [0.3, 0, -1], area: [0.07, 0.07, 0.06] },
-  hipRight: { base: [-0.1, 0.9, -0.07], dir: [-0.3, 0, -1], area: [0.07, 0.07, 0.06] },
-  armLeft: { base: [0.2, 1.26, -0.02], dir: [1, 0, 0.2], area: [0.045, 0.1, 0.05] },
-  armRight: { base: [-0.2, 1.26, -0.02], dir: [-1.0, 0, 0.2], area: [0.045, 0.1, 0.05] },
-  elbowLeft: { base: [0.21, 1.11, -0.02], dir: [1, 0, 0], area: [0.04, 0.04, 0.04] },
-  elbowRight: { base: [-0.21, 1.11, -0.02], dir: [-1.0, 0, 0], area: [0.04, 0.04, 0.04] },
-  wristLeft: { base: [0.25, 0.89, 0], dir: [1, 0, 0], area: [0.035, 0.035, 0.035] },
-  wristRight: { base: [-0.25, 0.89, 0], dir: [-1.0, 0, 0], area: [0.035, 0.035, 0.035] },
-  handLeft: { base: [0.27, 0.76, 0.03], dir: [1, 0, 0.3], area: [0.04, 0.06, 0.04] },
-  handRight: { base: [-0.27, 0.76, 0.03], dir: [-1.0, 0, 0.3], area: [0.04, 0.06, 0.04] },
-  thighLeft: { base: [0.09, 0.68, 0.03], dir: [0, 0, 1], area: [0.07, 0.12, 0.06] },
-  thighRight: { base: [-0.09, 0.68, 0.03], dir: [0, 0, 1], area: [0.07, 0.12, 0.06] },
-  kneeLeft: { base: [0.08, 0.46, 0.03], dir: [0, 0, 1], area: [0.05, 0.05, 0.05] },
-  kneeRight: { base: [-0.08, 0.46, 0.03], dir: [0, 0, 1], area: [0.05, 0.05, 0.05] },
-  shinLeft: { base: [0.075, 0.28, 0.03], dir: [0, 0, 1], area: [0.04, 0.1, 0.04] },
-  shinRight: { base: [-0.075, 0.28, 0.03], dir: [0, 0, 1], area: [0.04, 0.1, 0.04] },
-  calfLeft: { base: [0.075, 0.3, -0.04], dir: [0, 0, -1], area: [0.05, 0.1, 0.05] },
-  calfRight: { base: [-0.075, 0.3, -0.04], dir: [0, 0, -1], area: [0.05, 0.1, 0.05] },
-  ankleLeft: { base: [0.07, 0.08, 0], dir: [1, 0, 0.3], area: [0.04, 0.035, 0.04] },
-  ankleRight: { base: [-0.07, 0.08, 0], dir: [-1.0, 0, 0.3], area: [0.04, 0.035, 0.04] },
-  heelLeft: { base: [0.07, 0.03, -0.05], dir: [0, -0.3, -1], area: [0.035, 0.035, 0.035] },
-  heelRight: { base: [-0.07, 0.03, -0.05], dir: [0, -0.3, -1], area: [0.035, 0.035, 0.035] },
-  footLeft: { base: [0.085, 0.03, 0.07], dir: [0, 1, 0.5], area: [0.04, 0.03, 0.06] },
-  footRight: { base: [-0.085, 0.03, 0.07], dir: [0, 1, 0.5], area: [0.04, 0.03, 0.06] },
+  head: { base: [0, 1.63, 0.04], dir: [0, 0.35, 1], area: [0.09, 0.075, 0.1] },
+  templeLeft: { base: [0.068, 1.61, 0.074], dir: [1, 0, 0.35], area: [0.025, 0.025, 0.025] },
+  occiputLeft: { base: [0.032, 1.58, -0.04], dir: [0.4, 0, -1], area: [0.035, 0.035, 0.035] },
+  noseLeft: { base: [0.014, 1.55, 0.138], dir: [0.12, 0, 1], area: [0.015, 0.02, 0.02] },
+  eyeLeft: { base: [0.034, 1.58, 0.122], dir: [0.3, 0, 1], area: [0.022, 0.016, 0.025] },
+  eyeRight: { base: [-0.034, 1.58, 0.122], dir: [-0.3, 0, 1], area: [0.022, 0.016, 0.025] },
+  neck: { base: [0, 1.44, 0.079], dir: [0, 0, 1], area: [0.055, 0.05, 0.06] },
+  neckBack: { base: [0, 1.47, -0.021], dir: [0, 0, -1], area: [0.055, 0.05, 0.06] },
+  shoulderLeft: { base: [0.21, 1.365, -0.01], dir: [0.3, 1, 0], area: [0.06, 0.07, 0.07] },
+  shoulderRight: { base: [-0.21, 1.365, -0.01], dir: [-0.3, 1, 0], area: [0.06, 0.07, 0.07] },
+  trapLeft: { base: [0.109, 1.418, -0.032], dir: [0.15, 1, -0.2], area: [0.06, 0.045, 0.06] },
+  trapRight: { base: [-0.109, 1.418, -0.032], dir: [-0.15, 1, -0.2], area: [0.06, 0.045, 0.06] },
+  chest: { base: [0, 1.25, 0.121], dir: [0, 0, 1], area: [0.12, 0.08, 0.08] },
+  back: { base: [0, 1.25, -0.082], dir: [0, 0, -1], area: [0.12, 0.12, 0.08] },
+  lowerBack: { base: [0, 1.03, -0.054], dir: [0, 0, -1], area: [0.11, 0.08, 0.08] },
+  clavicleLeft: { base: [0.095, 1.391, 0.027], dir: [0.2, 0.4, 1], area: [0.03, 0.025, 0.03] },
+  clavicleRight: { base: [-0.095, 1.391, 0.027], dir: [-0.2, 0.4, 1], area: [0.03, 0.025, 0.03] },
+  kneeBackLeft: { base: [0.13, 0.465, -0.066], dir: [0, 0, -1], area: [0.045, 0.045, 0.05] },
+  kneeBackRight: { base: [-0.13, 0.465, -0.066], dir: [0, 0, -1], area: [0.045, 0.045, 0.05] },
+  thighBackLeft: { base: [0.11, 0.66, -0.062], dir: [0, 0, -1], area: [0.06, 0.12, 0.05] },
+  thighBackRight: { base: [-0.11, 0.66, -0.062], dir: [0, 0, -1], area: [0.06, 0.12, 0.05] },
+  templeRight: { base: [-0.068, 1.61, 0.074], dir: [-1, 0, 0.35], area: [0.025, 0.025, 0.025] },
+  occiputRight: { base: [-0.032, 1.58, -0.04], dir: [-0.4, 0, -1], area: [0.035, 0.035, 0.035] },
+  jaw: { base: [0, 1.49, 0.11], dir: [0, -0.3, 1], area: [0.065, 0.035, 0.06] },
+  belly: { base: [0, 1.02, 0.121], dir: [0, 0, 1], area: [0.1, 0.08, 0.06] },
+  scapulaLeft: { base: [0.111, 1.27, -0.107], dir: [0.2, 0, -1], area: [0.05, 0.065, 0.05] },
+  scapulaRight: { base: [-0.111, 1.27, -0.107], dir: [-0.2, 0, -1], area: [0.05, 0.065, 0.05] },
+  ribLeft: { base: [0.135, 1.12, 0.065], dir: [0.7, 0, 0.7], area: [0.05, 0.06, 0.07] },
+  ribRight: { base: [-0.135, 1.12, 0.065], dir: [-0.7, 0, 0.7], area: [0.05, 0.06, 0.07] },
+  hipLeft: { base: [0.112, 0.88, -0.074], dir: [0.3, 0, -1], area: [0.07, 0.07, 0.06] },
+  hipRight: { base: [-0.112, 0.88, -0.074], dir: [-0.3, 0, -1], area: [0.07, 0.07, 0.06] },
+  armLeft: { base: [0.271, 1.23, 0.001], dir: [1, 0, 0.2], area: [0.045, 0.1, 0.05] },
+  armRight: { base: [-0.271, 1.23, 0.001], dir: [-1, 0, 0.2], area: [0.045, 0.1, 0.05] },
+  elbowLeft: { base: [0.327, 1.091, 0], dir: [1, 0, 0], area: [0.04, 0.04, 0.04] },
+  elbowRight: { base: [-0.327, 1.091, 0], dir: [-1, 0, 0], area: [0.04, 0.04, 0.04] },
+  wristLeft: { base: [0.39, 0.886, 0.067], dir: [1, 0, 0], area: [0.035, 0.035, 0.035] },
+  wristRight: { base: [-0.39, 0.886, 0.067], dir: [-1, 0, 0], area: [0.035, 0.035, 0.035] },
+  handLeft: { base: [0.431, 0.79, 0.115], dir: [1, 0, 0.3], area: [0.04, 0.06, 0.04] },
+  handRight: { base: [-0.431, 0.79, 0.115], dir: [-1, 0, 0.3], area: [0.04, 0.06, 0.04] },
+  thighLeft: { base: [0.115, 0.66, 0.102], dir: [0, 0, 1], area: [0.07, 0.12, 0.06] },
+  thighRight: { base: [-0.115, 0.66, 0.102], dir: [0, 0, 1], area: [0.07, 0.12, 0.06] },
+  kneeLeft: { base: [0.13, 0.47, 0.046], dir: [0, 0, 1], area: [0.05, 0.05, 0.05] },
+  kneeRight: { base: [-0.13, 0.47, 0.046], dir: [0, 0, 1], area: [0.05, 0.05, 0.05] },
+  shinLeft: { base: [0.155, 0.28, -0.017], dir: [0, 0, 1], area: [0.04, 0.1, 0.04] },
+  shinRight: { base: [-0.155, 0.28, -0.017], dir: [0, 0, 1], area: [0.04, 0.1, 0.04] },
+  calfLeft: { base: [0.155, 0.32, -0.107], dir: [0, 0, -1], area: [0.05, 0.1, 0.05] },
+  calfRight: { base: [-0.155, 0.32, -0.107], dir: [0, 0, -1], area: [0.05, 0.1, 0.05] },
+  ankleLeft: { base: [0.2, 0.09, -0.041], dir: [1, 0, 0.3], area: [0.04, 0.035, 0.04] },
+  ankleRight: { base: [-0.2, 0.09, -0.041], dir: [-1, 0, 0.3], area: [0.04, 0.035, 0.04] },
+  heelLeft: { base: [0.17, 0.018, -0.098], dir: [0, -0.3, -1], area: [0.035, 0.035, 0.035] },
+  heelRight: { base: [-0.17, 0.018, -0.098], dir: [0, -0.3, -1], area: [0.035, 0.035, 0.035] },
+  footLeft: { base: [0.2, 0.039, 0.069], dir: [0, 1, 0.5], area: [0.04, 0.03, 0.06] },
+  footRight: { base: [-0.2, 0.039, 0.069], dir: [0, 1, 0.5], area: [0.04, 0.03, 0.06] },
 };
 
 /** หมุดที่อยู่ด้านหลังหุ่น (มองไม่เห็นจากด้านหน้า) — ใช้หมุนหุ่นให้หันหลังอัตโนมัติ */
@@ -218,16 +240,22 @@ const SEGMENTS: Segment[] = [
   { from: 'kneeR', to: 'ankleR', front: R('shinR', 'ขาขวา'), back: R('calfR', 'น่องขวา') },
   { from: 'ankleL', to: 'toesL', front: R('footL', 'เท้าซ้าย') },
   { from: 'ankleR', to: 'toesR', front: R('footR', 'เท้าขวา') },
+  { from: 'heelL', to: 'toesL', front: R('footL', 'เท้าซ้าย') },
+  { from: 'heelR', to: 'toesR', front: R('footR', 'เท้าขวา') },
+  { from: 'chest', to: 'scapL', front: R('chest', 'หน้าอก'), back: R('back', 'หลัง') },
+  { from: 'chest', to: 'scapR', front: R('chest', 'หน้าอก'), back: R('back', 'หลัง') },
 ];
 /** จุดข้อต่อที่ถือเป็นส่วนเฉพาะ (รัศมีเล็ก, หน่วยเมตร) เช่น เข่า */
 const JOINTS: { at: Landmark; radius: number; region: BodyRegion }[] = [
-  { at: 'kneeL', radius: 0.06, region: R('kneeL', 'เข่าซ้าย') },
-  { at: 'kneeR', radius: 0.06, region: R('kneeR', 'เข่าขวา') },
+  { at: 'kneeL', radius: 0.075, region: R('kneeL', 'เข่าซ้าย') },
+  { at: 'kneeR', radius: 0.075, region: R('kneeR', 'เข่าขวา') },
 ];
 
 type Picker = (ndcX: number, ndcY: number) => { point: THREE.Vector3; region: BodyRegion | null } | null;
 /** ตำแหน่งบนจอ (NDC −1..1) ของจุดบนร่างกาย ตามท่าหุ่นปัจจุบัน */
 type Projector = (pin: BodyPin) => { x: number; y: number } | null;
+/** จุดใดก็ได้บนผิว (พิกัดเดียวกับ pickAt/marks) → ndc + มองเห็นจากกล้องไหม (ไม่ถูกตัวหุ่นบัง) */
+type PointProjector = (p: BodyPoint) => { x: number; y: number; visible: boolean } | null;
 /** มุมหมุน (rad) ที่ทำให้บริเวณนั้นหันเข้ากล้อง — null ถ้ายังไม่โหลด/บริเวณหันขึ้นบนล้วน */
 type Facer = (pin: BodyPin) => number | null;
 
@@ -253,31 +281,14 @@ function createSkinMaterial(color: string, shorts: string) {
   mat.defines = { SHORTS_COLOR: `vec3(${new THREE.Color(shorts).toArray().map((v) => v.toFixed(4)).join(', ')})` };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    // บริเวณเป้าที่สคริปต์กดให้แบน (ค่าตรงกับ GROIN ใน scripts/build-anatomy-glb.mjs) → แรเงาตามผิวเรียบ
-    // ผิวเดิมที่ถูกกดซ้อนกันจึงดูเป็นผิวเดียว ไม่เห็นรอยรูปทรงเดิม
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vSpotPos;\nvarying vec3 vGroinN;\nvarying float vGroinW;')
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-vSpotPos = position;
-{
-  float ty = clamp((position.y - 0.745) / 0.17, 0.0, 1.0);
-  float s = ty * ty * (3.0 - 2.0 * ty);
-  float ds = 6.0 * ty * (1.0 - ty) / 0.17;
-  float slope = s > 0.0001 ? 0.084 * 0.5 / sqrt(s) * ds : 0.0;
-  vGroinN = normalize(normalMatrix * vec3(0.0, -min(slope, 3.0), 1.0));
-  float inY = step(0.73, position.y) * (1.0 - smoothstep(0.9, 0.925, position.y)) * step(0.0, position.z);
-  vGroinW = inY * (1.0 - smoothstep(0.045, 0.075, abs(position.x)));
-}`,
-      );
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSpotPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSpotPos = position;');
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 varying vec3 vSpotPos;
-varying vec3 vGroinN;
-varying float vGroinW;
 uniform int uSpotCount;
 float gShorts;
 uniform vec3 uSpotCenter[${MAX_SPOTS}];
@@ -286,18 +297,18 @@ uniform vec3 uSpotColor[${MAX_SPOTS}];
 `,
       )
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.95, gShorts);')
-      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(mix(normal, vGroinN, vGroinW));')
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-// กางเกงขาสั้น: ระบายลงบนผิวโดยตรง (แนบสรีระพอดี ไม่ลอย) — เอว y≈0.965 · ปลายขา y≈0.70 (ด้านในขาสั้นกว่าเล็กน้อย)
-float sInX = 1.0 - smoothstep(0.19, 0.205, abs(vSpotPos.x));
-float hem = 0.705 + 0.025 * (1.0 - smoothstep(0.03, 0.09, abs(vSpotPos.x)));
-float sIn = sInX * smoothstep(hem - 0.004, hem + 0.004, vSpotPos.y) * (1.0 - smoothstep(0.962, 0.97, vSpotPos.y));
+// กางเกงขาสั้น: ระบายลงบนผิวโดยตรง (แนบสรีระพอดี ไม่ลอย) — เอว y≈0.95 · ปลายขา y≈0.67 (ด้านในขาสั้นกว่าเล็กน้อย)
+// ขอบข้าง |x|<0.2 = ครอบสะโพก/ต้นขา แต่ไม่โดนมือที่ห้อยข้างตัว (มือเริ่มที่ |x|≈0.33)
+float sInX = 1.0 - smoothstep(0.2, 0.215, abs(vSpotPos.x));
+float hem = 0.67 + 0.03 * (1.0 - smoothstep(0.03, 0.09, abs(vSpotPos.x)));
+float sIn = sInX * smoothstep(hem - 0.004, hem + 0.004, vSpotPos.y) * (1.0 - smoothstep(0.946, 0.954, vSpotPos.y));
 gShorts = sIn;
 vec3 fabric = SHORTS_COLOR;
 // ขอบเอว + ขอบปลายขาเข้มขึ้นเล็กน้อย
-float band = smoothstep(0.932, 0.936, vSpotPos.y) + (1.0 - smoothstep(hem + 0.014, hem + 0.018, vSpotPos.y));
+float band = smoothstep(0.916, 0.92, vSpotPos.y) + (1.0 - smoothstep(hem + 0.014, hem + 0.018, vSpotPos.y));
 fabric *= 1.0 - 0.18 * clamp(band, 0.0, 1.0);
 diffuseColor.rgb = mix(diffuseColor.rgb, fabric, sIn);
 for (int i = 0; i < ${MAX_SPOTS}; i++) {
@@ -323,74 +334,221 @@ for (int i = 0; i < ${MAX_SPOTS}; i++) {
   return { mat, setSpots };
 }
 
+/** หุ่นที่ bake แล้ว: geometry ในพิกัดของหุ่น (เมตร) — ใช้ร่วมกันทุก canvas */
+type BakedModel = {
+  body: THREE.BufferGeometry;
+  eyes: THREE.BufferGeometry[];
+  /** ขนาดกล่องของผิว + จุดกลาง (เมตร) */
+  size: THREE.Vector3;
+  center: THREE.Vector3;
+  /** สเกล (หน่วยของฉากต่อเมตร): สูง 2 หน่วย แต่ย่อลงถ้าแขนกางล้นกรอบ (FIT_HALF_WIDTH) */
+  scale: number;
+};
+const bakedCache = new WeakMap<object, BakedModel>();
+
+/** สีตาตามมุมจากแกนหน้าของลูกตา: ตาขาวนวล · ม่านตาน้ำตาล · รูม่านตาเข้ม (แบบ ThaiWellAI) */
+function paintEye(g: THREE.BufferGeometry) {
+  g.computeBoundingBox();
+  const c = g.boundingBox!.getCenter(new THREE.Vector3());
+  const p = g.attributes.position;
+  const out = new Float32Array(p.count * 3);
+  const sclera = new THREE.Color('#efe6de');
+  const iris = new THREE.Color('#6a4a35');
+  const irisEdge = new THREE.Color('#3e2a1f');
+  const pupil = new THREE.Color('#1b1310');
+  const col = new THREE.Color();
+  const d = new THREE.Vector3();
+  const ramp = (a: number, b: number, x: number) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+  for (let i = 0; i < p.count; i++) {
+    const t = d.fromBufferAttribute(p, i).sub(c).normalize().z; // 1 = มองตรงไปข้างหน้า (+z)
+    col.copy(sclera).lerp(irisEdge, ramp(0.8, 0.83, t)).lerp(iris, ramp(0.84, 0.9, t)).lerp(pupil, ramp(0.955, 0.97, t));
+    out.set([col.r, col.g, col.b], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(out, 3));
+}
+
+/**
+ * ไฟล์ glb วาง node ไว้นอกจุดกำเนิด (ตัวหุ่น x≈-2.26 · ลูกตาถูกย่อ+หมุน) → bake transform ของ node ลง geometry
+ * แล้วเลื่อนให้กลางตัว x=0 · เท้า y=0 (หน้าหันไป +z อยู่แล้ว) — ทำครั้งเดียวต่อไฟล์
+ */
+function bakeModel(scene: THREE.Object3D): BakedModel {
+  const hit = bakedCache.get(scene);
+  if (hit) return hit;
+  scene.updateMatrixWorld(true);
+  const bodies: THREE.BufferGeometry[] = [];
+  const eyes: THREE.BufferGeometry[] = [];
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const g = (m.geometry as THREE.BufferGeometry).clone();
+    g.applyMatrix4(m.matrixWorld);
+    (/eye/i.test(m.name) ? eyes : bodies).push(g);
+  });
+  // ผิว = mesh ที่ใหญ่ที่สุด (LOW)
+  bodies.sort((a, b) => b.attributes.position.count - a.attributes.position.count);
+  const body = bodies[0];
+  body.computeBoundingBox();
+  const box0 = body.boundingBox!;
+  const shift = new THREE.Vector3(-(box0.min.x + box0.max.x) / 2, -box0.min.y, 0);
+  [body, ...eyes].forEach((g) => {
+    g.translate(shift.x, shift.y, shift.z);
+    g.computeBoundingSphere();
+  });
+  body.computeBoundingBox();
+  eyes.forEach(paintEye);
+  const size = body.boundingBox!.getSize(new THREE.Vector3());
+  const center = body.boundingBox!.getCenter(new THREE.Vector3());
+  // สเกลที่ปลายมือ ณ ทุกมุมหมุน (รวม perspective) ยังอยู่ในกรอบ: จอ = X·k·cz/(cz − Z·k) ≤ FIT_HALF_WIDTH
+  // perspective ขึ้นกับ k เล็กน้อย → วนหาค่าซ้ำ 2 รอบก็นิ่ง
+  const { cameraZ } = componentTokens.body3d;
+  const P = body.attributes.position;
+  const reach = (k: number) => {
+    let worst = 0;
+    // 12 มุม × จุดยอดทุก ๆ 9 จุด (~75k รอบ แทน 1.3 ล้าน) — พอสำหรับหาปลายมือ ไม่ทำให้ iOS ค้างตอนโหลด
+    for (let a = 0; a < 12; a++) {
+      const c = Math.cos((a * Math.PI) / 6);
+      const sn = Math.sin((a * Math.PI) / 6);
+      for (let i = 0; i < P.count; i += 9) {
+        const x = P.getX(i) - LANDMARK.pelvis[0];
+        const z = P.getZ(i) - LANDMARK.pelvis[2];
+        worst = Math.max(worst, (Math.abs(x * c + z * sn) * cameraZ) / (cameraZ - (z * c - x * sn) * k));
+      }
+    }
+    return worst;
+  };
+  let scale = 2 / Math.max(size.y, 0.001);
+  for (let it = 0; it < 2; it++) scale = Math.min(2 / Math.max(size.y, 0.001), FIT_HALF_WIDTH / Math.max(reach(scale), 0.001));
+  // ดัชนี BVH ของผิว (ใช้ร่วมทุก canvas เพราะ geometry ใช้ร่วมกัน) — สร้างหลังแก้ geometry เสร็จแล้วเท่านั้น
+  body.computeBoundsTree();
+  const out = { body, eyes, size, center, scale };
+  bakedCache.set(scene, out);
+  return out;
+}
+
+/** normal map + AO map (โหลดครั้งเดียว · ใช้ร่วมกันทุก canvas) — โหลดไม่ได้ → ไม่ใช้ map (หุ่นยังแสดงได้) */
+type DetailMaps = { normal: THREE.Texture | null; ao: THREE.Texture | null };
+let detailMaps: Promise<DetailMaps> | null = null;
+function loadDetailMaps(): Promise<DetailMaps> {
+  const one = async (mod: number): Promise<THREE.Texture | null> => {
+    try {
+      // เว็บใช้ URL ของ asset ได้ทันที · native ดาวน์โหลดลงเครื่องก่อน (TextureLoader ของ r3f/native อ่านไฟล์จาก localUri)
+      const asset = Asset.fromModule(mod);
+      const uri = Platform.OS === 'web' ? asset.uri : await asset.downloadAsync().then((a) => a.localUri ?? a.uri);
+      const tex = await new THREE.TextureLoader().loadAsync(uri);
+      tex.flipY = false; // UV แบบ glTF
+      tex.colorSpace = THREE.NoColorSpace; // ข้อมูล ไม่ใช่สี
+      tex.anisotropy = 4;
+      tex.needsUpdate = true;
+      return tex;
+    } catch {
+      return null;
+    }
+  };
+  return (detailMaps ??= Promise.all([one(NORMAL_MAP), one(AO_MAP)]).then(([normal, ao]) => ({ normal, ao })));
+}
+
+/**
+ * โหลดหุ่นล่วงหน้าตั้งแต่เปิดแอป (แบบ ThaiWellAI: โหลดครั้งเดียว ใช้ร่วมทุกหน้า)
+ * → ถึงหน้าแรกหุ่นพร้อมแล้ว ไม่ต้องรอดาวน์โหลด/แปลงไฟล์ · ไฟล์ normal/AO ก็โหลดไปพร้อมกัน
+ */
+let preloadStarted = false;
+export function preloadBody3D() {
+  if (preloadStarted) return;
+  preloadStarted = true;
+  const go = (url: string) => {
+    useLoader.preload(GLTFLoader, url);
+    loadDetailMaps();
+  };
+  if (Platform.OS === 'web') go(Asset.fromModule(MODEL).uri);
+  else
+    Asset.fromModule(MODEL)
+      .downloadAsync()
+      .then((a) => go(a.localUri ?? a.uri))
+      .catch(() => {});
+}
+
 function Figure({
   url,
   pins,
   marks,
-  rotationY,
+  markColor,
+  rot,
   pickerRef,
   projectorRef,
+  pointProjectorRef,
   facerRef,
   onReady,
 }: {
   url: string;
   pins: Body3DPin[];
   marks: BodyPoint[];
-  rotationY: number;
+  markColor?: string;
+  /** มุมหมุน (ref ไม่ใช่ state) — ลากแล้วไม่ re-render React ทุกครั้ง */
+  rot: React.MutableRefObject<RotState>;
   pickerRef: React.MutableRefObject<Picker | null>;
   projectorRef: React.MutableRefObject<Projector | null>;
+  pointProjectorRef: React.MutableRefObject<PointProjector | null>;
   facerRef: React.MutableRefObject<Facer | null>;
   /** วาดเฟรมแรกเสร็จแล้ว (ใช้สลับ canvas บน iOS แบบไม่กะพริบ) */
   onReady?: () => void;
 }) {
   const { colors } = useTheme();
   const loaded = useLoader(GLTFLoader, url);
-  /* โมเดลจาก useLoader ถูก cache และใช้ร่วมกันทุก canvas — วัตถุ three มีแม่ได้คนเดียว
-   * ถ้าใช้ตัวเดียวกันตอนสร้าง canvas ใหม่ (iOS) canvas เก่าที่ถูกถอดจะดึงหุ่นออกไปด้วย → หุ่นหาย
-   * จึง clone ฉากต่อ canvas (geometry ใช้ร่วมกัน ไม่เปลืองหน่วยความจำ) */
-  const gltf = React.useMemo(() => ({ scene: loaded.scene.clone(true) }), [loaded]);
+  const baked = React.useMemo(() => bakeModel(loaded.scene), [loaded]);
   const { camera, invalidate } = useThree();
   const groupRef = React.useRef<THREE.Group>(null);
   const visibleCenterRef = React.useRef<((pin: BodyPin) => { ndc: THREE.Vector2; surface: THREE.Vector3 | null } | null) | null>(null);
 
   const skin = React.useMemo(() => createSkinMaterial(palette.skin.model, palette.garment.base), []);
-  React.useEffect(() => () => skin.mat.dispose(), [skin]);
-
-  // ผิว = พื้นผิวที่แตะ/วัดขนาดได้
-  const skinMeshes = React.useMemo(() => {
-    const list: THREE.Mesh[] = [];
-    gltf.scene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      if (SKIN_NODES.includes(m.name)) {
-        m.material = skin.mat;
-        list.push(m);
-      } else m.visible = false;
+  const eyeMat = React.useMemo(() => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0 }), []);
+  React.useEffect(
+    () => () => {
+      skin.mat.dispose();
+      eyeMat.dispose();
+    },
+    [skin, eyeMat],
+  );
+  // รายละเอียดผิว (normal + AO) มาทีหลังได้ — ไม่รอ ไม่ทำให้หุ่นหาย ถ้าโหลดไม่ได้ก็ใช้ผิวเรียบ
+  React.useEffect(() => {
+    let alive = true;
+    loadDetailMaps().then(({ normal, ao }) => {
+      if (!alive || (!normal && !ao)) return;
+      if (normal) {
+        skin.mat.normalMap = normal;
+        skin.mat.normalScale.set(1.1, 1.1);
+      }
+      if (ao) {
+        skin.mat.aoMap = ao;
+        skin.mat.aoMapIntensity = 0.9;
+      }
+      skin.mat.needsUpdate = true;
+      invalidate();
     });
-    return list;
-  }, [gltf, skin]);
+    return () => {
+      alive = false;
+    };
+  }, [skin, invalidate]);
 
-  const { root, toLocal } = React.useMemo(() => {
-    const scene = gltf.scene;
-    scene.position.set(0, 0, 0);
-    scene.scale.setScalar(1);
-    scene.updateMatrixWorld(true);
-    // จัดหุ่นให้อยู่กลางและสูง 2 หน่วย (วัดในพิกัดของหุ่นเอง)
-    const box = new THREE.Box3();
-    skinMeshes.forEach((m) => box.expandByObject(m, true));
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    // แกนหมุนแนวตั้งผ่านเชิงกราน = กลางลำตัวจริง → หมุนอยู่กับที่ ไม่เหวี่ยงออกนอกกรอบ
+  /* geometry ใช้ร่วมกัน แต่ mesh/ฉากสร้างใหม่ต่อ canvas — วัตถุ three มีแม่ได้คนเดียว
+   * ถ้าใช้ตัวเดียวกันตอนสร้าง canvas ใหม่ (iOS) canvas เก่าที่ถูกถอดจะดึงหุ่นออกไปด้วย → หุ่นหาย */
+  const { root, toLocal, skinMeshes } = React.useMemo(() => {
+    const scene = new THREE.Group();
+    // ผิว = พื้นผิวที่แตะ/วัดขนาดได้ · ลูกตาแยกวัสดุ (ไม่ระบายสี ไม่รับแตะ)
+    const body = new THREE.Mesh(baked.body, skin.mat);
+    scene.add(body);
+    baked.eyes.forEach((g) => scene.add(new THREE.Mesh(g, eyeMat)));
+    // จัดหุ่นให้อยู่กลาง (สูงสุด 2 หน่วย — ดู bakeModel) · แกนหมุนแนวตั้งผ่านเชิงกราน = กลางลำตัวจริง → หมุนอยู่กับที่
+    const center = baked.center.clone();
     center.x = LANDMARK.pelvis[0];
     center.z = LANDMARK.pelvis[2];
-    const k = 2 / Math.max(size.y, 0.001);
+    const k = baked.scale;
     scene.scale.setScalar(k);
     scene.position.set(-center.x * k, -center.y * k, -center.z * k);
     scene.updateMatrixWorld(true);
-    /** พิกัดต้นฉบับ (เมตร) → พิกัดของหุ่น (กลุ่มที่หมุน) */
+    /** พิกัดของหุ่น (เมตร) → พิกัดของกลุ่มที่หมุน */
     const local = (v: readonly number[]) => new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(k).add(scene.position);
-    return { root: scene, toLocal: local };
-  }, [gltf, skinMeshes]);
+    return { root: scene, toLocal: local, skinMeshes: [body] };
+  }, [baked, skin, eyeMat]);
 
   // อาการ/จุดรักษา + จุดที่แตะเอง → บริเวณระบายสีบนผิว
   React.useEffect(() => {
@@ -407,17 +565,18 @@ function Figure({
       ...marks.map((m) => ({
         center: new THREE.Vector3(m.x, m.y, m.z).sub(root.position).divideScalar(k),
         radius: new THREE.Vector3(...TAP_AREA),
-        color: symptom,
+        color: markColor ? new THREE.Color(markColor) : symptom,
       })),
     ];
     skin.setSpots(spots);
     invalidate();
-  }, [pins, marks, root, skin, colors, invalidate]);
+  }, [pins, marks, markColor, root, skin, colors, invalidate]);
 
 
   // ยิงรังสีจากตำแหน่งที่แตะไปหาผิวหุ่นจริง → จุดในพิกัดของหุ่น + ส่วนของร่างกายที่ใกล้ที่สุด
   React.useEffect(() => {
     const raycaster = new THREE.Raycaster();
+    raycaster.firstHitOnly = true;
     const classify = (p: THREE.Vector3): BodyRegion | null => {
       const k = root.scale.x;
       for (const j of JOINTS) if (toLocal(LANDMARK[j.at]).distanceTo(p) < j.radius * k) return j.region;
@@ -484,7 +643,7 @@ function Figure({
       const group = groupRef.current;
       if (!group) return null;
       group.updateMatrixWorld(true);
-      const key = `${pin}|${group.rotation.y.toFixed(3)}`;
+      const key = `${pin}|${group.rotation.y.toFixed(3)}|${camera.position.y.toFixed(2)}|${camera.position.z.toFixed(2)}`;
       const hitCache = cache.get(key);
       if (hitCache) return hitCache;
       const a = PIN_ANCHOR[pin];
@@ -526,6 +685,19 @@ function Figure({
       return c ? { x: c.ndc.x, y: c.ndc.y } : null;
     };
     projectorRef.current = projector;
+    const pointProjector: PointProjector = (p) => {
+      const group = groupRef.current;
+      if (!group) return null;
+      group.updateMatrixWorld(true);
+      const world = group.localToWorld(new THREE.Vector3(p.x, p.y, p.z));
+      const ndc = world.clone().project(camera);
+      // มองเห็น = รังสีจากกล้องไปจุดนั้น ชนผิวหุ่นครั้งแรกที่จุดนั้นเอง (ไม่ใช่ด้านหน้าที่บังอยู่)
+      raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+      const hit = raycaster.intersectObjects(skinMeshes, false)[0];
+      const visible = !!hit && hit.point.distanceTo(world) < 0.06 * group.scale.x + 0.02;
+      return { x: ndc.x, y: ndc.y, visible };
+    };
+    pointProjectorRef.current = pointProjector;
     /* ทิศที่บริเวณนั้นหันออก (dir ของหมุด) → มุมหมุนแกน y ที่พาทิศนั้นมาหากล้อง (หุ่นหันหน้า +z)
      * บริเวณที่หันขึ้นบนเป็นหลัก (บ่า/ไหล่) → null = ไม่ต้องหมุน */
     const facer: Facer = (pin) => {
@@ -549,13 +721,20 @@ function Figure({
       // iOS มี canvas ซ้อนกันช่วงสลับ → ล้างเฉพาะของตัวเอง (ไม่ลบของ canvas ใหม่)
       if (pickerRef.current === picker) pickerRef.current = null;
       if (projectorRef.current === projector) projectorRef.current = null;
+      if (pointProjectorRef.current === pointProjector) pointProjectorRef.current = null;
       if (facerRef.current === facer) facerRef.current = null;
       visibleCenterRef.current = null;
     };
-  }, [camera, root, toLocal, skinMeshes, pickerRef, projectorRef, facerRef]);
+  }, [camera, root, toLocal, skinMeshes, pickerRef, projectorRef, pointProjectorRef, facerRef]);
 
-  // มุมเป้าหมายเปลี่ยน (ลาก/หันหน้า-หลัง) → เริ่มวาดเฟรมใหม่
-  React.useEffect(() => invalidate(), [rotationY, invalidate]);
+  // มุมเป้าหมายเปลี่ยน (ลาก/หันหน้า-หลัง) → ปลุก render loop (frameloop demand)
+  React.useEffect(() => {
+    rot.current.kick = invalidate;
+    invalidate();
+    return () => {
+      rot.current.kick = () => {};
+    };
+  }, [rot, invalidate]);
   const readyRef = React.useRef(false);
   useFrame(() => {
     if (readyRef.current) return;
@@ -564,17 +743,35 @@ function Figure({
     setTimeout(() => onReady?.(), 80);
   });
   // มุมตอนสร้าง canvas (ค่าคงที่ — r3f ตั้งให้ครั้งเดียว) · iOS สร้าง canvas ใหม่ทุกครั้งที่ท่าเปลี่ยน จึงต้องเริ่มที่มุมล่าสุดเลย
-  const initialRotation = React.useRef(rotationY).current;
+  const initialRotation = React.useRef(rot.current.angle).current;
   // วาดเฉพาะเมื่อจำเป็น (frameloop="demand") → ขอเฟรมต่อจนกว่าจะหมุนถึงมุมเป้าหมาย
-  useFrame(() => {
+  // แบบ ThaiWellAI: นิ้วเลื่อน "มุมเป้าหมาย" · หุ่นค่อย ๆ ตามทุกเฟรม (ease) · ปัดแรงแล้วปล่อย = หมุนต่อแล้วค่อย ๆ ช้าลง (momentum)
+  useFrame((_, dt) => {
     const g = groupRef.current;
     if (!g) return;
-    const d = rotationY - g.rotation.y;
-    if (Math.abs(d) < 0.001) {
-      g.rotation.y = rotationY;
+    const r = rot.current;
+    const f = Math.min(3, dt * 60); // เทียบเป็นจำนวนเฟรม 60fps (เครื่องช้า/เร็วหมุนเท่ากัน)
+    if (!r.dragging && Math.abs(r.vel) > 1e-5) {
+      r.target += r.vel * f;
+      r.vel *= Math.pow(0.93, f);
+    }
+    const ease = 1 - Math.pow(1 - 0.18, f);
+    const d = r.target - g.rotation.y;
+    const dT = r.tiltTarget - r.tilt;
+    const dZ = r.zoomTarget - r.zoom;
+    if (Math.abs(d) < 0.0005 && Math.abs(dT) < 0.0005 && Math.abs(dZ) < 0.0005 && Math.abs(r.vel) <= 1e-5) {
+      g.rotation.y = r.target;
+      r.angle = r.target;
       return;
     }
-    g.rotation.y += d * 0.2;
+    g.rotation.y += d * ease;
+    r.angle = g.rotation.y;
+    // แบบ ThaiWellAI: กล้องโคจรรอบหุ่น (ก้ม/เงย) + ระยะซูม — หุ่นอยู่กลางเสมอ
+    r.tilt += dT * ease;
+    r.zoom += dZ * ease;
+    const R = componentTokens.body3d.cameraZ * r.zoom;
+    camera.position.set(0, Math.sin(r.tilt) * R, Math.cos(r.tilt) * R);
+    camera.lookAt(0, 0, 0);
     invalidate();
   });
 
@@ -583,6 +780,26 @@ function Figure({
       <primitive object={root} />
     </group>
   );
+}
+
+/** ขอบเขตก้ม/เงย และซูม */
+const TILT_MAX = 0.6;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.4;
+
+/** มุมหมุนของหุ่น: target = มุมที่นิ้วสั่ง · angle = มุมที่วาดอยู่ · vel = แรงเฉื่อยหลังปัด */
+interface RotState {
+  target: number;
+  angle: number;
+  vel: number;
+  /** มุมก้ม/เงยของกล้อง (เรเดียนจากแนวราบ · + = มองจากด้านบน) และระยะซูม (1 = ปกติ · < 1 = ใกล้) */
+  tilt: number;
+  tiltTarget: number;
+  zoom: number;
+  zoomTarget: number;
+  dragging: boolean;
+  kick: () => void;
+  last: { a: number; t: number };
 }
 
 export interface Body3DPick {
@@ -595,13 +812,23 @@ export interface Body3DHandle {
   pickAt: (pageX: number, pageY: number) => Body3DPick | null;
   /** ตำแหน่งบนจอ (pageX/pageY) ของบริเวณบนร่างกาย ตามท่าหุ่นตอนนี้ — null ถ้าหุ่นยังไม่โหลด */
   projectPin: (pin: BodyPin) => { x: number; y: number } | null;
+  /** ตำแหน่งบนจอของจุดที่แตะเลือก (pickAt) + มองเห็นอยู่ไหม (หมุนไปด้านหลัง = ไม่เห็น) */
+  projectPoint: (p: BodyPoint) => { x: number; y: number; visible: boolean } | null;
   /** วัดตำแหน่งบนจอใหม่ (เรียกหลังขยับ/ย่อหุ่นด้วย transform — onLayout ไม่รู้ตัว) */
   remeasure: () => void;
   /** หมุนหุ่นเพิ่ม (เรเดียน) นับจากมุมตอนเริ่มลาก */
   beginRotate: () => void;
-  rotateTo: (deltaRad: number) => void;
+  /** dx = หมุนรอบตัว · dy = ก้ม/เงย (เรเดียน นับจากตอนเริ่มลาก) */
+  rotateTo: (deltaRad: number, tiltRad?: number) => void;
+  /** ซูมด้วยสองนิ้ว: เริ่ม → scale ของนิ้ว (กางออก > 1 = ใกล้ขึ้น) */
+  beginZoom: () => void;
+  zoomTo: (scale: number) => void;
+  /** กลับมุมมองปกติ (ไม่ก้ม/เงย · ไม่ซูม) */
+  resetView: () => void;
+  /** ปล่อยนิ้ว (ปัดเร็ว = หมุนต่อแบบมีแรงเฉื่อย) */
+  endRotate: () => void;
   /** หันหุ่น: front = หน้าตรง · back = หันหลัง (หมุนทางที่ใกล้ที่สุด) */
-  face: (side: 'front' | 'back') => void;
+  face: (side: 'front' | 'back' | 'left' | 'right') => void;
   /** หันหุ่นให้เห็นบริเวณนั้นชัด (หมุนทางที่ใกล้ที่สุด) — คืน false ถ้าหุ่นยังไม่โหลด */
   facePin: (pin: BodyPin) => boolean;
 }
@@ -612,7 +839,7 @@ const WEBGL_ONLY_PIXEL_PARAMS = new Set([0x9240, 0x9241, 0x9243]);
  * native: three เรียก pixelStorei ด้วยค่าข้างบนตอนอัปโหลด texture
  * → expo-gl พิมพ์ log เตือนทุกเฟรม (หลายหมื่นบรรทัด) จนแอปหน่วง/ค้าง · ข้ามไปเลยเพราะไม่มีผลบน native อยู่แล้ว
  */
-function muteWebGLOnlyParams(gl: THREE.WebGLRenderer) {
+export function muteWebGLOnlyParams(gl: THREE.WebGLRenderer) {
   const ctx = gl.getContext();
   const pixelStorei = ctx.pixelStorei.bind(ctx);
   ctx.pixelStorei = (pname: number, param: number | boolean) => {
@@ -622,7 +849,7 @@ function muteWebGLOnlyParams(gl: THREE.WebGLRenderer) {
 
 
 /** แสงสะท้อนรอบตัวแบบห้อง (เหมือน human-atlas) — เฉพาะเว็บ เพราะ expo-gl ยังไม่รองรับ render target แบบ float ที่ PMREM ใช้ */
-function RoomEnv() {
+export function RoomEnv() {
   const { gl, scene, invalidate } = useThree();
   React.useEffect(() => {
     const pmrem = new THREE.PMREMGenerator(gl);
@@ -650,6 +877,8 @@ export const Body3D = React.forwardRef<
     pins?: Body3DPin[];
     /** จุดอาการที่ปักจากการแตะ (พิกัดของหุ่น) — หน้าจอเป็นผู้ถือข้อมูล */
     marks?: BodyPoint[];
+    /** สีของจุดที่แตะ (เช่น ตามคะแนนปวด) · ไม่ใส่ = สีอาการ */
+    markColor?: string;
     width?: number;
     height?: number;
     /** ระยะกล้อง — ค่าน้อย = หุ่นใหญ่ขึ้น */
@@ -665,6 +894,7 @@ export const Body3D = React.forwardRef<
   {
     pins = [],
     marks = [],
+    markColor,
     width = componentTokens.body3d.width,
     height = componentTokens.body3d.height,
     cameraZ = componentTokens.body3d.cameraZ,
@@ -675,7 +905,58 @@ export const Body3D = React.forwardRef<
   ref,
 ) {
   const t = componentTokens.body3d;
-  const [rotationY, setRotationY] = React.useState(restAngle);
+  // มุมหมุนเก็บใน ref (ไม่ใช่ state): ลาก 60 ครั้ง/วิ ไม่ทำให้ React วาด Body3D/Canvas ใหม่ทุกครั้ง
+  const rot = React.useRef<RotState>({ target: restAngle, angle: restAngle, vel: 0, tilt: 0, tiltTarget: 0, zoom: 1, zoomTarget: 1, dragging: false, kick: () => {}, last: { a: restAngle, t: 0 } });
+  const startTilt = React.useRef(0);
+  const startZoom = React.useRef(1);
+  const setRotationY = React.useCallback((v: number | ((cur: number) => number)) => {
+    const r = rot.current;
+    r.target = typeof v === 'function' ? v(r.target) : v;
+    if (r.dragging) {
+      // ความเร็วตอนลาก (เรเดียน/เฟรม) ไว้ปัดต่อ
+      const now = Date.now();
+      const dt = Math.max(1, now - r.last.t);
+      r.vel = r.vel * 0.6 + ((r.target - r.last.a) / dt) * 16.7 * 0.4;
+      r.last = { a: r.target, t: now };
+    } else r.vel = 0;
+    r.kick();
+  }, []);
+  const startDrag = () => {
+    const r = rot.current;
+    r.dragging = true;
+    r.vel = 0;
+    r.last = { a: r.target, t: Date.now() };
+  };
+  /** ปล่อยนิ้ว: ปัดเร็ว = หมุนต่อ · พักนิ้วก่อนปล่อย = หยุด */
+  const endDrag = () => {
+    const r = rot.current;
+    r.dragging = false;
+    if (Date.now() - r.last.t > 80) r.vel = 0;
+    r.vel = Math.max(-0.08, Math.min(0.08, r.vel));
+    r.kick();
+  };
+  // skeleton ระหว่างโหลดโมเดล: แสดงเมื่อรอนานเกิน 300ms · เฟรมแรกขึ้นแล้วค่อย ๆ จางหาย
+  const [ready, setReady] = React.useState(false);
+  const waitLong = useDelayedLoading(!ready);
+  const skeletonFade = React.useRef(new Animated.Value(1)).current;
+  const [showSkeleton, setShowSkeleton] = React.useState(false);
+  const pulse = React.useRef(new Animated.Value(1)).current;
+  React.useEffect(() => {
+    if (!waitLong) return;
+    setShowSkeleton(true);
+    const a = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.45, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+      ]),
+    );
+    a.start();
+    return () => a.stop();
+  }, [waitLong, pulse]);
+  React.useEffect(() => {
+    if (!ready || !showSkeleton) return;
+    Animated.timing(skeletonFade, { toValue: 0, duration: 260, useNativeDriver: Platform.OS !== 'web' }).start(() => setShowSkeleton(false));
+  }, [ready, showSkeleton, skeletonFade]);
   // มุมพักเปลี่ยน (เช่น หน้าเริ่มต้นหันตรง → หลังเริ่มประเมินเอียงตัว) → หมุนไปมุมใหม่แบบนุ่ม (ทางที่ใกล้ที่สุด)
   const restRef = React.useRef(restAngle);
   React.useEffect(() => {
@@ -686,9 +967,10 @@ export const Body3D = React.forwardRef<
   }, [restAngle]);
   const startRot = React.useRef(0);
   const rotRef = React.useRef(0);
-  rotRef.current = rotationY;
+  rotRef.current = rot.current.target;
   const pickerRef = React.useRef<Picker | null>(null);
   const projectorRef = React.useRef<Projector | null>(null);
+  const pointProjectorRef = React.useRef<PointProjector | null>(null);
   const facerRef = React.useRef<Facer | null>(null);
   const boxRef = React.useRef<View>(null);
   const layoutRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -720,12 +1002,46 @@ export const Body3D = React.forwardRef<
         if (!rect || !v) return null;
         return { x: rect.x + ((v.x + 1) / 2) * rect.width, y: rect.y + ((1 - v.y) / 2) * rect.height };
       },
-      beginRotate: () => (startRot.current = rotRef.current),
+      projectPoint: (p) => {
+        const node = boxRef.current as unknown as { getBoundingClientRect?: () => DOMRect } | null;
+        const rect = node?.getBoundingClientRect?.() ?? layoutRef.current;
+        const v = pointProjectorRef.current?.(p);
+        if (!rect || !v) return null;
+        return { x: rect.x + ((v.x + 1) / 2) * rect.width, y: rect.y + ((1 - v.y) / 2) * rect.height, visible: v.visible };
+      },
+      beginRotate: () => {
+        startRot.current = rot.current.target;
+        startTilt.current = rot.current.tiltTarget;
+        startDrag();
+      },
+      endRotate: () => endDrag(),
       remeasure: () => measure(),
-      rotateTo: (d) => setRotationY(startRot.current + d),
+      rotateTo: (d, dy = 0) => {
+        setRotationY(startRot.current + d);
+        if (dy) {
+          const r = rot.current;
+          // ลากขึ้น = มองจากด้านล่าง · ลากลง = มองจากด้านบน (จำกัดไม่ให้พลิกหัวกลับ)
+          r.tiltTarget = Math.max(-TILT_MAX, Math.min(TILT_MAX, startTilt.current + dy));
+          r.kick();
+        }
+      },
+      beginZoom: () => (startZoom.current = rot.current.zoomTarget),
+      zoomTo: (scale) => {
+        const r = rot.current;
+        // นิ้วกางออก (scale > 1) = เข้าใกล้
+        r.zoomTarget = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, startZoom.current / scale));
+        r.kick();
+      },
+      resetView: () => {
+        const r = rot.current;
+        r.tiltTarget = 0;
+        r.zoomTarget = 1;
+        r.kick();
+      },
       face: (side) =>
         setRotationY((cur) => {
-          const target = side === 'back' ? Math.PI - restRef.current : restRef.current;
+          // หน้า · ขวา (ขวาของผู้ป่วยหันมาหากล้อง) · หลัง · ซ้าย
+          const target = side === 'back' ? Math.PI - restRef.current : side === 'right' ? Math.PI / 2 : side === 'left' ? -Math.PI / 2 : restRef.current;
           const turns = Math.round((cur - target) / (2 * Math.PI));
           return target + turns * 2 * Math.PI;
         }),
@@ -766,16 +1082,20 @@ export const Body3D = React.forwardRef<
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6,
         onPanResponderGrant: () => {
           moved.current = false;
-          startRot.current = rotRef.current;
+          startRot.current = rot.current.target;
+          startTilt.current = rot.current.tiltTarget;
+          startDrag();
         },
         onPanResponderMove: (_, g) => {
           if (Math.abs(g.dx) > 6) moved.current = true;
           setRotationY(startRot.current + g.dx / 80);
+          rot.current.tiltTarget = Math.max(-TILT_MAX, Math.min(TILT_MAX, startTilt.current + g.dy / 160));
         },
         onPanResponderRelease: (e) => {
+          endDrag();
           if (!moved.current) tap(e.nativeEvent.pageX, e.nativeEvent.pageY);
         },
       }),
@@ -787,7 +1107,8 @@ export const Body3D = React.forwardRef<
     onPointerDown: (e: PointerEvent) => {
       dragX.current = e.nativeEvent.clientX;
       moved.current = false;
-      startRot.current = rotRef.current;
+      startRot.current = rot.current.target;
+      startDrag();
       (e.currentTarget as unknown as Element | null)?.setPointerCapture?.(e.nativeEvent.pointerId);
     },
     onPointerMove: (e: PointerEvent) => {
@@ -799,8 +1120,12 @@ export const Body3D = React.forwardRef<
     onPointerUp: (e: PointerEvent) => {
       if (dragX.current !== null && !moved.current) tap(e.nativeEvent.clientX, e.nativeEvent.clientY);
       dragX.current = null;
+      endDrag();
     },
-    onPointerCancel: () => (dragX.current = null),
+    onPointerCancel: () => {
+      dragX.current = null;
+      endDrag();
+    },
   };
 
   return (
@@ -809,6 +1134,8 @@ export const Body3D = React.forwardRef<
         // เว็บ: วัดขนาดจาก offsetWidth (ไม่รวม transform) — หุ่นถูกย่อด้วย transform จากภายนอก ถ้าวัดแบบรวม transform canvas จะเล็กซ้อนสองชั้น
         resize={{ offsetSize: true }}
         frameloop="demand"
+        // ความละเอียด: จอ 3x วาดพิกเซลมากกว่า 2x ถึง 2.25 เท่า แต่ตาแทบไม่เห็นต่าง → จำกัดไว้ (ThaiWellAI: 1.5 บนเว็บ)
+        dpr={Platform.OS === 'web' ? [1, 1.5] : Math.min(PixelRatio.get(), 2)}
         camera={{ position: [0, 0, cameraZ], fov: t.fov }}
         style={{ width, height, position: 'absolute', left: 0, top: 0 }}
         gl={{ alpha: true, antialias: true }}
@@ -824,9 +1151,18 @@ export const Body3D = React.forwardRef<
         {Platform.OS === 'web' ? <RoomEnv /> : null}
         {/* Suspense ต้องอยู่ใน Canvas เพราะ useLoader suspend ภายใน renderer ของ three */}
         <React.Suspense fallback={null}>
-          {url ? <Figure url={url} pins={pins} marks={marks} rotationY={rotationY} pickerRef={pickerRef} projectorRef={projectorRef} facerRef={facerRef} /> : null}
+          {url ? <Figure url={url} pins={pins} marks={marks} markColor={markColor} rot={rot} pickerRef={pickerRef} projectorRef={projectorRef} pointProjectorRef={pointProjectorRef} facerRef={facerRef} onReady={() => setReady(true)} /> : null}
         </React.Suspense>
       </Canvas>
+      {/* ระหว่างโหลดหุ่น (เกิน 300ms): เงาโครงร่างคน + แสงวิ่ง → จางหายเมื่อเฟรมแรกขึ้น */}
+      {showSkeleton ? (
+        <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width, height, alignItems: 'center', justifyContent: 'center', opacity: skeletonFade }}>
+          {/* เงาหุ่นหายใจเข้า-ออก (pulse) แทนแสงวิ่ง — แสงวิ่งจะเป็นแถบสี่เหลี่ยมทับพื้นหลังหน้าแรก */}
+          <Animated.View style={{ opacity: pulse }}>
+            <BodySilhouette height={height * 0.86} color="rgba(120,128,140,0.2)" />
+          </Animated.View>
+        </Animated.View>
+      ) : null}
       {interactive ? (
         // ชั้นรับแตะ/ลากวางทับ canvas — canvas กิน pointer event เอง
         <View

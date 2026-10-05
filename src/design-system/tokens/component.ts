@@ -12,7 +12,7 @@ export const componentTokens = {
   button: {
     height: { sm: sizing.control.sm, md: sizing.control.md, lg: sizing.control.lg },
     paddingX: { sm: space[3], md: space[4], lg: space[6] },
-    radius: radius.md,
+    radius: radius.full,
     gap: space[2],
     label: { sm: 'labelMd', md: 'labelLg', lg: 'labelLg' } as Record<'sm' | 'md' | 'lg', TypeVariant>,
   },
@@ -45,7 +45,8 @@ export const componentTokens = {
   body3d: { width: 232, height: 583, pinRadius: 0.035, fov: 28, cameraZ: 4.4 },
   /** Floating capsule tab bar */
   /** dock ลอย: tab menu + ส่วนเสริม (ช่องแชท AI) บน surface เดียว · marginBottom เว้นเพิ่มจาก safe area */
-  dock: { height: 64, radius: radius.full, surfaceRadius: 28, padding: 6, item: 52, marginX: space[5], marginBottom: space[3] },
+  /** ThaiWell back-office dock: ปุ่ม 44 · padding 8 · ช่องห่าง 8 · กว้างตามเนื้อหา (กึ่งกลางจอ) */
+  dock: { height: 60, radius: radius.full, surfaceRadius: 28, padding: 8, gap: 8, item: 44, marginX: space[5], marginBottom: space[3], blur: 32 },
   /** ลูกแก้ว AI */
   orb: { sm: 32, md: 44, lg: 120, hero: 184 },
   /** LatticeLoader — สถานะ AI กำลังคิด (React Bits) */
@@ -63,7 +64,7 @@ export const componentTokens = {
   input: { height: sizing.control.md, radius: radius.md, paddingX: space[4] },
   listItem: { minHeight: 56, paddingX: space[4], paddingY: space[3], gap: space[3] },
   badge: { height: 24, paddingX: space[2], radius: radius.full },
-  banner: { radius: radius.md, padding: space[4], gap: space[3] },
+  banner: { radius: radius.lg, padding: space[4], gap: space[3] },
   appBar: { height: sizing.appBar, paddingX: space[2] },
   sheet: { radius: radius.xl, padding: space[6] },
   chatBubble: { radius: radius.lg, padding: space[3], maxWidthRatio: 0.82 },

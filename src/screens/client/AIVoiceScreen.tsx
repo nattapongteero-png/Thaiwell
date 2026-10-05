@@ -19,7 +19,7 @@ const SCRIPT: { from: 'ai' | 'user'; text: string }[] = [
   { from: 'user', text: 'ประมาณหกค่ะ' },
   { from: 'ai', text: 'มีชาหรืออ่อนแรงแขน หรือมีไข้ไหมคะ' },
   { from: 'user', text: 'ไม่มีค่ะ' },
-  { from: 'ai', text: 'ขอบคุณค่ะ สรุปอาการให้ในแชทแล้วนะคะ' },
+  { from: 'ai', text: 'ขอบคุณค่ะ เล่าอาการต่อในแชทเพื่อประเมินให้ครบได้เลยนะคะ' },
 ];
 
 const STATUS: Record<Phase, string> = {

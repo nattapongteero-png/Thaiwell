@@ -32,7 +32,9 @@ const ORDER: ElementKey[] = ['ดิน', 'น้ำ', 'ลม', 'ไฟ'];
 export function ElementQuizScreen() {
   const nav = useNav();
   const { colors } = useTheme();
-  const { elements, setElements, log } = useJourney();
+  const { elements, setElements, log, newPatient, elementsDone } = useJourney();
+  // คนใหม่ที่ยังไม่เคยทำ → ไม่มี "ผลที่บันทึกไว้" (ไม่แสดงค่าตัวอย่าง)
+  const hasSaved = elementsDone || !newPatient;
   const [answers, setAnswers] = React.useState<(ElementKey | undefined)[]>(Array(ELEMENT_QUIZ.length).fill(undefined));
   const answered = answers.filter(Boolean).length;
   const done = answered === ELEMENT_QUIZ.length;
@@ -55,6 +57,7 @@ export function ElementQuizScreen() {
         />
       }
     >
+      {done || hasSaved ? (
       <Card>
         <Text variant="bodyXs" tone="secondary">
           {done ? 'ผลประเมินล่าสุด' : 'ผลที่บันทึกไว้'} · ธาตุเจ้าเรือนปัจจุบัน
@@ -78,6 +81,7 @@ export function ElementQuizScreen() {
         <Text variant="bodySm">แนวโน้ม: {info.tendency}</Text>
         {info.foods ? <Text variant="bodySm">อาหารที่ช่วยปรับสมดุล: {info.foods}</Text> : null}
       </Card>
+      ) : null}
 
       <SectionHeader title="เลือกข้อที่ตรงกับคุณที่สุด" subtitle="ข้อละ 1 คำตอบ" />
       <ProgressBar value={answered / ELEMENT_QUIZ.length} />

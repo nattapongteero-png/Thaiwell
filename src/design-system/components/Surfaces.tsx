@@ -22,7 +22,7 @@ export function Card({ children, onPress, elevation: lvl = 1, variant = 'outline
     borderRadius: componentTokens.card.radius,
     padding: componentTokens.card.padding,
     gap: componentTokens.card.gap,
-    backgroundColor: variant === 'filled' ? colors.surface.sunken : colors.surface.raised,
+    backgroundColor: variant === 'filled' ? colors.surface.sunken : colors.surface.default,
     borderWidth: variant === 'outlined' ? 1 : 0,
     borderColor: colors.border.subtle,
     ...(variant === 'elevated' ? elevation[lvl] : null),
@@ -72,7 +72,8 @@ export function SectionHeader({
             {overline.toUpperCase()}
           </Text>
         ) : null}
-        <Text variant="titleLg" accessibilityRole="header">
+        {/* ป้ายกลุ่มแบบเดียวกับป้ายหัวการ์ดหน้าแรก (เล็ก สีรอง) — เนื้อหาในการ์ดเด่นกว่าป้าย */}
+        <Text variant="labelMd" tone="secondary" accessibilityRole="header">
           {title}
         </Text>
         {subtitle ? (

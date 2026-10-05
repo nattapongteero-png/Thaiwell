@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { Animated, Easing, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -11,7 +11,7 @@ import { Text } from './Text';
 export interface TabItem {
   label: string;
   /** render icon ด้วยสีตามสถานะ active/inactive */
-  icon: (color: string, size: number) => React.ReactNode;
+  icon: (color: string, size: number, active: boolean) => React.ReactNode;
 }
 
 /* ------------------------------------------------------------------ Dock context
@@ -134,71 +134,184 @@ export function TabBar({ state, navigation, items, hideTabs }: BottomTabBarProps
       {dock?.fab && !(hideTabs || dock?.hideTabs) ? (
         <View
           pointerEvents="box-none"
-          style={{ position: 'absolute', right: t.marginX, bottom: insets.bottom + t.marginBottom + t.height + space[3], width: t.height, height: t.height, zIndex: 2 }}
+          style={{ position: 'absolute', right: t.marginX, bottom: insets.bottom + t.marginBottom + t.height + space[3], width: componentTokens.voice.cta, height: componentTokens.voice.cta, zIndex: 2 }}
         >
           {dock.fab}
         </View>
       ) : null}
-      {hideTabs || dock?.hideTabs ? null : (
-      <View
-        accessibilityRole="tablist"
-        style={{
+      {hideTabs || dock?.hideTabs ? null : <DockTabs state={state} navigation={navigation} items={items} />}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ DockTabs
+ * ตามต้นแบบ ThaiWellAI (Dock.tsx · framer-motion):
+ * - pill ขาวเลื่อนไปหาแท็บที่เลือก (layoutId) · spring soft (stiffness 300 · damping 32 · mass 0.9)
+ * - ชื่อแท็บกาง/หุบ (width 0 → auto + opacity) ด้วย spring เดียวกัน แท็บข้าง ๆ ขยับตาม
+ * - ไอคอนแท็บที่เพิ่งเลือก: scale 0.8 → 1.12 → 1 · rotate 0 → -6° → 0 (0.45 วิ ease [0.22,1,0.36,1])
+ * - dock เลื่อนขึ้น 40 + จางเข้า ตอนแสดงครั้งแรก (delay 0.25 วิ)
+ * pill = ผลรวมถ่วงน้ำหนักตำแหน่งแท็บด้วยค่า p ของแต่ละแท็บ (แท็บเก่า p 1→0 · ใหม่ 0→1 spring เดียวกัน → รวมกัน = 1 ตลอด)
+ */
+const SOFT = { stiffness: 300, damping: 32, mass: 0.9, useNativeDriver: false } as const;
+const LABEL_GAP = 8;
+const PAD_X = 11;
+const PAD_ACTIVE_EXTRA = 5; // paddingRight 16 ตอนเลือก
+
+function DockTabs({ state, navigation, items }: Pick<BottomTabBarProps, 'state' | 'navigation'> & { items: Record<string, TabItem> }) {
+  const { colors } = useTheme();
+  const t = componentTokens.dock;
+  const iconSize = componentTokens.tabBar.icon;
+  // route ที่ไม่มีใน items = หน้าที่เข้าจากที่อื่น (ไม่แสดงเป็นแท็บ)
+  const tabs = state.routes.map((r, i) => ({ route: r, index: i, item: items[r.name] })).filter((x) => !!x.item);
+  const base = Math.max(t.item, iconSize + PAD_X * 2);
+
+  const p = React.useRef(tabs.map((x) => new Animated.Value(state.index === x.index ? 1 : 0))).current;
+  const pop = React.useRef(tabs.map(() => new Animated.Value(1))).current;
+  // จำนวนแท็บเปลี่ยน (เพิ่มเมนู / fast refresh) → เติมค่า animation ให้ครบทุกแท็บ ไม่งั้นแท็บใหม่ไม่มีค่า (crash)
+  tabs.forEach((x, k) => {
+    if (!p[k]) p[k] = new Animated.Value(state.index === x.index ? 1 : 0);
+    if (!pop[k]) pop[k] = new Animated.Value(1);
+  });
+  const enter = React.useRef(new Animated.Value(0)).current;
+  const [labelW, setLabelW] = React.useState<number[]>(() => tabs.map(() => 0));
+
+  React.useEffect(() => {
+    Animated.spring(enter, { ...SOFT, toValue: 1, delay: 250, useNativeDriver: true }).start();
+  }, [enter]);
+  const first = React.useRef(true);
+  React.useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    Animated.parallel(
+      tabs.flatMap((x, k) => {
+        const on = state.index === x.index;
+        const a: Animated.CompositeAnimation[] = [Animated.spring(p[k], { ...SOFT, toValue: on ? 1 : 0 })];
+        if (on) {
+          pop[k].setValue(0);
+          a.push(Animated.timing(pop[k], { toValue: 1, duration: 450, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: true }));
+        }
+        return a;
+      }),
+    ).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.index]);
+
+  // ความกว้างแต่ละแท็บ = ฐาน + p × (ชื่อ + ช่องไฟ + padding ขวาที่เพิ่ม)
+  const widths = tabs.map((_, k) => Animated.add(base, Animated.multiply(p[k], labelW[k] ? labelW[k] + LABEL_GAP + PAD_ACTIVE_EXTRA : 0)));
+  const xs: Animated.AnimatedInterpolation<number>[] = [];
+  let acc: Animated.AnimatedInterpolation<number> = Animated.add(0, 0);
+  widths.forEach((w) => {
+    xs.push(acc);
+    acc = Animated.add(Animated.add(acc, w), t.gap);
+  });
+  let pillX: Animated.AnimatedInterpolation<number> = Animated.add(t.padding, 0);
+  let pillW: Animated.AnimatedInterpolation<number> = Animated.add(0, 0);
+  tabs.forEach((_, k) => {
+    pillX = Animated.add(pillX, Animated.multiply(p[k], xs[k]));
+    pillW = Animated.add(pillW, Animated.multiply(p[k], widths[k]));
+  });
+
+  return (
+    <Animated.View
+      accessibilityRole="tablist"
+      style={[
+        {
+          // กว้างตามเนื้อหา กึ่งกลางจอ (แบบ dock ของ back-office) · แก้วฝ้า: เว็บเบลอจริง native ใช้พื้นโปร่ง
+          alignSelf: 'center',
           height: t.height,
           borderRadius: t.radius,
           padding: t.padding,
+          gap: t.gap,
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: colors.dock.bg,
+          backgroundColor: Platform.OS === 'web' ? colors.dock.bg : 'rgba(255,255,255,0.86)',
           borderWidth: 1,
           borderColor: colors.dock.border,
-          shadowColor: '#0F172A',
-          shadowOpacity: 0.12,
-          shadowRadius: 20,
-          shadowOffset: { width: 0, height: 8 },
+          shadowColor: '#000000',
+          shadowOpacity: 0.2,
+          shadowRadius: 32,
+          shadowOffset: { width: 0, height: 10 },
           elevation: 6,
-        }}
-      >
-        {state.routes.map((route, i) => {
-          const item = items[route.name];
-          // route ที่ไม่มีใน items = หน้าที่เข้าจากที่อื่น (ไม่แสดงเป็นแท็บ)
-          if (!item) return null;
-          const focused = state.index === i;
-          const color = focused ? colors.dock.activeFg : colors.text.secondary;
-          return (
-            <Pressable
-              key={route.key}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: focused }}
-              accessibilityLabel={item?.label ?? route.name}
-              onPress={() => {
-                const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
-              }}
-              style={{
-                height: t.item,
-                minWidth: t.item,
-                flex: focused ? 1 : undefined,
-                borderRadius: t.item / 2,
-                paddingHorizontal: focused ? space[4] : 0,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: space[2],
-                backgroundColor: focused ? colors.dock.activeBg : 'transparent',
-              }}
-            >
-              {item?.icon(color, iconSize)}
-              {focused ? (
-                <Text variant="labelMd" color={color} numberOfLines={1} style={{ fontFamily: fontFamily.semibold }}>
-                  {item?.label ?? route.name}
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
+          opacity: enter,
+          transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+        },
+        Platform.OS === 'web' ? ({ backdropFilter: `blur(${t.blur}px) saturate(1.6)`, WebkitBackdropFilter: `blur(${t.blur}px) saturate(1.6)` } as object) : null,
+      ]}
+    >
+      {/* วัดความกว้างชื่อแท็บ (มองไม่เห็น) */}
+      <View pointerEvents="none" style={{ position: 'absolute', opacity: 0, left: 0, top: 0, width: 400 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {tabs.map((x, k) => (
+          <View key={x.route.key} style={{ position: 'absolute' }} onLayout={(e) => {
+            const w = Math.ceil(e.nativeEvent.layout.width) + 1;
+            setLabelW((prev) => {
+              if (prev[k] === w) return prev;
+              const next = [...prev];
+              next[k] = w;
+              return next;
+            });
+          }}>
+            <Text numberOfLines={1} style={{ fontFamily: fontFamily.semibold, fontSize: 13, lineHeight: 20 }}>
+              {x.item.label}
+            </Text>
+          </View>
+        ))}
       </View>
-      )}
-    </View>
+      {/* pill ขาวของแท็บที่เลือก — เลื่อน/ยืดตามแท็บ */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: t.padding,
+          left: pillX,
+          width: pillW,
+          height: t.item,
+          borderRadius: t.item / 2,
+          backgroundColor: colors.dock.activeBg,
+          shadowColor: '#000000',
+          shadowOpacity: 0.16,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 3,
+        }}
+      />
+      {tabs.map((x, k) => {
+        const { route, item } = x;
+        const focused = state.index === x.index;
+        const color = focused ? colors.dock.activeFg : colors.dock.fg;
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: focused }}
+            accessibilityLabel={item.label}
+            onPress={() => {
+              const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
+            }}
+          >
+            <Animated.View style={{ width: widths[k], height: t.item, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: (base - iconSize) / 2 }}>
+              <Animated.View
+                style={{
+                  transform: [
+                    { scale: pop[k].interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.8, 1.12, 1] }) },
+                    { rotate: pop[k].interpolate({ inputRange: [0, 0.5, 1], outputRange: ['0deg', '-6deg', '0deg'] }) },
+                  ],
+                }}
+              >
+                {item.icon(color, iconSize, focused)}
+              </Animated.View>
+              {/* ไม่หดตามช่อง (ถูกตัดด้วยขอบแท็บแทน → กางออกทีละนิด ไม่ขึ้น …) */}
+              <Animated.View style={{ marginLeft: LABEL_GAP, opacity: p[k], flexShrink: 0 }}>
+                <Text color={colors.dock.label} style={{ fontFamily: fontFamily.semibold, fontSize: 13, lineHeight: 20, width: labelW[k] || undefined }}>
+                  {item.label}
+                </Text>
+              </Animated.View>
+            </Animated.View>
+          </Pressable>
+        );
+      })}
+    </Animated.View>
   );
 }

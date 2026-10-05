@@ -81,6 +81,7 @@ export function Banner({
   action?: React.ReactNode;
 }) {
   const c = useToneColors(tone);
+  const { colors } = useTheme();
   const t = componentTokens.banner;
   const defaultIcon: IconName = tone === 'danger' ? 'x-octagon' : tone === 'warning' ? 'alert-triangle' : tone === 'success' ? 'check-circle' : tone === 'ai' ? 'cpu' : 'info';
   return (
@@ -89,18 +90,17 @@ export function Banner({
       style={{
         borderRadius: t.radius,
         padding: t.padding,
-        backgroundColor: c.bg,
+        // การ์ดเรียบแบบหน้าแรก (ไม่ใช้แถบสีซ้าย/พื้นสี) · สีบอกระดับอยู่ที่ไอคอนและหัวข้อ
+        backgroundColor: colors.surface.default,
         borderWidth: 1,
-        borderColor: c.border,
-        borderLeftWidth: 4,
-        borderLeftColor: c.solid,
+        borderColor: colors.border.subtle,
         flexDirection: 'row',
         gap: t.gap,
       }}
     >
       <Icon name={icon ?? defaultIcon} color={c.fg} />
       <View style={{ flex: 1, gap: space[1] }}>
-        <Text variant="titleSm" color={c.fg}>
+        <Text variant="labelLg" color={tone === 'info' || tone === 'neutral' ? colors.text.primary : c.fg}>
           {title}
         </Text>
         {message ? (

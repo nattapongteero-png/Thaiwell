@@ -24,7 +24,7 @@ export function Chip({
   const t = componentTokens.chip;
   const bg = selected ? colors.brand.primary : tone === 'ai' ? colors.ai.bg : colors.surface.default;
   const fg = selected ? colors.brand.onPrimary : tone === 'ai' ? colors.ai.fg : colors.text.primary;
-  const border = selected ? colors.brand.primary : tone === 'ai' ? colors.ai.border : colors.border.default;
+  const border = selected ? colors.brand.primary : tone === 'ai' ? colors.ai.border : colors.border.subtle;
   return (
     <Pressable
       accessibilityRole="button"

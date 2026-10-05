@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Image, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import {
   AILabel,
   AppBar,
@@ -27,16 +27,37 @@ import {
   VStack,
   space,
   useTheme,
+  StretchDemo,
+  stretchGif,
+  fontFamily,
+  radius,
+  LoadingImage, ScreenSkeleton, useScreenData,
+  Panel,
+  TINT,
+  StatTile,
+  Tag,
 } from '../../design-system';
 import { KH_SOURCES, SYMPTOM_GROUPS } from '../../data/thaiMassageKnowledge';
+import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
+import { NotFoundScreen } from './NotFound';
 
 /* ============================================================ 15 POST-SERVICE ASSESSMENT */
 
-export function PostAssessmentScreen() {
+export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: string; draftId?: string; looseId?: string } } }) {
   const nav = useNav();
-  const { before, setAfter, log, newPatient, setCareStage, drafts, activeDraftId, promoteDraft } = useJourney();
+  const { before, setBefore, setAfter, log, newPatient, setCareStage, drafts, promoteDraft, cases, recordCaseVisit, removeLooseBooking } = useJourney();
+  // นวดของเรื่องไหน (ส่งต่อมาจากเช็กอิน) → บันทึกผลลงเรื่องนั้นเท่านั้น
+  const target = route?.params ?? {};
+  const draft = drafts.find((x) => x.id === target.draftId);
+  const tc = cases.find((c) => c.id === target.caseId);
+  // ก่อนนวด = คะแนนของเรื่องนี้ (ใบร่าง = ตอนประเมิน · ใบการรักษา = ก่อนนวดครั้งล่าสุด)
+  const basePain = draft?.pain ?? tc?.visits[tc.visits.length - 1]?.painBefore ?? before.pain;
+  React.useEffect(() => {
+    if (basePain !== before.pain) setBefore({ ...before, pain: basePain });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basePain]);
   const [pain, setPain] = React.useState<number | undefined>();
   const [stiff, setStiff] = React.useState<number | undefined>();
   const [relax, setRelax] = React.useState<number | undefined>();
@@ -55,12 +76,15 @@ export function PostAssessmentScreen() {
           disabled={!complete}
           onPress={() => {
             setAfter({ pain: pain!, stiffness: stiff!, mobility: Math.min(5, before.mobility + 2), stress: Math.max(1, before.stress - 2), sleep: before.sleep });
-            log('ผู้รับบริการ', 'บันทึกแบบประเมินหลังนวด');
+            log('ผู้รับบริการ', `บันทึกแบบประเมินหลังนวด · ปวด ${basePain} → ${pain}`);
+            // อาการผิดปกติหลังนวด → บันทึกแจ้งผู้ให้บริการ (ข้อความบนหน้านี้บอกว่าแจ้งแล้ว)
+            if (hasAdverse) log('ระบบ → ผู้ให้บริการ', `แจ้งอาการผิดปกติหลังนวด: ${adverse.join(', ')}`);
             if (newPatient) setCareStage('served');
-            // ใบร่างที่มารับบริการ → นวดครั้งแรกแล้ว ผู้ให้บริการตั้งชื่อโรค → กลายเป็นใบการรักษา (แท็บ "รักษา…")
-            const d = drafts.find((x) => x.id === activeDraftId);
-            if (d) promoteDraft(d.id, pain!);
-            nav.navigate('SessionResult');
+            // ใบร่าง → นวดครั้งแรกแล้ว ผู้ให้บริการตั้งชื่อโรค → ใบการรักษา · ใบการรักษา → เพิ่มครั้งการรักษา · จองไว้ก่อนประเมิน → นัดนี้ใช้แล้ว
+            if (draft) promoteDraft(draft.id, pain!);
+            else if (tc) recordCaseVisit(tc.id, basePain, pain!);
+            else if (target.looseId) removeLooseBooking(target.looseId);
+            nav.navigate('SessionResult', { caseId: draft ? `case-${draft.id}` : tc?.id });
           }}
         />
       }
@@ -94,28 +118,40 @@ export function PostAssessmentScreen() {
 
 /* ============================================================ 16 SESSION RESULT */
 
-export function SessionResultScreen() {
+export function SessionResultScreen({ route }: { route?: { params?: { caseId?: string } } }) {
   const nav = useNav();
   const { colors } = useTheme();
   const { before, after } = useJourney();
-  const a = after ?? { pain: 3, stiffness: 3, mobility: 4, stress: 2, sleep: 2 };
+  const caseId = route?.params?.caseId;
+  // ยังไม่มีผลหลังนวด → ไม่แต่งตัวเลขขึ้นเอง
+  if (!after) return <NotFoundScreen title="ผลลัพธ์ครั้งนี้" message="ยังไม่มีผลหลังนวด" />;
+  const a = after;
+  // หัวข้อตามผลจริง (ไม่บอกว่าดีขึ้นทุกครั้ง)
+  const diff = before.pain - a.pain;
+  const verdict = diff >= 2 ? { t: 'อาการดีขึ้นชัดเจน', icon: 'award' as const, tone: colors.status.success } : diff >= 1 ? { t: 'อาการดีขึ้นเล็กน้อย', icon: 'trending-down' as const, tone: colors.status.success } : diff === 0 ? { t: 'อาการใกล้เคียงเดิม', icon: 'minus' as const, tone: colors.status.warning } : { t: 'ปวดมากขึ้นหลังนวด', icon: 'alert-triangle' as const, tone: colors.status.danger };
 
   return (
     <Screen
       header={<AppBar title="ผลลัพธ์ครั้งนี้" onBack={() => nav.goBack()} />}
       footer={
         <>
-          <Button label="จองครั้งถัดไป" iconLeft="calendar" onPress={() => nav.navigate('ClientTabs', { screen: 'Booking' })} />
-          <Button label="กลับหน้าแรก" variant="secondary" onPress={() => nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] })} />
+          {/* ปวดมากขึ้น → ให้แพทย์ดูก่อน ไม่ชวนจองต่อ */}
+          {diff < 0 ? (
+            <Button label="ดูคำแนะนำ" onPress={() => nav.navigate('RedFlag', { reason: 'ปวดมากขึ้นหลังนวด' })} />
+          ) : (
+            <Button label="จองครั้งถัดไป" iconLeft="calendar" onPress={() => nav.navigate('Booking', caseId ? { caseId } : undefined)} />
+          )}
+          {/* กลับหน้าแรก (ไม่ reset → แชทและข้อมูลในหน้าแรกไม่หาย) */}
+          <Button label="กลับหน้าแรก" variant="secondary" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />
         </>
       }
     >
       <View style={{ alignItems: 'center', gap: 8 }}>
-        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.status.success.bg, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="award" size="xl" color={colors.status.success.fg} />
+        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: verdict.tone.bg, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={verdict.icon} size="xl" color={verdict.tone.fg} />
         </View>
         <Text variant="headlineSm" align="center">
-          อาการดีขึ้นอย่างชัดเจน
+          {verdict.t}
         </Text>
       </View>
 
@@ -146,7 +182,8 @@ export function SessionResultScreen() {
       <Card variant="filled">
         <AILabel text="สรุปโดย AI · ผู้ให้บริการตรวจแล้ว" />
         <Text variant="bodyMd">
-          ครั้งนี้เน้นคอ–บ่าขวาด้วยแรงกดเบา–ปานกลางตามข้อควรระวังเรื่องความดัน ผลตอบสนองดีใกล้เคียงครั้งก่อน แนะนำยืดคอทุก 1 ชั่วโมงระหว่างทำงาน
+          {`ความปวด ${before.pain} → ${a.pain} ความตึง ${before.stiffness} → ${a.stiffness}`}
+          {diff >= 1 ? ' ตอบสนองต่อการนวดดี ทำท่ายืดที่บ้านต่อเนื่อง' : diff === 0 ? ' ผู้ให้บริการจะปรับแผนครั้งถัดไป' : ' แนะนำให้แพทย์ประเมินก่อนนวดครั้งถัดไป'}
         </Text>
       </Card>
 
@@ -207,16 +244,16 @@ export function FollowUpScreen() {
           <>
             {/* ดีขึ้น → นัดครั้งถัดไป · แย่ลง (ปวด บวม ชา มากขึ้นหลังรักษา = ส่งต่อ, CPG หน้า 139) → พบแพทย์ */}
             {worse ? (
-              <Button label="ดูคำแนะนำ" onPress={() => nav.navigate('RedFlag')} />
+              <Button label="ดูคำแนะนำ" onPress={() => nav.navigate('RedFlag', { reason: issue.includes('ชา/อ่อนแรง') ? 'ชา/อ่อนแรงหลังนวด' : 'ปวดมากขึ้นหลังนวด' })} />
             ) : (
-              <Button label="จองครั้งถัดไป" iconLeft="calendar" onPress={() => nav.navigate('ClientTabs', { screen: 'Booking' })} />
+              <Button label="จองครั้งถัดไป" iconLeft="calendar" onPress={() => nav.navigate('Booking')} />
             )}
-            <Button label="กลับหน้าแรก" variant="secondary" onPress={() => nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] })} />
+            <Button label="กลับหน้าแรก" variant="secondary" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />
           </>
         }
       >
         {worse ? (
-          <Banner tone="danger" title="แนะนำให้พบแพทย์" message="คลินิกจะติดต่อกลับภายในวันนี้" />
+          <Banner tone="danger" title="แนะนำให้พบแพทย์" message="แจ้งผู้ให้บริการแล้ว คลินิกจะติดต่อกลับภายในวันนี้" />
         ) : (
           <Banner tone="success" title="บันทึกแล้ว" message="ผู้ให้บริการจะใช้ผลนี้วางแผนครั้งถัดไป" />
         )}
@@ -232,7 +269,9 @@ export function FollowUpScreen() {
           label="ส่งคำตอบ"
           disabled={pain === undefined || sleep === undefined}
           onPress={() => {
-            log('ผู้รับบริการ', 'ตอบแบบติดตามผล 3 วัน');
+            log('ผู้รับบริการ', `ตอบแบบติดตามผล 3 วัน · ปวด ${pain}${issue.length ? ` · ${issue.join(', ')}` : ''}`);
+            // แย่ลง → แจ้งคลินิกให้ติดต่อกลับ (ข้อความในหน้าผลบอกว่าแจ้งแล้ว)
+            if (worse) log('ระบบ → ผู้ให้บริการ', 'ติดตามผล: อาการแย่ลง ขอให้ติดต่อกลับวันนี้');
             setSent(true);
           }}
         />
@@ -266,12 +305,101 @@ export function FollowUpScreen() {
 /* ============================================================ 18 SELF-CARE */
 
 /** ท่าฤๅษีดัดตนตาม 7 กลุ่มอาการ (Knowledge Hub: ยืดเหยียด 7 กลุ่มอาการ) */
-export function SelfCareScreen() {
+/** หลักการยืด (CPG_PCU หน้า 152–153) */
+const SAFE_STRETCH = ['ยืดช้า ๆ จนรู้สึกตึง', 'ไม่เหวี่ยงหรือขย่ม', 'หายใจตามปกติ', 'ทำต่อเนื่อง 2 สัปดาห์'];
+
+/**
+ * หน้ารวมท่ายืด (แบบ gymnerd: การ์ดภาพเคลื่อนไหว 2 คอลัมน์) — แตะการ์ด = รายละเอียดท่า
+ * กรองตามบริเวณ · ป้ายบนการ์ด = ส่วนที่ได้ยืด (สีเดียวกับบนหุ่น)
+ */
+/** หน้ารวมท่ายืด · tab = เปิดจากแท็บเมนู (ไม่มีปุ่มย้อนกลับ) */
+export function StretchListScreen({ tab }: { tab?: boolean } = {}) {
+  // โหลดข้อมูลของหน้า (ครั้งแรก) → skeleton
+  const loading = useScreenData('stretch-list');
   const nav = useNav();
   const { colors } = useTheme();
-  const [groupId, setGroupId] = React.useState('office');
+  const { width } = useWindowDimensions();
+  const [area, setArea] = React.useState('ทั้งหมด');
+  const AREAS = ['ทั้งหมด', 'คอ บ่า ไหล่', 'หลัง สะโพก', 'มือ แขน', 'ขา เข่า', 'ใบหน้า'];
+  const AREA_OF: Record<string, string> = { office: 'คอ บ่า ไหล่', frozen_shoulder: 'คอ บ่า ไหล่', herniated_disc: 'หลัง สะโพก', piriformis: 'หลัง สะโพก', trigger_finger: 'มือ แขน', knee: 'ขา เข่า', paralysis: 'ใบหน้า' };
+  const list = SYMPTOM_GROUPS.filter((g) => area === 'ทั้งหมด' || AREA_OF[g.id] === area);
+  const colW = (Math.min(width, 480) - space[4] * 2 - space[3]) / 2;
+  return (
+    <Screen header={<AppBar title="ท่ายืดเหยียด" subtitle="ฤๅษีดัดตน 7 กลุ่มอาการ" onBack={tab ? undefined : () => nav.goBack()} />}>
+      {loading ? (
+        <ScreenSkeleton variant="grid" count={6} />
+      ) : (
+      <>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[2], paddingHorizontal: space[4] }}>
+        {AREAS.map((a) => {
+          const on = a === area;
+          return (
+            <Pressable
+              key={a}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              onPress={() => setArea(a)}
+              style={{ height: 36, paddingHorizontal: space[4], borderRadius: radius.full, justifyContent: 'center', backgroundColor: on ? colors.text.primary : colors.surface.default, borderWidth: 1, borderColor: on ? colors.text.primary : colors.border.subtle }}
+            >
+              <Text variant="labelMd" color={on ? colors.text.inverse : colors.text.primary}>
+                {a}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
+        {list.map((g) => {
+          const m = STRETCH_MOTION[g.stretch.name];
+          const gif = stretchGif(m);
+          return (
+            <Pressable
+              key={g.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${g.stretch.name} ${g.short}`}
+              onPress={() => nav.push('SelfCare', { groupId: g.id })}
+              style={({ pressed }) => ({ width: colW, borderRadius: 20, overflow: 'hidden', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.85 : 1 })}
+            >
+              <View style={{ height: colW * 0.9, backgroundColor: colors.surface.sunken }}>
+                {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={colW * 0.55} style={{ width: '100%', height: '100%' }} /> : null}
+                {m ? (
+                  <View style={{ position: 'absolute', left: space[2], top: space[2], flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: 'rgba(255,255,255,0.9)' }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
+                    <Text style={{ fontFamily: fontFamily.semibold, fontSize: 11, lineHeight: 17 }}>{m.primary.label}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={{ padding: space[3], gap: 2 }}>
+                <Text variant="labelLg" numberOfLines={1}>
+                  {g.stretch.name.replace(' 7 ท่า', '')}
+                </Text>
+                <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+                  {g.short}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+      </>
+      )}
+    </Screen>
+  );
+}
+
+export function SelfCareScreen({ route }: { route: { params?: { groupId?: string } } }) {
+  if (!route.params?.groupId) return <StretchListScreen />;
+  return <StretchDetail groupId={route.params.groupId} />;
+}
+
+function StretchDetail({ groupId }: { groupId: string }) {
+  // โหลดข้อมูลของหน้า (ครั้งแรก) → skeleton
+  const loading = useScreenData(`stretch-${groupId}`);
+  const nav = useNav();
+  const { colors } = useTheme();
   const [done, setDone] = React.useState<string[]>([]);
-  const group = SYMPTOM_GROUPS.find((g) => g.id === groupId)!;
+  const group = SYMPTOM_GROUPS.find((g) => g.id === groupId);
+  if (!group) return <NotFoundScreen title="ท่ายืดเหยียด" message="ไม่พบท่านี้" />;
   const isDone = done.includes(group.id);
   // ถ้าท่านั้นไม่ระบุเวลา ใช้หลักการยืดทั่วไปของ CPG (หน้า 152): ค้าง 20–30 วินาที 5–10 ครั้ง วันละ 2 ชุด
   const dosage =
@@ -279,65 +407,79 @@ export function SelfCareScreen() {
     'ค้าง 20–30 วินาที · 5–10 ครั้ง · วันละ 2 ชุด'
 
   return (
-    <Screen header={<AppBar title="ดูแลตนเองที่บ้าน" subtitle="ท่าฤๅษีดัดตนตามกลุ่มอาการ" onBack={() => nav.goBack()} />}>
-      <ChipSection
-        title="กลุ่มอาการของคุณ"
-        options={SYMPTOM_GROUPS.map((g) => g.short)}
-        value={[group.short]}
-        onChange={(v) => {
-          const picked = SYMPTOM_GROUPS.find((g) => g.short === v[v.length - 1]);
-          if (picked) setGroupId(picked.id);
-        }}
-      />
+    <Screen header={<AppBar eyebrow="ท่ายืดเหยียด" title={group.stretch.name.replace(' 7 ท่า', '')} subtitle={group.short} onBack={() => nav.goBack()} />}>
+      {loading ? (
+        <ScreenSkeleton variant="detail" />
+      ) : (
+      <>
+      {/* ภาพท่า */}
+      <Panel>
+        {STRETCH_MOTION[group.stretch.name] ? (
+          <StretchDemo key={group.id} motion={STRETCH_MOTION[group.stretch.name]} steps={group.stretch.steps} flushTop />
+        ) : (
+          <Placeholder height={160} label="วิดีโอสาธิตท่า" icon="play-circle" />
+        )}
+        <View style={{ gap: 2 }}>
+          <Text variant="titleLg">{group.stretch.name}</Text>
+          <Text variant="bodySm" tone="secondary">
+            {group.name}
+          </Text>
+        </View>
+      </Panel>
 
-      <Card>
-        <Placeholder height={160} label="วิดีโอสาธิตท่า" icon="play-circle" />
-        <HStack justify="space-between" align="flex-start">
-          <View style={{ flex: 1, gap: space[1] }}>
-            <Text variant="titleLg">{group.stretch.name}</Text>
-            <Text variant="bodySm" tone="secondary">
-              {group.name}
+      <View style={{ flexDirection: 'row', gap: space[2] }}>
+        <StatTile label="ค้าง" value={group.stretch.hold ?? '20–30 วิ'} small />
+        <StatTile label="ทำ" value={group.stretch.reps ?? '5–10 ครั้ง'} small />
+        <StatTile label="ต่อวัน" value="2 ชุด" small />
+      </View>
+
+      <Panel icon="list" tint={TINT.green} title="ขั้นตอน" right={<Tag text={`${group.stretch.steps.length} ขั้น`} />}>
+        {group.stretch.steps.map((step, i) => (
+          <View key={step} style={{ flexDirection: 'row', gap: space[3], alignItems: 'flex-start' }}>
+            <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
+              <Text variant="labelSm" color={colors.brand.primary}>
+                {i + 1}
+              </Text>
+            </View>
+            <Text variant="bodyMd" style={{ flex: 1 }}>
+              {step}
             </Text>
           </View>
-          {isDone ? <Icon name="check-circle" color={colors.status.success.fg} /> : null}
-        </HStack>
-        {dosage ? <Badge label={dosage} tone="brand" icon="clock" /> : null}
-        <VStack gap={2}>
-          {group.stretch.steps.map((step, i) => (
-            <HStack key={step} gap={3} align="flex-start">
-              <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
-                <Text variant="labelSm" color={colors.brand.onSubtle}>
-                  {i + 1}
-                </Text>
-              </View>
-              <Text variant="bodyMd" style={{ flex: 1 }}>
-                {step}
-              </Text>
-            </HStack>
-          ))}
-        </VStack>
-        {group.stretch.benefit ? (
-          <Text variant="bodySm" tone="secondary">
-            ประโยชน์: {group.stretch.benefit}
-          </Text>
-        ) : null}
+        ))}
         <Button
           label={isDone ? 'ทำแล้ววันนี้' : 'ทำท่านี้แล้ว'}
-          variant={isDone ? 'tertiary' : 'primary'}
-          iconLeft={isDone ? 'check' : 'play'}
+          variant={isDone ? 'secondary' : 'primary'}
+          iconLeft="check"
           size="md"
           onPress={() => setDone(isDone ? done.filter((d) => d !== group.id) : [...done, group.id])}
         />
-      </Card>
+      </Panel>
 
-      <Banner
-        tone="info"
-        title="ยืดอย่างปลอดภัย"
-        message="ยืดช้า ๆ จนรู้สึกตึง ไม่เหวี่ยงหรือขย่ม ไม่กลั้นหายใจ · หยุดถ้าปวดเสียวฉับพลัน · ทำต่อเนื่อง 2 สัปดาห์ (CPG_PCU หน้า 152–153)"
-      />
-      {group.referSignals ? (
-        <Banner tone="warning" title="หยุดทำและพบแพทย์หากมีอาการ" message={group.referSignals.join(' · ')} />
+      {group.stretch.benefit ? (
+        <Panel icon="heart" tint={TINT.blue} title="ประโยชน์">
+          <Text variant="bodyMd">{group.stretch.benefit}</Text>
+        </Panel>
       ) : null}
+
+      {/* ยืดอย่างปลอดภัย (CPG_PCU หน้า 152–153) */}
+      <Panel icon="shield" tint={TINT.amber} title="ยืดอย่างปลอดภัย">
+        {SAFE_STRETCH.map((t) => (
+          <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: TINT.amber }} />
+            <Text variant="bodySm">{t}</Text>
+          </View>
+        ))}
+      </Panel>
+      <Panel icon="alert-triangle" tint={TINT.red} title="หยุดทำและพบแพทย์หาก">
+        {['ปวดเสียวฉับพลันขณะยืด', ...(group.referSignals ?? [])].map((t) => (
+          <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: TINT.red }} />
+            <Text variant="bodySm">{t}</Text>
+          </View>
+        ))}
+      </Panel>
+      </>
+      )}
     </Screen>
   );
 }

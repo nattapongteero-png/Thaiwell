@@ -47,9 +47,10 @@ export function Button({
   const t = componentTokens.button;
 
   const palette: Record<ButtonVariant, { bg: string; fg: string; border: string }> = {
-    primary: { bg: colors.brand.primary, fg: colors.brand.onPrimary, border: colors.brand.primary },
-    secondary: { bg: colors.surface.default, fg: colors.text.primary, border: colors.border.strong },
-    tertiary: { bg: colors.brand.subtle, fg: colors.brand.onSubtle, border: colors.brand.subtle },
+    // ภาษาเดียวกับหน้าแรก: ปุ่มหลัก = แคปซูลสีเข้ม (เช็กอิน / ให้คะแนน) · รอง = แคปซูลขาวขอบบาง (แก้ไข)
+    primary: { bg: colors.text.primary, fg: colors.text.inverse, border: colors.text.primary },
+    secondary: { bg: colors.surface.default, fg: colors.text.primary, border: colors.border.subtle },
+    tertiary: { bg: colors.surface.sunken, fg: colors.text.primary, border: colors.surface.sunken },
     danger: { bg: colors.status.danger.solid, fg: colors.status.danger.onSolid, border: colors.status.danger.solid },
     ghost: { bg: 'transparent', fg: colors.text.link, border: 'transparent' },
   };
@@ -71,7 +72,7 @@ export function Button({
           paddingHorizontal: t.paddingX[size],
           borderRadius: t.radius,
           backgroundColor: c.bg,
-          borderWidth: 1.5,
+          borderWidth: 1,
           borderColor: c.border,
           flexDirection: 'row',
           alignItems: 'center',

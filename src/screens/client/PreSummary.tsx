@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Linking, View } from 'react-native';
 import {
   AILabel,
   AppBar,
@@ -22,9 +22,11 @@ import {
   safetyMeta,
   useTheme,
   type RegionId,
-} from '../../design-system';
+ Panel, TINT, fontFamily, space } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
+import { useAppointment } from '../../state/appointments';
+import { NotFoundScreen } from './NotFound';
 
 /* ============================================================ 07 PRE-SERVICE SUMMARY */
 
@@ -35,23 +37,25 @@ export function PreSummaryScreen() {
   // มาจากแชท AI → ใช้ผลประเมินในแชท (ข้อมูลชุดเดียวกับการ์ด) แทนข้อมูลจากแบบฟอร์มเดิม
   const fromChat = !!lastAssess;
   const regions = (Object.entries(symptoms) as [RegionId, number][]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  const meta = safetyMeta[safety.level];
-  const isRed = safety.level === 'red';
+  // มาจากแชท → ผลความปลอดภัยของแชทนั้น (ไม่ใช่จากโปรไฟล์อย่างเดียว)
+  const level = fromChat && lastAssess?.red ? 'red' : fromChat && lastAssess?.caution && safety.level === 'green' ? 'amber' : safety.level;
+  const meta = safetyMeta[level];
+  const isRed = level === 'red';
 
   return (
     <Screen
       header={<AppBar title="สรุปก่อนรับบริการ" onBack={() => nav.goBack()} />}
       footer={
         isRed ? (
-          <Button label="ดูคำแนะนำเพื่อความปลอดภัย" variant="danger" iconRight="arrow-right" onPress={() => nav.navigate('RedFlag')} />
+          <Button label="ดูคำแนะนำเพื่อความปลอดภัย" variant="danger" iconRight="arrow-right" onPress={() => nav.navigate('RedFlag', lastAssess?.red ? { reason: `ผลประเมิน${lastAssess.symptoms.join(', ')}` } : undefined)} />
         ) : (
           <Button
             label={fromChat ? 'จองนวด' : 'ยืนยันและส่งให้ผู้ให้บริการ'}
             iconRight={fromChat ? 'calendar' : 'send'}
             onPress={() => {
               log('ผู้รับบริการ', 'ยืนยันสรุปและส่งให้ผู้ให้บริการ');
-              if (fromChat) nav.navigate('ClientTabs', { screen: 'Booking' });
-              else nav.navigate('CheckIn');
+              // ส่งแบบฟอร์มแล้ว → จองนัด (เช็กอินต้องมีนัดก่อน)
+              nav.navigate('Booking');
             }}
           />
         )
@@ -64,7 +68,12 @@ export function PreSummaryScreen() {
         tone={meta.tone}
         title={meta.label}
         message={
-          safety.level === 'green'
+          // ยังไม่ได้บอกโรคประจำตัว/ยา → ไม่บอกว่า "ไม่พบข้อควรระวัง"
+          profile.healthKnown === false
+            ? 'ยังไม่มีข้อมูลโรคประจำตัวและยา ผู้ให้บริการจะซักเพิ่มก่อนนวด'
+            : level === 'amber' && lastAssess?.caution && safety.level === 'green'
+            ? lastAssess.caution
+            : safety.level === 'green'
             ? `ตรวจแล้ว ${safety.checkedRules} ข้อ ไม่พบข้อควรระวัง`
             : isRed
               ? 'จากข้อมูลที่ให้มา ไม่แนะนำให้รับบริการนวดในวันนี้ กรุณาดูคำแนะนำ'
@@ -120,57 +129,113 @@ export function PreSummaryScreen() {
 
 /* ============================================================ 08 CHECK-IN */
 
-export function CheckInScreen() {
+export function CheckInScreen({ route }: { route?: { params?: { caseId?: string; draftId?: string; looseId?: string } } }) {
   const nav = useNav();
-  const { booking } = useJourney();
+  const { colors } = useTheme();
+  const target = route?.params ?? {};
+  // นัดของเรื่องที่แตะมา (ไม่ใช่นัดล่าสุดที่จอง)
+  const appt = useAppointment(target);
+  if (!appt) return <NotFoundScreen title="เช็กอิน" message="ยังไม่มีนัดสำหรับเช็กอิน" />;
   return (
     <Screen
       header={<AppBar title="เช็กอิน" onBack={() => nav.goBack()} />}
       footer={
-        <>
-          {/* ต้นแบบ: ข้ามช่วงที่ผู้ให้บริการนวด → ไปหลังรับบริการ */}
-          <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={() => nav.navigate('PostAssessment')} />
-        </>
+        appt.today && !appt.red ? (
+          <>
+            {/* ยังไม่ได้เล่าอาการ → แนะนำให้เล่าก่อน (ไม่บังคับ) */}
+            {appt.assessed ? null : <Button label="เล่าอาการก่อนเข้ารับบริการ" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />}
+            {/* ต้นแบบ: ข้ามช่วงที่ผู้ให้บริการนวด → ไปหลังรับบริการ (ของเรื่องนี้) */}
+            <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={() => nav.navigate('PostAssessment', appt.target)} />
+          </>
+        ) : (
+          <Button label="กลับ" variant="secondary" onPress={() => nav.goBack()} />
+        )
       }
     >
-      <VStack gap={1} align="center">
-        <Text variant="overline" tone="tertiary">
-          คิวของคุณ
-        </Text>
-        <Text variant="displayLg">{booking?.queue ?? 'A12'}</Text>
-        <Text variant="bodyMd" tone="secondary">
-          {booking ? `${booking.time} · ${booking.therapist}` : 'ห้องนวด 2'}
-        </Text>
-      </VStack>
-      <Placeholder height={200} label="QR สำหรับเช็กอินที่เคาน์เตอร์" icon="maximize" />
-      <Card>
-        <ListItem leadingIcon="check" title="ส่งข้อมูลอาการให้ผู้ให้บริการแล้ว" chevron={false} />
-        <ListItem leadingIcon="activity" title="วัดความดันและชีพจรก่อนนวด" chevron={false} />
-        <ListItem leadingIcon="clipboard" title="ตกลงแผนการนวดร่วมกัน" chevron={false} />
-      </Card>
+      {appt.red ? (
+        <Panel icon="alert-triangle" tint={TINT.red} title="ควรพบแพทย์ก่อนนวด">
+          <Text variant="bodySm" tone="secondary">
+            ผลประเมินมีสัญญาณที่ต้องให้แพทย์ตรวจก่อน แนะนำเลื่อนนัดนี้
+          </Text>
+          <Button label="ดูคำแนะนำ" variant="secondary" size="md" onPress={() => nav.navigate('RedFlag', { reason: appt.topic })} />
+        </Panel>
+      ) : !appt.today ? (
+        // เช็กอินได้เฉพาะวันนัด
+        <Panel icon="calendar" tint={TINT.amber} title="เช็กอินได้ในวันนัด">
+          <Text variant="bodySm" tone="secondary">
+            นัดของคุณ {appt.date} {appt.time} · {appt.clinic}
+          </Text>
+        </Panel>
+      ) : (
+        <>
+          {/* คิว + QR แบบการ์ดหลังบ้าน */}
+          <Panel>
+            <View style={{ alignItems: 'center', gap: 2 }}>
+              <Text variant="bodyXs" tone="secondary">
+                {appt.queue ? 'คิวของคุณ' : 'นัดวันนี้'}
+              </Text>
+              <Text style={{ fontFamily: fontFamily.bold, fontSize: 56, lineHeight: 72, color: colors.brand.primary }}>{appt.queue ?? appt.time}</Text>
+              <Text variant="bodySm" tone="secondary">
+                {[appt.queue ? appt.time : '', appt.therapist].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+            <View style={{ alignSelf: 'center', width: 190, height: 190, borderRadius: 20, backgroundColor: colors.surface.sunken, alignItems: 'center', justifyContent: 'center', gap: space[2] }}>
+              <Icon name="maximize" size="xl" color={colors.text.secondary} />
+              <Text variant="bodyXs" tone="secondary">
+                แสดง QR นี้ที่เคาน์เตอร์
+              </Text>
+            </View>
+          </Panel>
+          <Panel icon="list" tint={TINT.green} title="ขั้นตอนวันนี้">
+            {(
+              [
+                // ส่งข้อมูลแล้วจริงเฉพาะเมื่อเล่าอาการแล้ว
+                [appt.assessed ? 'ส่งข้อมูลอาการให้ผู้ให้บริการแล้ว' : 'เล่าอาการให้ผู้ให้บริการ', appt.assessed],
+                ['วัดความดันและชีพจรก่อนนวด', false],
+                ['ตกลงแผนการนวดร่วมกัน', false],
+              ] as [string, boolean][]
+            ).map(([t, ok], i) => (
+              <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: ok ? colors.brand.primary : colors.surface.sunken }}>
+                  {ok ? <Icon name="check" size="xs" color="#FFFFFF" /> : <Text variant="labelSm" tone="secondary">{i + 1}</Text>}
+                </View>
+                <Text variant="bodyMd" tone={ok ? 'primary' : 'secondary'}>
+                  {t}
+                </Text>
+              </View>
+            ))}
+          </Panel>
+        </>
+      )}
     </Screen>
   );
 }
 
 /* ============================================================ 07b RED FLAG REFERRAL */
 
-export function RedFlagScreen() {
+export function RedFlagScreen({ route }: { route?: { params?: { reason?: string } } }) {
   const nav = useNav();
   const { colors } = useTheme();
-  const { safety, log } = useJourney();
+  const { safety, log, lastAssess, drafts } = useJourney();
   const reds = safety.hits.filter((h) => h.level === 'red');
+  // เหตุที่ส่งมา (แชท/ติดตามผล) + ผลประเมินที่ให้พบแพทย์ + กฎความปลอดภัยจากโปรไฟล์ → ไม่ขึ้น "ไม่พบสัญญาณ" ใต้หัวข้อที่บอกว่าไม่ควรนวด
+  const reasons = [
+    ...(route?.params?.reason ? [route.params.reason] : []),
+    ...drafts.filter((d) => d.red).map((d) => `ผลประเมิน${d.title}`),
+    ...(lastAssess?.red && !drafts.some((d) => d.red) ? [`ผลประเมิน${lastAssess.symptoms.join(', ')}`] : []),
+  ].filter((x, i, all) => all.indexOf(x) === i);
+  const call1669 = () => {
+    log('ผู้รับบริการ', 'โทรฉุกเฉิน 1669');
+    Linking.openURL('tel:1669').catch(() => {});
+  };
   return (
     <Screen
       header={<AppBar title="เพื่อความปลอดภัยของคุณ" onBack={() => nav.goBack()} />}
       footer={
         <>
-          <Button
-            label="โทร 1669 (ฉุกเฉิน)"
-            variant="danger"
-            iconLeft="phone"
-            onPress={() => log('ผู้รับบริการ', 'กดโทรฉุกเฉิน 1669')}
-          />
-          <Button label="ปรึกษาแพทย์ออนไลน์ / นัดหมายโรงพยาบาล" variant="secondary" iconLeft="video" />
+          <Button label="โทร 1669 (ฉุกเฉิน)" variant="danger" iconLeft="phone" onPress={call1669} />
+          {/* ไปหาโรงพยาบาล/ศูนย์สาธารณสุขใกล้คุณ (นำทาง/โทรได้จากหน้ารายละเอียด) */}
+          <Button label="หาโรงพยาบาลใกล้คุณ" variant="secondary" iconLeft="map-pin" onPress={() => nav.popTo('ClientTabs', { screen: 'Places', params: { mode: 'doctor' } })} />
         </>
       }
     >
@@ -186,10 +251,15 @@ export function RedFlagScreen() {
         </Text>
       </View>
 
-      <Card>
-        <Text variant="titleSm">สิ่งที่ระบบพบ</Text>
-        {reds.length ? (
-          reds.map((h) => (
+      {reasons.length || reds.length ? (
+        <Card>
+          <Text variant="titleSm">สิ่งที่ระบบพบ</Text>
+          {reasons.map((r) => (
+            <Text key={r} variant="bodyMd">
+              {r}
+            </Text>
+          ))}
+          {reds.map((h) => (
             <VStack key={h.ruleId} gap={1}>
               <HStack justify="space-between">
                 <Text variant="bodyMd">{h.title}</Text>
@@ -199,21 +269,11 @@ export function RedFlagScreen() {
                 ข้อมูล: {h.evidence}
               </Text>
             </VStack>
-          ))
-        ) : (
-          <Text variant="bodySm" tone="secondary">
-            ไม่พบสัญญาณอันตราย
-          </Text>
-        )}
-      </Card>
+          ))}
+        </Card>
+      ) : null}
 
       <Banner tone="info" title="หากมีอาการต่อไปนี้ ให้โทร 1669 ทันที" message="ชาหรืออ่อนแรงครึ่งซีก พูดไม่ชัด เจ็บแน่นหน้าอก ปวดศีรษะรุนแรงเฉียบพลัน" />
-
-      <SectionHeader title="สถานพยาบาลใกล้คุณ" />
-      <Placeholder height={140} label="แผนที่สถานพยาบาลใกล้เคียง" icon="map" />
-      <Button label="ส่งสรุปข้อมูลให้แพทย์" variant="ghost" iconLeft="share" fullWidth={false} />
-      <Button label="ข้อมูลไม่ถูกต้อง? แก้ไขข้อมูล" variant="ghost" iconLeft="edit-2" fullWidth={false} onPress={() => nav.navigate('Assessment')} />
-
     </Screen>
   );
 }

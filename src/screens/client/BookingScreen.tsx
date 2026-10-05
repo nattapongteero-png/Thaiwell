@@ -1,9 +1,13 @@
 import React from 'react';
-import { View } from 'react-native';
-import { AppBar, Badge, Button, Card, ChipSection, Icon, ListItem, RadioGroup, Screen, SectionHeader, Text, VStack, useHideTabs, useTheme } from '../../design-system';
+import { Pressable, ScrollView, View } from 'react-native';
+import { AppBar, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
+import { PLACES } from './PlacesScreen';
+import { anyoneSlots, dayLabel, therapistsAt, type ServiceId } from '../../data/booking';
+import { caseClinic, useAllAppointments } from '../../state/appointments';
+import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 
 /* ============================================================ จองนวด
  * ต่อจากการประเมินกับ AI: สรุปอาการ + ข้อควรระวัง → เลือกบริการ (แนะนำจากแนวทาง) → วันเวลา → ผู้ให้บริการ → ยืนยัน
@@ -11,139 +15,298 @@ import { useNav } from '../../navigation/types';
  * ระดับผู้ให้บริการ: นวดเพื่อบำบัดโรค = ผู้ประกอบวิชาชีพแพทย์แผนไทย (health profile 2568 หน้า 34)
  */
 
-const SERVICES = [
+export const SERVICES: { value: ServiceId; label: string; uc: boolean }[] = [
   { value: 'royal', label: 'นวดไทยแบบราชสำนัก · 60 นาที', uc: true },
   { value: 'royal+compress', label: 'นวดราชสำนัก + ประคบ · 90 นาที', uc: true },
   { value: 'relax', label: 'นวดผ่อนคลาย · 90 นาที', uc: false },
 ];
-const THERAPISTS = [
+export const THERAPISTS = [
   { value: 'malee', label: 'พท.ป. มาลี ใจดี', description: 'แพทย์แผนไทย' },
   { value: 'somjai', label: 'คุณสมใจ รักษ์ไทย', description: 'หมอนวดระดับ 2' },
 ];
-const DAYS = ['วันนี้', 'พรุ่งนี้', 'ศ. 3 ต.ค.', 'ส. 4 ต.ค.'];
-const TIMES = ['10:30', '13:00', '15:30', '17:00'];
 const CLINIC = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 
-export function BookingScreen({ route }: { route?: { params?: { clinic?: string } } }) {
+type BookingParams = { clinic?: string; therapist?: string; day?: string; time?: string; service?: ServiceId; caseId?: string; draftId?: string; looseId?: string };
+/** เรื่องที่จอง: ใบการรักษา / ใบร่าง / นัดเรื่องใหม่ที่มีอยู่ (เลื่อน) / เรื่องใหม่ (นัดเพิ่ม) */
+type Topic = { key: string; caseId?: string; draftId?: string; looseId?: string; title: string; sub?: string };
+
+export function BookingScreen({ route }: { route?: { params?: BookingParams } }) {
   const nav = useNav();
-  // เลือกมาจากหน้าสถานที่ → ใช้สถานที่นั้น
-  const clinic = route?.params?.clinic ?? CLINIC;
-  // หน้าจองไม่ใช่แท็บ → ซ่อน tab menu (มีปุ่มยืนยันด้านล่างแทน)
+  const pre = route?.params;
   useHideTabs(true);
   const { colors } = useTheme();
-  const { log, lastAssess, booking, setBooking, newPatient, careStage, setCareStage, drafts, activeDraftId, upsertDraft } = useJourney();
-  const draft = drafts.find((d) => d.id === activeDraftId);
-  // จองครั้งถัดไป = ครั้งก่อน + 1
-  const visit = booking && careStage === 'served' ? booking.visit + 1 : booking?.visit ?? 1;
-  const recommended = lastAssess?.caution?.includes('อบ') || !lastAssess ? 'royal' : 'royal+compress';
-  const [service, setService] = React.useState(recommended);
-  const [therapist, setTherapist] = React.useState('malee');
-  const [day, setDay] = React.useState<string[]>([]);
-  const [time, setTime] = React.useState<string[]>([]);
-  const ready = day.length === 1 && time.length === 1;
+  const { log, newPatient, setCareStage, drafts, activeDraftId, upsertDraft, cases, looseBookings, addLooseBooking, updateLooseBooking, setCaseAppointment, issueQueue } = useJourney();
+  const allAppts = useAllAppointments();
+  // สถานที่ที่เลือกมา (หน้าสถานที่) · เรื่องที่รักษาอยู่ใช้ที่เดิมเสมอ (ดูด้านล่าง)
+  const pickedClinic = pre?.clinic ?? CLINIC;
+
+  /* ---------- จองให้เรื่องไหน ---------- */
+  // ระบุมาแล้ว (จากการ์ดของเรื่องนั้น) → ไม่ต้องเลือก · ไม่ระบุ → เลือกในหน้านี้ (ไม่เดาจากใบที่ประเมินล่าสุด)
+  const topics: Topic[] = [
+    ...drafts.map((d) => ({ key: `d:${d.id}`, draftId: d.id, title: d.title, sub: d.booking ? `มีนัด ${d.booking.date} ${d.booking.time}` : 'ประเมินแล้ว' })),
+    // เรื่องที่รักษาอยู่ → จองได้เฉพาะที่เดิม (บอกไว้ในตัวเลือก)
+    ...cases.map((c) => ({
+      key: `c:${c.id}`,
+      caseId: c.id,
+      title: `รักษา${c.short}`,
+      sub: [c.appointment.date !== '-' ? `มีนัด ${c.appointment.date} ${c.appointment.time}` : `ครั้งที่ ${Math.min(c.course.total, c.course.done + 1)}/${c.course.total}`, caseClinic(c) !== pickedClinic ? `ที่${caseClinic(c)}` : ''].filter(Boolean).join(' · '),
+    })),
+    // นัดเรื่องใหม่ที่จองไว้แล้ว → เลือก = เลื่อนนัดนั้น
+    ...looseBookings.map((b) => ({ key: `l:${b.id}`, looseId: b.id, title: `นัดเรื่องใหม่ ${b.date} ${b.time}`, sub: `เลื่อนนัดนี้ · ${b.clinic}` })),
+    // เรื่องใหม่ (ยังไม่ได้เล่าอาการ) → นัดเพิ่มได้หลายนัด ไม่ทับนัดเดิม
+    { key: 'new', title: newPatient && !looseBookings.length ? 'ยังไม่ได้เล่าอาการ' : 'เรื่องใหม่', sub: looseBookings.length ? 'นัดเพิ่ม · เล่าอาการกับ AI ทีหลัง' : 'จองก่อน เล่าอาการกับ AI ทีหลัง' },
+  ];
+  const fixed = !!(pre?.caseId || pre?.draftId || pre?.looseId);
+  const initialKey = pre?.caseId ? `c:${pre.caseId}` : pre?.draftId ? `d:${pre.draftId}` : pre?.looseId ? `l:${pre.looseId}` : (topics.find((t) => t.draftId === activeDraftId && !drafts.find((d) => d.id === activeDraftId)?.booking) ?? topics[0])?.key;
+  const [topicKey, setTopicKey] = React.useState(initialKey ?? 'new');
+  const topic = topics.find((t) => t.key === topicKey) ?? topics[0];
+  const draft = drafts.find((d) => d.id === topic?.draftId);
+  const tc = cases.find((c) => c.id === topic?.caseId);
+  const loose = looseBookings.find((b) => b.id === topic?.looseId);
+  const red = !!draft?.red;
+  // เรื่องที่รักษาอยู่: นัดครั้งถัดไปต้องที่เดิม (ไม่ใช่สถานที่ที่เปิดดูมา)
+  const clinic = tc ? caseClinic(tc) : pickedClinic;
+  const clinicLocked = !!tc && pickedClinic !== clinic && !!pre?.clinic;
+  // นัดเดิมของเรื่องนี้ → การยืนยันคือ "เลื่อนนัด" (แทนที่ ไม่ซ้อน) · เรื่องใหม่ = นัดเพิ่ม
+  const current = tc && tc.appointment.date !== '-' ? { date: tc.appointment.date, time: tc.appointment.time } : draft?.booking ?? loose ?? null;
+
+  /* ---------- บริการ ---------- */
+  // ใบการรักษา = นวดเพื่อรักษาเท่านั้น (ไม่มีนวดผ่อนคลาย) · ข้อควรระวังเรื่องอบ/ประคบ → ไม่แนะนำประคบ
+  const caution = draft?.caution ?? '';
+  const recommended: ServiceId = tc ? (tc.plan.includes('ประคบ') ? 'royal+compress' : 'royal') : draft && !/อบ|ประคบ/.test(caution) ? 'royal+compress' : 'royal';
+  const services = tc ? SERVICES.filter((x) => x.value !== 'relax') : SERVICES;
+  const [service, setService] = React.useState<ServiceId>(pre?.service ?? recommended);
+
+  // ผู้ให้บริการของสถานที่นี้ที่ลงตารางรับบริการที่เลือก (แบบ shift.services หลังบ้าน) · เลือกเวลาในการ์ด = เลือกทั้งคนและเวลา
+  const place = PLACES.find((x) => x.name === clinic);
+  const staff = place ? therapistsAt(place.id, service) : [];
+  // ไม่ระบุแพทย์ = รวมคิวว่างทุกคนที่รับบริการนี้
+  const anySlots = place ? anyoneSlots(place.id, service) : [];
+  const [pick, setPick] = React.useState<{ id: string; day: string; time: string } | null>(() => {
+    if (!pre?.day || !pre?.time) return null;
+    if (pre.therapist === 'ไม่ระบุแพทย์') return { id: ANY_THERAPIST, day: pre.day, time: pre.time };
+    const t = staff.find((x) => x.name === pre.therapist);
+    return t ? { id: t.id, day: pre.day, time: pre.time } : null;
+  });
+  const any = pick?.id === ANY_THERAPIST;
+  const picked = staff.find((x) => x.id === pick?.id);
+  // ช่องที่เลือกยังรับบริการนี้อยู่ไหม (เปลี่ยนบริการแล้วคน/เวลาเดิมอาจไม่รับ → ล้างให้เลือกใหม่)
+  const slotOk = (id: string, day: string, time: string, v = service) =>
+    !!place &&
+    (id === ANY_THERAPIST
+      ? anyoneSlots(place.id, v).some((f) => dayLabel(f.day) === day && f.time === time)
+      : !!therapistsAt(place.id, v).find((x) => x.id === id)?.free.some((f) => dayLabel(f.day) === day && f.time === time));
+  const pickService = (v: ServiceId) => {
+    setService(v);
+    if (pick && !slotOk(pick.id, pick.day, pick.time, v)) setPick(null);
+  };
+  const pickTopic = (k: string) => {
+    setTopicKey(k);
+    const t = topics.find((x) => x.key === k);
+    const c = cases.find((x) => x.id === t?.caseId);
+    // ใบการรักษาไม่มีนวดผ่อนคลาย
+    if (c && service === 'relax') pickService(c.plan.includes('ประคบ') ? 'royal+compress' : 'royal');
+  };
+  const pickLabel = pick ? `${any ? 'ไม่ระบุแพทย์' : picked?.name ?? ''} · ${pick.day} ${pick.time}` : null;
+  // เวลาชนกับนัดอื่นของเรา (ไม่นับนัดเดิมของเรื่องนี้ที่กำลังเลื่อน) → จองซ้อนเวลาเดียวกันไม่ได้
+  const selfKey = tc ? `c:${tc.id}` : draft ? `d:${draft.id}` : loose ? `l:${loose.id}` : '';
+  const clash = pick ? allAppts.find((a) => a.key !== selfKey && a.date === pick.day && a.time === pick.time) : undefined;
+  const ready = !red && !!pick && (any || !!picked) && slotOk(pick.id, pick.day, pick.time) && !clash;
 
   const confirm = () => {
-    const svc = SERVICES.find((s) => s.value === service)!;
-    const th = THERAPISTS.find((t) => t.value === therapist)!;
-    const bk = { date: day[0], time: time[0], service: svc.label, therapist: th.label, clinic, queue: 'A12', visit };
-    setBooking(bk);
-    // นัดผูกกับใบร่างที่จอง → ช่องนัดบนหน้าแรกของใบนั้น
-    if (draft) upsertDraft({ ...draft, stage: 'booked', booking: bk });
-    if (newPatient) setCareStage('booked');
-    log('ผู้รับบริการ', `จองนวด ${day[0]} ${time[0]} · ${svc.label}`);
-    nav.navigate('BookingDone');
+    const svc = SERVICES.find((x) => x.value === service)!;
+    if (!pick || !ready) return;
+    // ไม่ระบุแพทย์ → จัดคนแรกที่ว่างช่วงนั้น (แพทย์แผนไทยก่อน)
+    const who = any ? anySlots.find((f) => dayLabel(f.day) === pick.day && f.time === pick.time)?.who[0] : picked;
+    if (!who) return;
+    const today = pick.day === 'วันนี้';
+    const queue = today ? issueQueue() : undefined;
+    const bk = { date: pick.day, time: pick.time, service: svc.label, therapist: who.name, clinic, queue, visit: tc ? tc.course.done + 1 : 1 };
+    if (tc) setCaseAppointment(tc.id, { today, date: pick.day, time: pick.time, queue, clinic, therapist: who.name });
+    else if (draft) upsertDraft({ ...draft, stage: 'booked', booking: bk });
+    else if (loose) updateLooseBooking(loose.id, bk);
+    else addLooseBooking(bk);
+    if (newPatient && !tc) setCareStage('booked');
+    const named = tc || draft;
+    log('ผู้รับบริการ', `${current ? 'เลื่อนนัด' : 'จองนวด'} ${pick.day} ${pick.time} · ${svc.label} · ${who.name}${any ? ' (ไม่ระบุแพทย์)' : ''}${named ? ` · ${topic!.title}` : ''}`);
+    nav.replace('BookingDone', { ...bk, topic: named ? topic!.title : undefined, caution: caution || undefined, moved: !!current });
   };
 
+  const title = current ? 'เลื่อนนัด' : tc ? `จองครั้งที่ ${Math.min(tc.course.total, tc.course.done + 1)}` : 'จองนวด';
   return (
     <Screen
-      header={<AppBar onBack={() => nav.goBack()} title={visit > 1 ? `จองครั้งที่ ${visit}` : 'จองนวด'} subtitle={clinic} />}
-      footer={<Button label={ready ? `ยืนยัน ${day[0]} ${time[0]}` : 'เลือกวันและเวลา'} disabled={!ready} onPress={confirm} />}
+      header={<AppBar onBack={() => nav.goBack()} title={title} />}
+      footer={<Button label={red ? 'ควรพบแพทย์ก่อนนวด' : clash ? `เวลานี้มีนัด${clash.topic}แล้ว` : ready ? `ยืนยัน ${pick!.day} ${pick!.time}` : 'เลือกผู้ให้บริการและเวลา'} disabled={!ready} onPress={confirm} />}
     >
-      {/* จากการประเมินกับ AI — ผู้ให้บริการเห็นข้อมูลนี้ก่อนถึงคิว */}
-      {lastAssess ? (
-        <Card>
-          <Text variant="labelMd">จากการประเมิน</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[1] }}>
-            {lastAssess.symptoms.map((s) => (
-              <Badge key={s} label={s} tone="neutral" />
+      {/* สถานที่ที่จอง */}
+      <Panel flush>
+        <RowLink icon="map-pin" tint={TINT.green} title={clinic} sub={tc ? 'สถานที่ที่รักษาอยู่ (นัดต่อที่เดิม)' : 'สถานที่'} last />
+      </Panel>
+
+      {/* เปิดจากสถานที่อื่น แต่เลือกเรื่องที่รักษาอยู่ → บอกว่าย้ายมาที่เดิม */}
+      {clinicLocked ? (
+        <Text variant="bodySm" tone="secondary">
+          เรื่องที่รักษาอยู่จองต่อได้เฉพาะ{clinic}
+        </Text>
+      ) : null}
+
+      {/* จองให้เรื่องไหน — มีหลายเรื่อง/ไม่ได้ระบุมา → เลือก (นัดไปอยู่ที่การ์ดของเรื่องนั้น) */}
+      {!fixed && topics.length > 1 ? (
+        <Panel title="จองให้เรื่องไหน" flush>
+          {topics.map((t, i) => (
+            <Choice key={t.key} on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === topics.length - 1} />
+          ))}
+        </Panel>
+      ) : null}
+
+      {/* ข้อมูลของเรื่องที่จอง — ผู้ให้บริการเห็นก่อนถึงคิว */}
+      {red ? (
+        <Panel icon="alert-triangle" tint={TINT.red} title="ควรพบแพทย์ก่อนนวด">
+          <Text variant="bodySm" tone="secondary">
+            ผลประเมิน{draft?.title}มีสัญญาณที่ต้องให้แพทย์ตรวจก่อน
+          </Text>
+          <Button label="ดูคำแนะนำ" variant="secondary" size="md" onPress={() => nav.navigate('RedFlag', { reason: draft?.title })} />
+        </Panel>
+      ) : draft ? (
+        <Panel icon="clipboard" tint={TINT.violet} title="จากการประเมิน">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {draft.symptoms.map((x) => (
+              <Tag key={x} text={x} />
             ))}
-            <Badge label={`ปวด ${lastAssess.pain}/10`} tone="neutral" />
+            <Tag text={`ปวด ${draft.pain}/10`} tone="warn" />
           </View>
-          {lastAssess.caution ? (
+          {draft.caution ? (
             <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}>
               <Icon name="alert-triangle" size="xs" color={colors.status.warning.fg} />
-              <Text variant="bodySm">{lastAssess.caution}</Text>
+              <Text variant="bodySm">{draft.caution}</Text>
             </View>
           ) : null}
-        </Card>
+        </Panel>
+      ) : tc ? (
+        <Panel icon="clipboard" tint={TINT.violet} title={`รักษา${tc.short}`}>
+          <InfoRow k="แผน" v={tc.plan} />
+          <InfoRow k="คอร์ส" v={`ครั้งที่ ${Math.min(tc.course.total, tc.course.done + 1)} / ${tc.course.total}`} />
+        </Panel>
       ) : (
-        <Card>
+        <Panel icon="message-circle" tint={TINT.violet} title={loose ? 'นัดเรื่องใหม่' : 'ยังไม่ได้เล่าอาการ'}>
           <Text variant="bodySm" tone="secondary">
-            ยังไม่ได้เล่าอาการ
+            จองไว้ก่อนได้ เล่าอาการกับ AI ก่อนถึงนัด ผู้ให้บริการจะเตรียมการนวดได้ตรงจุด
           </Text>
-          <Button label="ประเมินกับ AI ก่อน" variant="secondary" size="md" onPress={() => nav.navigate('ClientTabs', { screen: 'Home' })} />
-        </Card>
+        </Panel>
       )}
 
-      <SectionHeader title="บริการ" />
-      <RadioGroup
-        options={SERVICES.map((s) => ({ value: s.value, label: s.label, description: [s.value === recommended && lastAssess ? 'แนะนำจากการประเมิน' : '', s.uc ? 'ใช้สิทธิบัตรทองได้' : ''].filter(Boolean).join(' · ') || undefined }))}
-        value={service}
-        onChange={setService}
-      />
+      {current && !red ? (
+        <Panel flush>
+          <RowLink icon="calendar" tint={TINT.amber} title={`นัดเดิม ${current.date} ${current.time}`} sub="ยืนยันแล้วนัดใหม่จะแทนนัดนี้" last />
+        </Panel>
+      ) : null}
 
-      <Card>
-        <ChipSection title="วัน" options={DAYS} value={day} onChange={(v) => setDay(v.slice(-1))} />
-        <ChipSection title="เวลา" options={TIMES} value={time} onChange={(v) => setTime(v.slice(-1))} />
-      </Card>
+      {red ? null : (
+        <>
+          <Panel icon="activity" tint={TINT.green} title="บริการ" flush>
+            {services.map((sv, i) => (
+              <Choice
+                key={sv.value}
+                on={service === sv.value}
+                title={sv.label}
+                sub={[sv.value === recommended && (draft || tc) ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'ใช้สิทธิบัตรทองได้' : ''].filter(Boolean).join(' · ') || undefined}
+                onPress={() => pickService(sv.value)}
+                last={i === services.length - 1}
+              />
+            ))}
+          </Panel>
 
-      <SectionHeader title="ผู้ให้บริการ" />
-      <RadioGroup options={THERAPISTS} value={therapist} onChange={setTherapist} />
+          {/* ผู้ให้บริการ + เวลา: การ์ดรายคน เลื่อนแนวนอน */}
+          <View style={{ gap: space[2] }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <Text variant="labelLg">ผู้ให้บริการและเวลา</Text>
+              <Text variant="bodyXs" tone="tertiary">
+                {ready ? pickLabel : 'แตะเวลาในการ์ด'}
+              </Text>
+            </View>
+            {staff.length ? (
+              <ScrollView key={service} horizontal showsHorizontalScrollIndicator={false} snapToInterval={THERAPIST_CARD_W + space[3]} decelerationRate="fast" style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[3], paddingHorizontal: space[4] }}>
+                <AnyTherapistCard slots={anySlots} selected={any ? pick : null} onPick={(d, tm) => setPick({ id: ANY_THERAPIST, day: d, time: tm })} />
+                {staff.map((t) => (
+                  <TherapistCard key={t.id} t={t} selected={pick?.id === t.id ? pick : null} onPick={(d, tm) => setPick({ id: t.id, day: d, time: tm })} />
+                ))}
+              </ScrollView>
+            ) : (
+              // ไม่มีใครรับบริการนี้ → บอกทางไปต่อ (เปลี่ยนบริการ / ที่อื่น) ไม่ให้ค้าง
+              <Panel>
+                <Text variant="bodySm" tone="secondary">
+                  {!place ? 'ไม่พบตารางของสถานที่นี้' : therapistsAt(place.id).length ? 'บริการนี้ยังไม่มีคิว ลองเลือกบริการอื่น' : 'ที่นี่ยังไม่เปิดจองออนไลน์'}
+                </Text>
+                <Button label="ดูสถานที่อื่น" variant="secondary" size="md" onPress={() => nav.popTo('ClientTabs', { screen: 'Places' })} />
+              </Panel>
+            )}
+          </View>
+        </>
+      )}
     </Screen>
   );
 }
 
-/** จองสำเร็จ — รายละเอียดนัด + เตรียมตัวก่อนมา */
-export function BookingDoneScreen() {
+/** จองสำเร็จ — รายละเอียดนัด + เตรียมตัวก่อนมา (ข้อมูลมากับหน้า ไม่อ่านจากนัดกลาง) */
+export function BookingDoneScreen({ route }: { route: { params: { date: string; time: string; service: string; therapist: string; clinic: string; queue?: string; topic?: string; caution?: string; moved?: boolean } } }) {
   const nav = useNav();
   const { colors } = useTheme();
-  const { booking, lastAssess } = useJourney();
-  if (!booking) return null;
+  const b = route.params;
   // ก่อนมานวด: ตามข้อควรระวังจากการประเมิน + ทั่วไป (ไม่นวดภายใน 30 นาทีหลังอาหาร — ตำราอ้างอิงฯ หน้า 402)
-  const prep = [
-    ...(lastAssess?.caution?.includes('ความดัน') || lastAssess?.caution?.includes('อบ') ? ['วัดความดันก่อนนวด'] : []),
-    'งดอาหารหนักก่อนนวด 30 นาที',
-    'ใส่เสื้อผ้าหลวมสบาย',
-  ];
+  const prep = [...(b.caution?.includes('ความดัน') || b.caution?.includes('อบ') ? ['วัดความดันก่อนนวด'] : []), 'งดอาหารหนักก่อนนวด 30 นาที', 'ใส่เสื้อผ้าหลวมสบาย'];
   return (
     <Screen
-      header={<AppBar title="จองแล้ว" />}
-      footer={<Button label="กลับหน้าแรก" onPress={() => nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] })} />}
+      header={<AppBar title={b.moved ? 'เลื่อนนัดแล้ว' : 'จองแล้ว'} />}
+      footer={<Button label="กลับหน้าแรก" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />}
     >
-      <VStack gap={2} align="center" style={{ paddingVertical: space[4] }}>
-        <View style={{ width: 64, height: 64, borderRadius: radius.full, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[3] }}>
+        <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="check" size="lg" color={colors.brand.primary} />
         </View>
-        <Text variant="titleLg">
-          {booking.date} {booking.time}
-        </Text>
-        <Text variant="bodySm" tone="secondary">
-          {booking.service}
-        </Text>
-      </VStack>
-      <Card>
-        <ListItem leadingIcon="user" title={booking.therapist} chevron={false} />
-        <ListItem leadingIcon="map-pin" title={booking.clinic} chevron={false} />
-      </Card>
-      <Card>
-        <Text variant="labelMd">ก่อนมานวด</Text>
+        <Text variant="titleLg">{b.moved ? 'เลื่อนนัดเรียบร้อย' : 'จองเรียบร้อย'}</Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: space[2] }}>
+        <StatTile label="วัน" value={b.date} small />
+        <StatTile label="เวลา" value={b.time} small />
+        {/* เลขคิวออกเฉพาะนัดวันนี้ */}
+        {b.queue ? <StatTile label="คิว" value={b.queue} small color={colors.brand.primary} /> : null}
+      </View>
+      <Panel icon="clipboard" tint={TINT.green} title="รายละเอียดนัด">
+        {b.topic ? <InfoRow k="เรื่อง" v={b.topic} /> : null}
+        <InfoRow k="บริการ" v={b.service} />
+        <InfoRow k="ผู้ให้บริการ" v={b.therapist} />
+        <InfoRow k="สถานที่" v={b.clinic} />
+      </Panel>
+      <Panel icon="check-circle" tint={TINT.amber} title="ก่อนมานวด">
         {prep.map((p) => (
           <View key={p} style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}>
-            <Icon name="check-circle" size="xs" color={colors.brand.primary} />
+            <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: TINT.amber }} />
             <Text variant="bodySm">{p}</Text>
           </View>
         ))}
-      </Card>
+      </Panel>
     </Screen>
+  );
+}
+
+/** ตัวเลือกแบบแถวในการ์ด (เลือกได้ 1) — วงกลมเลือก · ชื่อ · รายละเอียด */
+function Choice({ on, title, sub, onPress, last }: { on: boolean; title: string; sub?: string; onPress: () => void; last?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable accessibilityRole="radio" accessibilityState={{ checked: on }} onPress={onPress} style={({ pressed }) => ({ backgroundColor: on ? colors.brand.subtle : pressed ? colors.surface.sunken : 'transparent' })}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[3], marginHorizontal: space[4], borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.border.subtle }}>
+        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: on ? colors.brand.primary : colors.border.strong, alignItems: 'center', justifyContent: 'center' }}>
+          {on ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.brand.primary }} /> : null}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text variant="labelMd">{title}</Text>
+          {sub ? (
+            <Text variant="bodyXs" tone="secondary">
+              {sub}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
   );
 }

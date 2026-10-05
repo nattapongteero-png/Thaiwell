@@ -5,15 +5,19 @@ interface ThemeContextValue {
   name: ThemeName;
   colors: ColorTokens;
   setTheme: (name: ThemeName) => void;
+  /** ตัวอักษรขนาดใหญ่ (ผู้สูงอายุ): ตัวคูณขนาดตัวอักษรทั้งแอป · 1 = ปกติ */
+  textScale: number;
+  setTextScale: (s: number) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children, initial = 'brand' }: { children: React.ReactNode; initial?: ThemeName }) {
   const [name, setTheme] = useState<ThemeName>(initial);
+  const [textScale, setTextScale] = useState(1);
   const value = useMemo(
-    () => ({ name, colors: themes[name], setTheme }),
-    [name],
+    () => ({ name, colors: themes[name], setTheme, textScale, setTextScale }),
+    [name, textScale],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

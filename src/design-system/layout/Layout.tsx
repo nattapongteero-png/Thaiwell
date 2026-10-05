@@ -5,6 +5,7 @@ import { space } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
 import { useGrid } from './useGrid';
 import { useDockHeight } from '../components/TabBar';
+import { EdgeFade } from '../components/Glass';
 
 type SpaceKey = keyof typeof space;
 
@@ -109,18 +110,20 @@ export function Screen({ children, scroll = true, footer, header, padded = true,
     <View style={{ flex: 1, backgroundColor: colors.surface[background] }}>
       {header}
       {scroll ? (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
-          {inner}
-        </ScrollView>
+        // เนื้อหาจางที่ขอบบน (ใต้ header) / ขอบล่าง (เหนือปุ่ม) ตอนเลื่อนผ่าน — แบบเดียวกับหน้าแรก
+        <EdgeFade top={header ? 20 : 0} bottom={footer ? 28 : 0}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+            {inner}
+          </ScrollView>
+        </EdgeFade>
       ) : (
         <View style={{ flex: 1 }}>{inner}</View>
       )}
       {footer ? (
         <View
           style={{
-            borderTopWidth: 1,
-            borderTopColor: colors.border.subtle,
-            backgroundColor: colors.surface.default,
+            // ไม่มีเส้นคั่น — เนื้อหาเหนือปุ่มจางเอง (EdgeFade)
+            backgroundColor: colors.surface[background],
             paddingHorizontal: g.margin,
             paddingTop: space[3],
             paddingBottom: dockH ? space[3] : Math.max(insets.bottom, space[3]),

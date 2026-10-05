@@ -5,7 +5,9 @@
 import type { BodyPin } from '../design-system/components/Body3D';
 
 export const HOME_CONTENT = {
-  symptoms: ['ปวดคอ', 'ปวดหลัง', 'ปวดไหล่'],
+  /** ตัวเลือกด่วน "ที่พบได้บ่อย" — 3 กลุ่มที่มารับบริการแพทย์แผนไทยมากที่สุด (Health Profile 2568 หน้า 13, ปี 2566):
+   * ลมปลายปัตฆาตสัญญาณ 4 หลัง/คอ (คอ บ่า สะบัก) · สัญญาณ 3/1 หลัง (หลัง เอว) · ลมปลายปัตฆาตขา */
+  symptoms: ['ปวดคอ-บ่า', 'ปวดหลัง', 'ปวดขา'],
   related: ['ปวดศีรษะ', 'ตึง บ่า ไหล่', 'คัดจมูกซ้าย', 'ตาพร่ามัว'],
   points: ['จุดขมับซ้าย', 'จุดต้นคอ', 'จุดท้ายทอยข้างซ้าย'],
 };
@@ -89,6 +91,8 @@ export const ALL_SYMPTOMS = [...new Set([...HOME_CONTENT.symptoms, ...SYMPTOM_GR
 /** ตำแหน่งหมุดบนหุ่น 3D ของแต่ละ chip */
 export const CHIP_PINS: Record<string, BodyPin[]> = {
   ...Object.fromEntries(SYMPTOM_GROUPS.flatMap((g) => g.items)),
+  'ปวดคอ-บ่า': ['neck', 'trapLeft', 'trapRight'],
+  ปวดขา: ['thighLeft', 'thighRight', 'calfLeft', 'calfRight'],
   ปวดคอ: ['neck'],
   ปวดหลัง: ['back', 'lowerBack'],
   ปวดไหล่: ['shoulderLeft', 'shoulderRight'],

@@ -108,6 +108,7 @@ export function ThreadCardView({
   onEditAssessment,
   onTalkMore,
   onPlan,
+  onBook,
 }: {
   card: ThreadCard;
   /** แก้ผลประเมินในแชทนี้ */
@@ -116,6 +117,8 @@ export function ThreadCardView({
   onTalkMore?: () => void;
   /** ให้ AI วางแผนการนวดจากข้อมูลแรกรับ + คลังความรู้ */
   onPlan?: () => void;
+  /** จองกับ AI ในแชท (ไม่มี = ไปหน้าจองเอง) */
+  onBook?: () => void;
 }) {
   const { colors } = useTheme();
   const nav = useNav();
@@ -162,10 +165,8 @@ export function ThreadCardView({
     case 'screening':
       return (
         <GlassCard strong>
-          <HStack justify="space-between">
-            <Text variant="titleMd">{card.complaint}</Text>
-            <Badge label="สรุปโดย AI" tone="ai" icon="cpu" />
-          </HStack>
+          {/* ไม่ต้องติดป้าย "สรุปโดย AI" — การ์ดอยู่ในข้อความของ AI อยู่แล้ว */}
+          <Text variant="titleMd">{card.complaint}</Text>
           <HStack gap={6}>
             <BigNumber label="ความปวด" value={card.pain} suffix="/10" />
             <BigNumber label="เป็นมา" value={card.duration} />
@@ -205,9 +206,12 @@ export function ThreadCardView({
                   {it.title}
                 </Text>
               </HStack>
-              <Text variant="bodyXs" tone="secondary">
-                {it.evidence}
-              </Text>
+              {/* บรรทัดรอง = ข้อมูลที่ผู้ใช้ให้ · ซ้ำกับหัวข้อ = ไม่แสดง */}
+              {it.evidence && it.evidence !== it.title ? (
+                <Text variant="bodyXs" tone="secondary">
+                  {it.evidence}
+                </Text>
+              ) : null}
             </View>
           ))}
           <PillButton label="ดูรายละเอียด" tone="light" onPress={() => nav.navigate('PreSummary')} />
@@ -256,22 +260,25 @@ export function ThreadCardView({
       return (
         <GlassCard strong>
           <HStack justify="space-between" align="flex-end">
-            <BigNumber label="วันนี้" value={card.time} />
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text variant="caption" tone="secondary">
-                คิว
-              </Text>
-              <Text variant="displayMd" color={colors.brand.primary}>
-                {card.queue}
-              </Text>
-            </View>
+            <BigNumber label={card.date ?? 'วันนี้'} value={card.time} />
+            {card.queue ? (
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text variant="caption" tone="secondary">
+                  คิว
+                </Text>
+                <Text variant="displayMd" color={colors.brand.primary}>
+                  {card.queue}
+                </Text>
+              </View>
+            ) : null}
           </HStack>
           <Text variant="bodyXs" tone="secondary">
-            {card.place} · อีก {card.waitMin} นาที
+            {[card.place, card.therapist, card.waitMin ? `อีก ${card.waitMin} นาที` : ''].filter(Boolean).join(' · ')}
           </Text>
           <HStack gap={2}>
-            <PillButton label="เช็กอิน" icon="maximize" onPress={() => nav.navigate('CheckIn')} />
-            <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('ClientTabs', { screen: 'Booking' })} />
+            {/* เช็กอิน/เลื่อนนัดของเรื่องนี้ (ไม่ใช่นัดล่าสุดที่จอง) */}
+            {!card.date || card.date === 'วันนี้' ? <PillButton label="เช็กอิน" icon="maximize" onPress={() => nav.navigate('CheckIn', { caseId: card.caseId, draftId: card.draftId })} /> : null}
+            <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('Booking', { caseId: card.caseId, draftId: card.draftId })} />
           </HStack>
         </GlassCard>
       );
@@ -313,7 +320,7 @@ export function ThreadCardView({
             </HStack>
           ) : null}
           <HStack gap={2} style={{ flexWrap: 'wrap' }}>
-            <PillButton label="จองนัดตามแนวทางนี้" icon="calendar" onPress={() => nav.navigate('ClientTabs', { screen: 'Booking' })} />
+            {card.booked ? null : <PillButton label="จองนัดตามแนวทางนี้" icon="calendar" onPress={onBook ?? (() => nav.navigate('Booking'))} />}
             {onPlan ? <PillButton label="ขอแผนการนวด" tone="light" icon="list" onPress={onPlan} /> : null}
           </HStack>
         </GlassCard>

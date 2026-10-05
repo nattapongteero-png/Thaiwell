@@ -21,7 +21,7 @@ export interface RadiateOption {
   R?: BodyPin[];
   /** ใช้แนวทางนี้แทนแนวทางของจุดที่ปวด */
   guideKey?: string;
-  /** ผลต่อการคัดกรอง */
+  /** ผลต่อการคัดกรอง · note = สิ่งที่ระบบพบ (หัวข้อในผลตรวจ) ส่วน label = คำตอบของผู้ใช้ (บรรทัดรอง) — ห้ามซ้ำกัน */
   level?: 'amber' | 'red';
   note?: string;
   source?: string;
@@ -46,10 +46,10 @@ const PATTERNS: RadiatePattern[] = [
         L: ['hipLeft', 'hipRight', 'thighBackLeft', 'thighBackRight', 'calfLeft', 'calfRight', 'heelLeft', 'heelRight'],
         guideKey: 'lowerBackRadiating',
         level: 'amber',
-        note: 'ร้าวเลยเข่า แพทย์ตรวจก่อนว่าเกี่ยวกับเส้นประสาทไหม',
+        note: 'อาจเกี่ยวกับเส้นประสาท แพทย์ตรวจก่อนนวด',
         source: 'CPG หน้า 139, 146',
       },
-      { label: 'ขาอ่อนแรง', L: [], level: 'red', note: 'ขาอ่อนแรง', source: 'CPG หน้า 139' },
+      { label: 'ขาอ่อนแรง', L: [], level: 'red', note: 'อาการทางเส้นประสาท ควรพบแพทย์ก่อน', source: 'CPG หน้า 139' },
     ],
   },
   {
@@ -61,10 +61,10 @@ const PATTERNS: RadiatePattern[] = [
         L: ['armLeft', 'armRight', 'elbowLeft', 'elbowRight', 'handLeft', 'handRight'],
         guideKey: 'scapula',
         level: 'amber',
-        note: 'ร้าวชาลงแขน แพทย์ตรวจก่อนว่าเกี่ยวกับเส้นประสาทไหม',
+        note: 'อาจเกี่ยวกับเส้นประสาท แพทย์ตรวจก่อนนวด',
         source: 'CPG หน้า 139, 145',
       },
-      { label: 'แขนอ่อนแรง', L: [], level: 'red', note: 'แขนอ่อนแรง', source: 'CPG หน้า 139' },
+      { label: 'แขนอ่อนแรง', L: [], level: 'red', note: 'อาการทางเส้นประสาท ควรพบแพทย์ก่อน', source: 'CPG หน้า 139' },
     ],
   },
   {

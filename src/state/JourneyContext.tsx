@@ -5,7 +5,7 @@
  */
 import { CHIP_PINS } from '../data/homeContent';
 import { guideFor } from '../data/treatmentGuides';
-import type { TreatmentCase } from '../data/homeFeed';
+import { TREATMENT_CASES, type TreatmentCase } from '../data/homeFeed';
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { RegionId } from '../design-system/components/BodyMap';
 import type { ElementKey } from '../data/thaiMassageKnowledge';
@@ -76,10 +76,12 @@ export interface Booking {
   service: string;
   therapist: string;
   clinic: string;
-  queue: string;
+  /** เลขคิว (ออกเฉพาะนัดวันนี้) */
+  queue?: string;
   /** ครั้งที่เท่าไหร่ของคอร์ส */
   visit: number;
 }
+export type LooseBooking = Booking & { id: string };
 /** สรุปจากการประเมินกับ AI (ใช้ต่อในหน้าจอง / หน้าแรก / ผู้ให้บริการ) */
 export interface AssessSummary {
   symptoms: string[];
@@ -124,6 +126,8 @@ export interface DraftCase {
  * ⚠️ ต้นแบบ: ชื่อโรคจำลองว่าผู้ให้บริการตั้งให้ (ลมปลายปัตฆาต = รหัสโรคแผนไทยที่พบบ่อยของคอ/บ่า/หลัง, health profile 2568 หน้า 13)
  */
 const DIAGNOSIS: Record<string, string> = {
+  'ปวดคอ-บ่า': 'ลมปลายปัตฆาตสัญญาณ 4 หลัง/คอ',
+  ปวดขา: 'ลมปลายปัตฆาตขา',
   ปวดคอ: 'ลมปลายปัตฆาต สัญญาณ 4 (คอ)',
   ปวดหลัง: 'ลมปลายปัตฆาต สัญญาณ 3 (หลัง)',
   ปวดไหล่: 'ลมปลายปัตฆาต (ไหล่)',
@@ -140,7 +144,10 @@ function draftToCase(d: DraftCase, painAfter: number): TreatmentCase {
     visits: [{ date: visit, painBefore: d.pain, painAfter }],
     // ติดตามอาการหลังนวดครั้งแรก (โหมด focus บนหุ่น)
     pending: [{ id: `sess-${d.id}`, date: visit, plan: 'นวดราชสำนัก', areas }],
-    appointment: { today: false, date: 'ศ. 17 ต.ค.', time: d.booking?.time ?? '13:00' },
+    // รักษาต่อที่เดิมเท่านั้น
+    clinic: d.booking?.clinic,
+    // นัดครั้งถัดไปยังไม่ได้จอง (ไม่สร้างนัดขึ้นเอง) → การ์ดนัดขึ้น "จองนัด"
+    appointment: { today: false, date: '-', time: '-' },
     prep: d.caution?.includes('ความดัน') || d.caution?.includes('อบ') ? ['วัดความดันก่อนนวด', 'งดอาหารหนัก 30 นาที'] : ['งดอาหารหนัก 30 นาที'],
     course: { done: 1, total: 6 },
     therapist: d.booking?.therapist ?? 'พท.ป. มาลี ใจดี',
@@ -187,6 +194,7 @@ interface JourneyState {
   /** ธาตุเจ้าเรือนปัจจุบัน (% ต่อธาตุ) */
   elements: Record<ElementKey, number>;
   setElements: (e: Record<ElementKey, number>) => void;
+  elementsDone: boolean;
   audit: AuditEntry[];
   log: (actor: string, action: string) => void;
   /** ผลติดตามอาการที่ส่งไปหลังบ้านแล้ว (ล่าสุดอยู่หน้า) */
@@ -202,8 +210,11 @@ interface JourneyState {
   setNewPatient: (v: boolean) => void;
   careStage: CareStage;
   setCareStage: (s: CareStage) => void;
-  booking: Booking | null;
-  setBooking: (b: Booking | null) => void;
+  /** นัดเรื่องใหม่ที่จองไว้ก่อนประเมิน (ยังไม่ผูกกับเรื่องไหน) — มีได้หลายนัด */
+  looseBookings: LooseBooking[];
+  addLooseBooking: (b: Booking) => string;
+  updateLooseBooking: (id: string, b: Booking) => void;
+  removeLooseBooking: (id: string) => void;
   lastAssess: AssessSummary | null;
   setLastAssess: (a: AssessSummary | null) => void;
   drafts: DraftCase[];
@@ -214,10 +225,35 @@ interface JourneyState {
   setActiveDraftId: (id: string | null) => void;
   /** ใบการรักษาที่เกิดจากใบร่าง (นวดครั้งแรกแล้ว ผู้ให้บริการตั้งชื่อโรค) */
   promoted: TreatmentCase[];
+  /** นัดของใบการรักษาที่ผู้ใช้ยกเลิกแล้ว (case id) — หน้าแรกเปลี่ยนเป็น "ยังไม่มีนัด" */
+  cancelledAppts: string[];
+  cancelAppointment: (caseId: string) => void;
+  /** นัดของใบการรักษาที่จอง/เลื่อนใหม่ (แทนนัดตัวอย่าง) · ต้นแบบ: เก็บในเครื่อง */
+  caseAppts: Record<string, CaseAppt>;
+  setCaseAppointment: (caseId: string, appt: CaseAppt) => void;
   /** นวดครั้งแรกเสร็จ → ใบร่างกลายเป็นใบการรักษา (ชื่อแท็บเดิม · ชื่อโรคจากผู้ให้บริการ) */
   promoteDraft: (draftId: string, painAfter: number) => void;
   /** ออกจากระบบ: ล้างบัญชีและข้อมูลของรอบนี้ทั้งหมด */
   signOut: () => void;
+  /**
+   * ใบการรักษาที่ใช้แสดงทุกหน้า (หน้าแรก · ประวัติ · โปรไฟล์ · นัด · AI) — ตัวอย่าง + ใบจากใบร่าง
+   * รวมนัดที่จอง/เลื่อน · นัดที่ยกเลิก (= ไม่มีนัด) · ครั้งที่นวดเพิ่ม → ทุกหน้าเห็นข้อมูลชุดเดียวกัน
+   */
+  cases: TreatmentCase[];
+  /** นวดครั้งนี้ของใบการรักษาเสร็จ → เพิ่มครั้งการรักษา · นับคอร์ส · นัดนี้ใช้ไปแล้ว */
+  recordCaseVisit: (caseId: string, painBefore: number, painAfter: number) => void;
+  /** ออกเลขคิว (เฉพาะนัดวันนี้) */
+  issueQueue: () => string;
+}
+
+/** นัดของใบการรักษา (จองในแชท) */
+export interface CaseAppt {
+  today: boolean;
+  date: string;
+  time: string;
+  queue?: string;
+  clinic: string;
+  therapist: string;
 }
 
 const Ctx = createContext<JourneyState | null>(null);
@@ -236,7 +272,13 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [after, setAfter] = useState<Assessment | undefined>();
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [record, setRecord] = useState<ServiceRecord>(initialRecord);
-  const [elements, setElements] = useState<Record<ElementKey, number>>({ ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 });
+  const [elements, setElementsState] = useState<Record<ElementKey, number>>({ ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 });
+  /** ทำแบบประเมินธาตุแล้ว (คนใหม่ยังไม่ทำ = ใช้ธาตุเจ้าเรือนจากวันเกิด ไม่ใช้ค่าตัวอย่าง) */
+  const [elementsDone, setElementsDone] = useState(false);
+  const setElements = useCallback((e: Record<ElementKey, number>) => {
+    setElementsState(e);
+    setElementsDone(true);
+  }, []);
   const [audit, setAudit] = useState<AuditEntry[]>([
     { at: '09:02', actor: 'ผู้รับบริการ', action: 'ลงทะเบียนผ่าน MyAtlas' },
   ]);
@@ -245,23 +287,59 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [newPatient, setNewPatient] = useState(false);
   const [careStage, setCareStage] = useState<CareStage>('new');
-  const [booking, setBooking] = useState<Booking | null>(null);
+  const [looseBookings, setLooseBookings] = useState<LooseBooking[]>([]);
+  const addLooseBooking = useCallback((b: Booking) => {
+    const id = `nb${Date.now()}`;
+    setLooseBookings((all) => [...all, { ...b, id }]);
+    return id;
+  }, []);
+  const updateLooseBooking = useCallback((id: string, b: Booking) => setLooseBookings((all) => all.map((x) => (x.id === id ? { ...b, id } : x))), []);
+  const removeLooseBooking = useCallback((id: string) => setLooseBookings((all) => all.filter((x) => x.id !== id)), []);
   const [lastAssess, setLastAssess] = useState<AssessSummary | null>(null);
   const [drafts, setDrafts] = useState<DraftCase[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [promoted, setPromoted] = useState<TreatmentCase[]>([]);
+  const [cancelledAppts, setCancelledAppts] = useState<string[]>([]);
+  const cancelAppointment = useCallback((caseId: string) => setCancelledAppts((ids) => (ids.includes(caseId) ? ids : [...ids, caseId])), []);
+  const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>({});
+  // จองใหม่ → ไม่ถือว่ายกเลิกแล้ว
+  const setCaseAppointment = useCallback((caseId: string, appt: CaseAppt) => {
+    setCaseAppts((m) => ({ ...m, [caseId]: appt }));
+    setCancelledAppts((ids) => ids.filter((x) => x !== caseId));
+  }, []);
+  /** ครั้งที่นวดเพิ่มของใบการรักษา (ต่อท้าย visits เดิม) */
+  const [caseVisits, setCaseVisits] = useState<Record<string, TreatmentCase['visits']>>({});
+  const queueNo = React.useRef(11);
+  const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
+  const recordCaseVisit = useCallback((caseId: string, painBefore: number, painAfter: number) => {
+    setCaseVisits((m) => ({ ...m, [caseId]: [...(m[caseId] ?? []), { date: 'วันนี้', painBefore, painAfter }] }));
+    // นัดนี้ใช้แล้ว → ยังไม่มีนัดครั้งถัดไป
+    setCaseAppts((m) => ({ ...m, [caseId]: { today: false, date: '-', time: '-', clinic: m[caseId]?.clinic ?? '', therapist: m[caseId]?.therapist ?? '' } }));
+  }, []);
   const signOut = useCallback(() => {
     setAccount(null);
     setNewPatient(false);
     setCareStage('new');
-    setBooking(null);
+    setLooseBookings([]);
     setLastAssess(null);
     setDrafts([]);
     setActiveDraftId(null);
     setPromoted([]);
+    setCancelledAppts([]);
+    setCaseAppts({});
     setFollowUps([]);
     setProfile(baseProfile);
     setConsents({ service: false, aiProcessing: false, followUp: true, research: false });
+    // ไม่ให้ข้อมูลของบัญชีก่อนหน้าค้าง (บันทึกการเข้าถึง · ธาตุ · คะแนนก่อน/หลัง · ฯลฯ)
+    setCaseVisits({});
+    setAudit([{ at: '09:02', actor: 'ผู้รับบริการ', action: 'ลงทะเบียนผ่าน MyAtlas' }]);
+    setElementsState({ ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 });
+    setElementsDone(false);
+    setBefore(initialBefore);
+    setAfter(undefined);
+    setAcknowledged([]);
+    setRecord(initialRecord);
+    setScenarioState('caution');
   }, []);
   const promoteDraft = useCallback((draftId: string, painAfter: number) => {
     setDrafts((all) => {
@@ -270,6 +348,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setPromoted((cs) => [...cs.filter((c) => c.id !== `case-${d.id}`), draftToCase(d, painAfter)]);
       return all.filter((x) => x.id !== draftId);
     });
+    // ใบร่างนี้ไม่มีแล้ว → ไม่ให้การจองครั้งถัดไปไปผูกกับใบที่หายไป
+    setActiveDraftId((id) => (id === draftId ? null : id));
   }, []);
   const upsertDraft = useCallback(
     (d: DraftCase) => setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d])),
@@ -297,6 +377,23 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   }, [setScenario]);
 
   const safety = useMemo(() => evaluateSafety(profile), [profile]);
+
+  const cases = useMemo(
+    () =>
+      [...(newPatient ? [] : TREATMENT_CASES), ...promoted].map((c) => {
+        const extra = caseVisits[c.id] ?? [];
+        const a = caseAppts[c.id];
+        const cancelled = cancelledAppts.includes(c.id);
+        return {
+          ...c,
+          visits: [...c.visits, ...extra],
+          course: { ...c.course, done: Math.min(c.course.total, c.course.done + extra.length) },
+          therapist: a?.therapist || c.therapist,
+          appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue } : c.appointment,
+        };
+      }),
+    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits],
+  );
 
   const sendFollowUp = useCallback(
     async (p: Omit<FollowUpPayload, 'hn' | 'channel'>) => {
@@ -335,6 +432,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setRecord,
     elements,
     setElements,
+    elementsDone,
     audit,
     log,
     followUps,
@@ -346,8 +444,10 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setNewPatient,
     careStage,
     setCareStage,
-    booking,
-    setBooking,
+    looseBookings,
+    addLooseBooking,
+    updateLooseBooking,
+    removeLooseBooking,
     lastAssess,
     setLastAssess,
     drafts,
@@ -356,7 +456,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setActiveDraftId,
     promoted,
     promoteDraft,
+    cancelledAppts,
+    cancelAppointment,
+    caseAppts,
+    setCaseAppointment,
     signOut,
+    cases,
+    recordCaseVisit,
+    issueQueue,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
