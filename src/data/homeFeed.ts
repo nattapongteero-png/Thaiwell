@@ -437,7 +437,8 @@ export interface TreatmentCase {
   /** ผู้ให้บริการประจำใบนี้ */
   therapist: string;
   /** ดูแลตัวเองที่บ้าน (ท่าแนะนำของโรคนี้) */
-  selfCare: { title: string; minutes: number; doneToday: boolean };
+  /** daysDone/days = ทำท่าที่บ้านกี่วัน จากทั้งหมดกี่วันตั้งแต่เริ่มรักษา (ต้นแบบ: ข้อมูลตัวอย่าง) */
+  selfCare: { title: string; minutes: number; doneToday: boolean; daysDone?: number; days?: number };
   /** แชทของเรื่องนี้ (มาจากใบร่าง) */
   chatId?: string;
 }
@@ -471,7 +472,7 @@ export const TREATMENT_CASES: TreatmentCase[] = [
     prep: ['ตรวจน้ำตาลก่อนนวด', 'วัดความดันก่อนนวด'],
     course: { done: 5, total: 8 },
     therapist: 'พท.ป. มาลี ใจดี',
-    selfCare: { title: 'ยืดคอ-บ่า', minutes: 5, doneToday: false },
+    selfCare: { title: 'ยืดคอ-บ่า', minutes: 5, doneToday: false, daysDone: 52, days: 78 },
   },
   {
     id: 'case-lung',
@@ -489,7 +490,7 @@ export const TREATMENT_CASES: TreatmentCase[] = [
     prep: ['พกยาพ่นติดตัว', 'งดอาหารหนัก 1 ชม.'],
     course: { done: 3, total: 6 },
     therapist: 'พท.ป. สมชาย สุขใจ',
-    selfCare: { title: 'หายใจลึก 4-7-8', minutes: 3, doneToday: true },
+    selfCare: { title: 'หายใจลึก 4-7-8', minutes: 3, doneToday: true, daysDone: 21, days: 30 },
   },
 ];
 
@@ -514,7 +515,7 @@ export const ARCHIVED_CASES: TreatmentCase[] = [
     prep: [],
     course: { done: 6, total: 6 },
     therapist: 'พท.ป. มาลี ใจดี',
-    selfCare: { title: 'ยืดหลัง', minutes: 5, doneToday: false },
+    selfCare: { title: 'ยืดหลัง', minutes: 5, doneToday: false, daysDone: 40, days: 60 },
   },
 ];
 

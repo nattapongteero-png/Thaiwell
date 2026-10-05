@@ -1441,7 +1441,10 @@ export function HomeScreen() {
                     />
                   ) : null}
                   {m.card?.type === 'history' ? (
-                    <HistoryBento tc={cases.find((c) => c.id === (m.card as Extract<ThreadCard, { type: 'history' }>).caseId) ?? tcase} onAll={() => nav.navigate('ClientTabs', { screen: 'History' })} />
+                    <HistoryBento
+                      tc={cases.find((c) => c.id === (m.card as Extract<ThreadCard, { type: 'history' }>).caseId) ?? tcase}
+                      onAll={() => nav.navigate('ClientTabs', { screen: 'History' })}
+                    />
                   ) : m.card?.type === 'fuAsk' ? (
                     // ตอบได้เฉพาะคำถามล่าสุด
                     i === thread.length - 1 ? <ReplyChips options={PAIN_CHIPS} onPick={(o) => answerFuScore(m.card as Extract<ThreadCard, { type: 'fuAsk' }>, Number(o))} /> : null
@@ -1751,6 +1754,28 @@ export function HistoryBento({ tc, onAll }: { tc: TreatmentCase; onAll?: () => v
           <Text variant="caption" tone="tertiary" numberOfLines={1}>
             ครั้งล่าสุด {last.date}
           </Text>
+          {/* การดูแลตัวเองระหว่างคอร์ส: ทำท่าที่บ้านกี่วันตั้งแต่เริ่มรักษา */}
+          {tc.selfCare.days ? (
+            <View style={{ marginTop: 'auto', gap: space[2], paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle }}>
+              <View>
+                <Text variant="caption" tone="secondary">
+                  ดูแลตัวเองที่บ้าน
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
+                  <Text variant="titleLg">{tc.selfCare.daysDone ?? 0}</Text>
+                  <Text variant="labelSm" tone="secondary">
+                    / {tc.selfCare.days} วัน
+                  </Text>
+                </View>
+              </View>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border.default, overflow: 'hidden' }}>
+                <View style={{ width: `${Math.round(((tc.selfCare.daysDone ?? 0) / tc.selfCare.days) * 100)}%`, height: 6, borderRadius: 3, backgroundColor: colors.brand.primary }} />
+              </View>
+              <Text variant="caption" tone="tertiary" numberOfLines={1}>
+                {tc.selfCare.title}
+              </Text>
+            </View>
+          ) : null}
         </Tile>
       </View>
 
