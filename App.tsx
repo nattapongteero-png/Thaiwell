@@ -11,7 +11,9 @@ import {
   IBMPlexSansThai_700Bold,
 } from '@expo-google-fonts/ibm-plex-sans-thai';
 import { ThemeProvider } from './src/design-system';
-import { JourneyProvider } from './src/state/JourneyContext';
+import { APP_STATE_KEY, JourneyProvider } from './src/state/JourneyContext';
+import { SEEN_KEY } from './src/services/cloudBridge';
+import { hydratePersist } from './src/services/persist';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 /**
@@ -33,8 +35,14 @@ export default function App() {
     IBMPlexSansThai_600SemiBold,
     IBMPlexSansThai_700Bold,
   });
+  // มือถือ: โหลดข้อมูลที่จำไว้ก่อนแสดงแอป (เปิดใหม่กลับมาที่เดิม)
+  const [restored, setRestored] = React.useState(Platform.OS === 'web');
+  React.useEffect(() => {
+    if (!restored) void hydratePersist([APP_STATE_KEY, SEEN_KEY]).then(() => setRestored(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  if (!loaded) {
+  if (!loaded || !restored) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />

@@ -12,6 +12,7 @@ import type { ElementKey } from '../data/thaiMassageKnowledge';
 import { evaluateSafety, type HealthProfile, type SafetyResult } from '../services/safetyEngine';
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
 import { noticeOf, notify, setupNotifications } from '../services/notify';
+import { getItem, removeItem, setItem } from '../services/persist';
 import { birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
@@ -363,27 +364,27 @@ export interface CaseAppt {
 
 const Ctx = createContext<JourneyState | null>(null);
 
-/* ---------- จำข้อมูลแอปข้ามการเปิดใหม่ (เว็บ · ต้นแบบ) ----------
+/* ---------- จำข้อมูลแอปข้ามการเปิดใหม่ (เว็บ + มือถือ · ต้นแบบ) ----------
  * เก็บบัญชี การจอง เรื่องที่รักษา นัด แจ้งเตือน บิล และคำขอที่ส่งไปหลังบ้าน → เปิดใหม่ยังรับข้อมูลจากคลินิกต่อได้
  * ออกจากระบบ = ล้างทั้งหมด */
-const APP_STATE_KEY = 'thaiwell.app.v1';
-const appStore = (): Storage | null => {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
-  } catch {
-    return null;
+export const APP_STATE_KEY = 'thaiwell.app.v1';
+/** อ่านครั้งแรกตอนสร้าง provider (มือถือโหลดเข้าหน่วยความจำไว้แล้ว — App.tsx) */
+let SAVED: Record<string, unknown> | null | undefined;
+const savedState = () => {
+  if (SAVED === undefined) {
+    try {
+      const raw = getItem(APP_STATE_KEY);
+      SAVED = raw ? JSON.parse(raw) : null;
+    } catch {
+      SAVED = null;
+    }
   }
+  return SAVED;
 };
-const SAVED: Record<string, unknown> | null = (() => {
-  try {
-    const raw = appStore()?.getItem(APP_STATE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-})();
-/** ค่าที่บันทึกไว้ (ถ้าเคยเข้าใช้งานแล้ว) ไม่มี = ค่าเริ่มต้น */
-const saved = <T,>(key: string, fallback: T): T => (SAVED?.entered && SAVED[key] !== undefined ? (SAVED[key] as T) : fallback);
+const saved = <T,>(key: string, fallback: T): T => {
+  const sv = savedState();
+  return sv?.entered && sv[key] !== undefined ? (sv[key] as T) : fallback;
+};
 
 const initialBefore: Assessment = { pain: 3, stiffness: 7, mobility: 2, stress: 4, sleep: 2 };
 const initialRecord: ServiceRecord = { regions: [], techniques: [], pressure: 'ปานกลาง', duration: 60, notes: '', provider: 'พท.ป. สมศรี ดีงาม' };
@@ -585,7 +586,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     // ล้างข้อมูลที่จำไว้ + คำขอที่ส่งไปหลังบ้าน
     try {
-      appStore()?.removeItem(APP_STATE_KEY);
+      removeItem(APP_STATE_KEY);
     } catch {
       /* ignore */
     }
@@ -854,14 +855,13 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   };
 
   /** เข้าใช้งานแล้ว (ถึงหน้าแรก) → เปิดใหม่กลับมาที่เดิม */
-  const [entered, setEntered] = useState(() => !!SAVED?.entered);
+  const [entered, setEntered] = useState(() => !!savedState()?.entered);
   const markEntered = useCallback(() => setEntered(true), []);
   React.useEffect(() => {
-    const st = appStore();
-    if (!entered || !st) return;
+    if (!entered) return;
     const t = setTimeout(() => {
       try {
-        st.setItem(
+        setItem(
           APP_STATE_KEY,
           JSON.stringify({
             entered, profile, consents, elements, elementsDone, followUps, account, newPatient, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted,
@@ -877,7 +877,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   });
 
   const value: JourneyState = {
-    resumed: !!SAVED?.entered,
+    resumed: !!savedState()?.entered,
     markEntered,
     client: account
       ? { name: `คุณ${account.name}`, initials: account.name.slice(0, 2), age: profile.age, occupation: '', hn: 'TW-NEW' }
