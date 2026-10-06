@@ -2217,7 +2217,7 @@ export function HomeScreen() {
   const homeShift = Math.max(0, headerBottom - introTop);
   // ยังไม่มีข้อมูล: หุ่นเยื้องไปขวา (ซ้ายเป็นเนื้อหา ThaiWell AI)
   const bodyTransform = [
-    { translateX: mix(chatHome ? Math.round(winW * 0.3) : 0, 0, dx) },
+    { translateX: mix(chatHome ? Math.round(winW * 0.34) : 0, 0, dx) },
     { translateY: mix(homeShift, FOCUS_SHIFT, dy) },
     { scale: mix(1, FOCUS_SCALE, k) },
   ];
@@ -4305,7 +4305,8 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
   const { colors } = useTheme();
   // พื้นที่น้อย (จอเล็ก) → ลูกแก้วเล็กลง และซ่อนรายการสิ่งที่ AI ช่วยได้
   const compact = height < 370;
-  const orb = compact ? 64 : Math.round(Math.min(96, height - 280));
+  // ลูกแก้วรองจากหัวข้อ (หัวข้อเป็นจุดเด่นหลัก · ไม่แย่งกับหัวหุ่น)
+  const orb = compact ? 56 : Math.round(Math.min(72, height - 284));
   // แสงออโรร่า 2 ชั้น หมุนสวนทางกันคนละความเร็ว → แสงฟุ้งเปลี่ยนรูปตลอด ไม่ซ้ำจังหวะ
   const spin = React.useRef([new Animated.Value(0), new Animated.Value(0)]).current;
   React.useEffect(() => {
@@ -4358,7 +4359,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
         </View>
       </Pressable>
       <View style={{ gap: space[1] }}>
-        <Text variant="headlineSm">{'ปวดเมื่อยตรงไหน\nให้ AI ช่วยดู'}</Text>
+        <Text variant={compact ? 'headlineSm' : 'headlineMd'}>{'ปวดเมื่อยตรงไหน\nให้ AI ช่วยดู'}</Text>
         <Text variant="bodyBase" tone="secondary">
           ตอบไม่กี่ข้อ รู้ว่าควรนวดแบบไหน
         </Text>
