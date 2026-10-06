@@ -2676,7 +2676,7 @@ export function HomeScreen() {
             {/* แถวแรก: รูปโปรไฟล์ + สวัสดีค่ะ/ชื่อ · บรรทัดถัดไป: ธาตุเป็น pill เล็ก (แตะดูรายละเอียดธาตุ) */}
             <View pointerEvents="box-none" style={{ gap: space[2], alignSelf: 'flex-start' }}>
             <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-              <ProfileAvatar sex={account?.sex || (newPatient ? 'หญิง' : 'ชาย')} />
+              <ProfileAvatar sex={account?.sex || (newPatient ? 'หญิง' : 'ชาย')} photo={account?.avatar} />
               <View pointerEvents="none" style={{ gap: 2 }}>
                 <Text variant="bodyBase" tone="secondary">
                   สวัสดีค่ะ,

@@ -17,6 +17,7 @@ import { fetchCloudRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
 import { fetchMyHn, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
+import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
 import { birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
@@ -188,6 +189,8 @@ export interface Account {
   email?: string;
   /** ข้อมูลตามบัตรประชาชน + เบอร์โทร */
   idCard?: IdCard;
+  /** avatar ที่เลือก ("avatar:p12") · ไม่มี = ตามเพศ */
+  avatar?: string;
 }
 
 interface JourneyState {
@@ -500,6 +503,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         citizenId: c?.citizenId,
         title: c?.title,
         address: c?.address,
+        avatar: acc.avatar ?? defaultAvatar(acc.sex),
       };
     }
     const name = acc ? acc.name : 'สมศักดิ์ รักดี';

@@ -1,4 +1,4 @@
-/** avatar ที่คลินิกเลือกให้ผู้บำบัด (ชุดภาพเดียวกับ ThaiWell back-office: Notionists by Zoish via DiceBear, CC0) */
+/** avatar ชุดเดียวกับ ThaiWell back-office (Notionists by Zoish via DiceBear, CC0) — ผู้บำบัดที่คลินิกเลือก และผู้ใช้เลือกเองในโปรไฟล์ */
 import type { FC } from 'react';
 import type { SvgProps } from 'react-native-svg';
 import T1 from '../../assets/avatars/staff/t1.svg';
@@ -49,6 +49,12 @@ import P39 from '../../assets/avatars/staff/p39.svg';
 import P40 from '../../assets/avatars/staff/p40.svg';
 import P41 from '../../assets/avatars/staff/p41.svg';
 import P42 from '../../assets/avatars/staff/p42.svg';
-export const STAFF_AVATARS: Record<string, FC<SvgProps>> = { t1: T1, t2: T2, t3: T3, t4: T4, t5: T5, t6: T6, p1: P1, p2: P2, p3: P3, p4: P4, p5: P5, p6: P6, p7: P7, p8: P8, p9: P9, p10: P10, p11: P11, p12: P12, p13: P13, p14: P14, p15: P15, p16: P16, p17: P17, p18: P18, p19: P19, p20: P20, p21: P21, p22: P22, p23: P23, p24: P24, p25: P25, p26: P26, p27: P27, p28: P28, p29: P29, p30: P30, p31: P31, p32: P32, p33: P33, p34: P34, p35: P35, p36: P36, p37: P37, p38: P38, p39: P39, p40: P40, p41: P41, p42: P42 };
+import U1 from '../../assets/avatars/staff/u1.svg';
+import U2 from '../../assets/avatars/staff/u2.svg';
+export const STAFF_AVATARS: Record<string, FC<SvgProps>> = { t1: T1, t2: T2, t3: T3, t4: T4, t5: T5, t6: T6, p1: P1, p2: P2, p3: P3, p4: P4, p5: P5, p6: P6, p7: P7, p8: P8, p9: P9, p10: P10, p11: P11, p12: P12, p13: P13, p14: P14, p15: P15, p16: P16, p17: P17, p18: P18, p19: P19, p20: P20, p21: P21, p22: P22, p23: P23, p24: P24, p25: P25, p26: P26, p27: P27, p28: P28, p29: P29, p30: P30, p31: P31, p32: P32, p33: P33, p34: P34, p35: P35, p36: P36, p37: P37, p38: P38, p39: P39, p40: P40, p41: P41, p42: P42, u1: U1, u2: U2 };
+/** ตัวเลือกให้ผู้ใช้ (รูปตั้งต้นหญิง/ชายก่อน) */
+export const AVATAR_KEYS = ['u1', 'u2', ...Object.keys(STAFF_AVATARS).filter((k) => !k.startsWith('u'))];
+/** รูปตั้งต้นตามเพศ (ยังไม่เลือก) */
+export const defaultAvatar = (sex?: string) => (sex === 'หญิง' ? 'avatar:u1' : 'avatar:u2');
 /** "avatar:t3" → ภาพ · อื่น ๆ → ไม่มี */
 export const staffAvatar = (photo?: string) => (photo?.startsWith('avatar:') ? STAFF_AVATARS[photo.slice(7)] : undefined);

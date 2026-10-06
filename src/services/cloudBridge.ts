@@ -111,7 +111,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     gender: patient.gender,
     age: patient.age,
     // บัญชีจริง: ผูกกับบัญชี + ข้อมูลตามบัตรประชาชน (คลินิกลงทะเบียนให้ตรงคน)
-    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null } : {}),
+    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null, profile: { avatar: patient.avatar } } : {}),
   });
   if (pe) throw pe;
   const { error } = await cloud.from('tw_appointments').insert({

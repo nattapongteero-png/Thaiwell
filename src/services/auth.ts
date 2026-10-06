@@ -10,6 +10,8 @@ export interface CloudUser {
   email: string;
   identity?: IdCard & { verifiedAt: string; method: 'scan' | 'manual' };
   consents?: { service: boolean; aiProcessing: boolean; followUp: boolean; research: boolean };
+  /** avatar ที่เลือก ("avatar:p12") */
+  avatar?: string;
 }
 
 const TH_ERRORS: [RegExp, string][] = [
@@ -27,7 +29,7 @@ export const thaiError = (e: unknown) => {
 };
 
 const toUser = (u: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null | undefined): CloudUser | null =>
-  u ? { id: u.id, email: u.email ?? '', identity: u.user_metadata?.identity as CloudUser['identity'], consents: u.user_metadata?.consents as CloudUser['consents'] } : null;
+  u ? { id: u.id, email: u.email ?? '', identity: u.user_metadata?.identity as CloudUser['identity'], consents: u.user_metadata?.consents as CloudUser['consents'], avatar: u.user_metadata?.avatar as string | undefined } : null;
 
 /** บัญชีที่เข้าสู่ระบบค้างไว้ในเครื่อง (ไม่มี = null) */
 export async function currentUser(): Promise<CloudUser | null> {
@@ -59,6 +61,13 @@ export async function saveIdentity(identity: NonNullable<CloudUser['identity']>)
 export async function saveConsents(consents: NonNullable<CloudUser['consents']>) {
   const { error } = await cloud.auth.updateUser({ data: { consents } });
   if (error) throw error;
+}
+
+/** เปลี่ยน avatar → เก็บกับบัญชี + แถวผู้ป่วย (คลินิกเห็นรูปเดียวกัน) */
+export async function saveAvatar(userId: string, avatar: string) {
+  await cloud.auth.updateUser({ data: { avatar } });
+  const { data } = await cloud.from('tw_patients').select('profile').eq('id', userId).maybeSingle();
+  if (data) await cloud.from('tw_patients').update({ profile: { ...((data.profile as object) ?? {}), avatar } }).eq('id', userId);
 }
 
 export async function signOutCloud() {

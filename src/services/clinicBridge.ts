@@ -43,6 +43,8 @@ export interface ClinicPatient {
   citizenId?: string;
   title?: string;
   address?: string;
+  /** avatar ที่ผู้ใช้เลือก → คลินิกแสดงรูปเดียวกัน */
+  avatar?: string;
 }
 export interface ClinicRequest {
   id: string;
