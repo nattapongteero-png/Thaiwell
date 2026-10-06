@@ -2634,22 +2634,7 @@ export function HomeScreen() {
             opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.5)], outputRange: [1, 0], extrapolate: 'clamp' }),
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ThaiWell AI เล่าอาการให้ AI ช่วยประเมิน"
-            onPress={openAI}
-            style={({ pressed }) => ({ alignItems: 'center', gap: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}
-          >
-            <View style={{ borderRadius: 70, shadowColor: '#8B6BFF', shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
-              <AIBall size={140} />
-            </View>
-            <View style={{ alignItems: 'center', gap: space[1] }}>
-              <Text variant="titleLg">ThaiWell AI</Text>
-              <Text variant="bodyBase" tone="secondary" align="center">
-                ปวดตรงไหน เล่าให้ฟังได้เลย
-              </Text>
-            </View>
-          </Pressable>
+          <WelcomeHero height={Math.max(0, bentoGap - space[5] - space[2])} onPress={openAI} />
         </Animated.View>
       ) : null}
 
@@ -4308,6 +4293,81 @@ function CourseTrend({ values, total }: { values: (number | undefined)[]; total:
           })}
         </Svg>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * หน้าแรกผู้ใช้ใหม่ (ยังไม่มีข้อมูล): ลูกแก้ว AI + วงแสงกระเพื่อม · ข้อความชวน · ปุ่มดำ · สิ่งที่ AI ช่วยได้
+ * แตะลูกแก้วหรือปุ่ม = เริ่มคุยกับ ThaiWell AI · ขนาดลูกแก้วปรับตามพื้นที่ (จอเล็กไม่ล้น)
+ */
+function WelcomeHero({ height, onPress }: { height: number; onPress: () => void }) {
+  const { colors } = useTheme();
+  const orb = Math.round(Math.max(72, Math.min(120, height - 270)));
+  const rings = React.useRef([new Animated.Value(0), new Animated.Value(0)]).current;
+  React.useEffect(() => {
+    const loops = rings.map((v, i) =>
+      Animated.loop(Animated.sequence([Animated.delay(i * 1300), Animated.timing(v, { toValue: 1, duration: 2600, easing: Easing.out(Easing.quad), useNativeDriver: true }), Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: true })])),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [rings]);
+  const features: { icon: React.ComponentProps<typeof Icon>['name']; text: string }[] = [
+    { icon: 'activity', text: 'ประเมินอาการ' },
+    { icon: 'heart', text: 'ท่ายืดแนะนำ' },
+    { icon: 'map-pin', text: 'คลินิกใกล้คุณ' },
+  ];
+  return (
+    <View style={{ alignItems: 'center', gap: space[4], paddingHorizontal: space[5] }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ width: orb, height: orb, alignItems: 'center', justifyContent: 'center', marginBottom: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}>
+        {/* วงแสงกระเพื่อมออกจากลูกแก้ว (สลับจังหวะ 2 วง) */}
+        {rings.map((v, i) => (
+          <Animated.View
+            key={i}
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              width: orb,
+              height: orb,
+              borderRadius: orb / 2,
+              borderWidth: 2,
+              borderColor: AI_GRAD[i === 0 ? 2 : 1],
+              opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+              transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] }) }],
+            }}
+          />
+        ))}
+        <View style={{ borderRadius: orb / 2, shadowColor: '#8B6BFF', shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
+          <AIBall size={orb} />
+        </View>
+      </Pressable>
+      <View style={{ alignItems: 'center', gap: space[1] }}>
+        <Text variant="headlineSm" align="center">
+          ปวดเมื่อยตรงไหน ให้ AI ช่วยดู
+        </Text>
+        <Text variant="bodyBase" tone="secondary" align="center">
+          ตอบไม่กี่ข้อ รู้ว่าควรนวดแบบไหน
+        </Text>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="เริ่มคุยกับ ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
+        <View style={{ height: 48, paddingHorizontal: space[6], borderRadius: radius.full, backgroundColor: colors.text.primary, flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          <Icon name="message-circle" size="sm" color={colors.text.inverse} />
+          <Text variant="labelMd" color={colors.text.inverse} style={{ transform: [{ translateY: 1 }] }}>
+            เริ่มคุยกับ ThaiWell AI
+          </Text>
+        </View>
+      </Pressable>
+      {/* สิ่งที่ AI ช่วยได้ */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[4] }}>
+        {features.map((f) => (
+          <View key={f.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Icon name={f.icon} size="xs" color={colors.brand.primary} />
+            <Text variant="bodyXs" tone="secondary" style={{ transform: [{ translateY: 1 }] }}>
+              {f.text}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
