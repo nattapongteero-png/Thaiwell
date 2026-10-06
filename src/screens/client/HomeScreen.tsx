@@ -2203,6 +2203,23 @@ export function HomeScreen() {
   }, [started, sheetTop]);
   /** ความคืบหน้าของแผ่นข้อมูล (0 = ขั้น 1 → sheetTop = ขั้น 2) — มือถือใช้ transform · เว็บใช้ระยะเลื่อน */
   const sheetProgress = NATIVE_SHEET ? sheetOffset : scrollY;
+  /** ผู้ใช้ใหม่: 0 = ลูกแก้วกลางจอ · 1 = ปุ่ม ThaiWell AI แถวแท็บ (ตามระยะดึงแผ่นการ์ดขึ้น) */
+  const welcomeMorph = sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.7)], outputRange: [0, 1], extrapolate: 'clamp' });
+  const [pillOn, setPillOn] = React.useState(false);
+  /** ลูกแก้ว/ปุ่มกลางจอยังกดได้ (จางไปแล้ว → ไม่บังการ์ดที่เลื่อนขึ้นมา) */
+  const [heroOn, setHeroOn] = React.useState(true);
+  React.useEffect(() => {
+    const id = welcomeMorph.addListener(({ value }) => {
+      setPillOn((on) => (value > 0.9 ? true : value < 0.8 ? false : on));
+      setHeroOn(value < 0.3);
+    });
+    return () => welcomeMorph.removeListener(id);
+  }, [welcomeMorph]);
+  /** ตำแหน่งลูกแก้วเล็กในปุ่ม ThaiWell AI (พิกัดจอ) — ปลายทางของลูกแก้วกลางจอ */
+  const pillRef = React.useRef<View>(null);
+  const [pillBall, setPillBall] = React.useState<{ x: number; y: number } | null>(null);
+  const measurePill = () =>
+    setTimeout(() => pillRef.current?.measureInWindow((x, y, _w, h) => setPillBall((cur) => (cur && Math.abs(cur.x - x - 19) < 1 && Math.abs(cur.y - y - h / 2) < 1 ? cur : { x: x + 19, y: y + h / 2 }))), 50);
   // เผื่อที่ปุ่ม AI ลอย (FAB) เหนือ tab menu ให้ช่องล่างสุดเลื่อนพ้นปุ่ม
   const fabClear = componentTokens.dock.height + space[3];
   // หน้าแรก: หุ่นเริ่มใต้แถบหัวข้อ (ไม่ทับชื่อ/แท็บ) · ช่วงล่างอยู่หลัง bento
@@ -2214,7 +2231,7 @@ export function HomeScreen() {
       Animated.multiply(notIntro, focusAnim.interpolate({ inputRange: [0, 1], outputRange: [home - base, foc - base] })),
       intro.interpolate({ inputRange: [0, 1], outputRange: [base, chat] }),
     );
-  const homeShift = Math.max(0, headerBottom - introTop);
+  const homeShift = Math.max(0, headerBottom - (chatHome && !started ? WELCOME_ROW : 0) - introTop);
   // ยังไม่มีข้อมูล: หุ่นเยื้องไปขวา (ซ้ายเป็นเนื้อหา ThaiWell AI)
   const bodyTransform = [
     { translateX: mix(chatHome ? Math.round(winW * 0.34) : 0, 0, dx) },
@@ -2622,19 +2639,19 @@ export function HomeScreen() {
       {/* ยังไม่มีข้อมูล: ลูกแก้ว ThaiWell AI กลางจอ + ข้อความชวน (ทางเริ่มเดียว) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
       {chatHome && !started && sheetTop > 0 ? (
         <Animated.View
-          pointerEvents="box-none"
+          pointerEvents={heroOn ? 'box-none' : 'none'}
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
-            top: headerBottom + space[2],
-            height: Math.max(0, bentoGap - space[5] - space[2]),
+            // แถวปุ่ม AI ในหัว (ซ่อนอยู่ตอนพัก) → ใช้พื้นที่แถวนั้นด้วย ให้ขนาดเท่าเดิม
+            top: headerBottom - WELCOME_ROW + space[2],
+            height: Math.max(0, bentoGap + WELCOME_ROW - space[5] - space[2]),
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.5)], outputRange: [1, 0], extrapolate: 'clamp' }),
           }}
         >
-          <WelcomeHero height={Math.max(0, bentoGap - space[5] - space[2])} onPress={openAI} />
+          <WelcomeHero height={Math.max(0, bentoGap + WELCOME_ROW - space[5] - space[2])} onPress={openAI} progress={welcomeMorph} target={pillBall} />
         </Animated.View>
       ) : null}
 
@@ -2682,7 +2699,19 @@ export function HomeScreen() {
             </View>
             {/* แท็บเรื่องที่ดูแล — ตรึงใน header (เลื่อนดูช่องล่าง ๆ ก็ยังรู้ว่าดูเรื่องไหน และสลับได้ทันที) */}
             {/* แถวแท็บมีปุ่ม "ถาม AI" → แสดงเสมอเมื่อมีข้อมูล (จองไว้นัดเดียวก็แสดง) */}
-            {!started || leaving ? (
+            {/* ยังไม่มีข้อมูล: ดึงแผ่นการ์ดขึ้น → ลูกแก้วกลางจอกลายเป็นปุ่ม ThaiWell AI แถวแท็บ (ดึงลง = กลับเป็นลูกแก้ว) */}
+            {chatHome && !started ? (
+              <View pointerEvents="box-none" style={{ minHeight: BENTO_CASE_H, flexDirection: 'row', alignItems: 'center' }}>
+                <Animated.View
+                  ref={pillRef}
+                  onLayout={measurePill}
+                  pointerEvents={pillOn ? 'auto' : 'none'}
+                  style={{ opacity: welcomeMorph.interpolate({ inputRange: [0, 0.8, 1], outputRange: [0, 0, 1] }) }}
+                >
+                  <AIButton label="ThaiWell AI" onPress={openAI} />
+                </Animated.View>
+              </View>
+            ) : !started || leaving ? (
               <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
@@ -4301,8 +4330,25 @@ function CourseTrend({ values, total }: { values: (number | undefined)[]; total:
  * หน้าแรกผู้ใช้ใหม่ (ยังไม่มีข้อมูล): ลูกแก้ว AI + แสงออโรร่าหมุนรอบ · ข้อความชวน · ปุ่มดำ · สิ่งที่ AI ช่วยได้
  * แตะลูกแก้วหรือปุ่ม = เริ่มคุยกับ ThaiWell AI · ขนาดลูกแก้วปรับตามพื้นที่ (จอเล็กไม่ล้น)
  */
-function WelcomeHero({ height, onPress }: { height: number; onPress: () => void }) {
+function WelcomeHero({
+  height,
+  onPress,
+  progress,
+  target,
+}: {
+  height: number;
+  onPress: () => void;
+  /** 0 = พัก · 1 = กลายเป็นปุ่มแถวแท็บแล้ว */
+  progress: Animated.AnimatedInterpolation<number>;
+  /** ศูนย์กลางลูกแก้วในปุ่มแถวแท็บ (พิกัดจอ) */
+  target: { x: number; y: number } | null;
+}) {
   const { colors } = useTheme();
+  // ศูนย์กลางลูกแก้วตอนพัก (พิกัดจอ) → ระยะที่ต้องลอยไปหาปุ่ม
+  const orbRef = React.useRef<View>(null);
+  const [from, setFrom] = React.useState<{ x: number; y: number } | null>(null);
+  const measureOrb = () =>
+    setTimeout(() => orbRef.current?.measureInWindow((x, y, w, h) => setFrom((cur) => (cur && Math.abs(cur.x - x - w / 2) < 1 && Math.abs(cur.y - y - h / 2) < 1 ? cur : { x: x + w / 2, y: y + h / 2 }))), 50);
   // พื้นที่น้อย (จอเล็ก) → ลูกแก้วเล็กลง และซ่อนรายการสิ่งที่ AI ช่วยได้
   const compact = height < 370;
   // ลูกแก้วรองจากหัวข้อ (หัวข้อเป็นจุดเด่นหลัก · ไม่แย่งกับหัวหุ่น)
@@ -4315,6 +4361,22 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
     return () => loops.forEach((l) => l.stop());
   }, [spin]);
   const halo = Math.round(orb * 1.5);
+  const dx = from && target ? target.x - from.x : 0;
+  const dy = from && target ? target.y - from.y : -80;
+  // ลูกแก้วลอยไปหาปุ่มและย่อเท่าลูกแก้วในปุ่ม (30) · หายตอนปุ่มขึ้นมาแทน
+  const orbMove = {
+    opacity: progress.interpolate({ inputRange: [0, 0.85, 1], outputRange: [1, 1, 0] }),
+    transform: [
+      { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }) },
+      { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }) },
+      { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 30 / orb] }) },
+    ],
+  };
+  // ข้อความ ปุ่ม รายการ: จางและเลื่อนขึ้นเล็กน้อยช่วงแรก
+  const restFade = {
+    opacity: progress.interpolate({ inputRange: [0, 0.4], outputRange: [1, 0], extrapolate: 'clamp' }),
+    transform: [{ translateY: progress.interpolate({ inputRange: [0, 0.4], outputRange: [0, -16], extrapolate: 'clamp' }) }],
+  };
   const features: { icon: React.ComponentProps<typeof Icon>['name']; text: string }[] = [
     { icon: 'activity', text: 'ประเมินอาการ' },
     { icon: 'heart', text: 'ท่ายืดแนะนำ' },
@@ -4322,6 +4384,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
   ];
   return (
     <View style={{ alignSelf: 'stretch', alignItems: 'flex-start', gap: space[4], paddingHorizontal: space[5], paddingRight: '38%' }}>
+      <Animated.View ref={orbRef} onLayout={measureOrb} style={orbMove}>
       <Pressable accessibilityRole="button" accessibilityLabel="ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ width: orb, height: orb, alignItems: 'center', justifyContent: 'center', marginBottom: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}>
         {/* แสงออโรร่าหลังลูกแก้ว: ก้อนแสงสีชุด AI ขอบจาง (radial) วางเยื้องศูนย์ แล้วหมุนช้า ๆ */}
         {spin.map((v, layer) => (
@@ -4358,6 +4421,8 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
           <AIBall size={orb} />
         </View>
       </Pressable>
+      </Animated.View>
+      <Animated.View style={[{ gap: space[4], alignItems: 'flex-start' }, restFade]}>
       <View style={{ gap: space[1] }}>
         <Text variant={compact ? 'headlineSm' : 'headlineMd'}>{'ปวดเมื่อยตรงไหน\nให้ AI ช่วยดู'}</Text>
         <Text variant="bodyBase" tone="secondary">
@@ -4385,6 +4450,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
         ))}
       </View>
       )}
+      </Animated.View>
     </View>
   );
 }
@@ -4393,6 +4459,8 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
  * ปุ่ม ThaiWell AI — พื้นพาสเทลอ่อน + ขอบบางไล่สีชุดเดียวกับลูกแก้ว AI · ตัวอักษรเข้ม · เงาม่วงจาง
  * แสงวิ่งผ่านเบา ๆ ทุก 4 วินาที · สูง 38 เท่าแท็บที่เลือก
  */
+/** ผู้ใช้ใหม่: ความสูงแถวปุ่ม AI ในหัว (แถว + ช่องห่างของหัว) */
+const WELCOME_ROW = BENTO_CASE_H + space[4];
 /** หน้าแรกผู้ใช้ใหม่: หุ่นหันข้างเยื้องไปทางซ้าย (หาเนื้อหา AI) */
 const WELCOME_ANGLE = -0.7;
 const AI_GRAD = ['#2FD39A', '#3AA8FF', '#8B6BFF', '#E45BD1'];
