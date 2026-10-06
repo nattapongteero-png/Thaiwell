@@ -3773,8 +3773,6 @@ function DraftBento({
   const b = d.booking;
   const served = d.stage === 'served';
   const prep = [...(d.caution?.includes('ความดัน') || d.caution?.includes('อบ') ? ['วัดความดันก่อนนวด'] : []), 'งดอาหารหนัก 30 นาที'];
-  // ขั้นของใบนี้: ประเมิน → จอง → รับบริการ → ติดตามผล
-  const stepIdx = served ? 3 : d.stage === 'booked' ? 2 : 1;
   const near = nearestClinic();
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
@@ -3786,7 +3784,8 @@ function DraftBento({
       {/* จองแล้ว → การ์ดนัดเต็มแถว แบบเดียวกับหลังรักษา (นัดครั้งที่ N) */}
       {booked ? <FirstVisitCard booking={b!} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} /> : null}
 
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+      {/* จองแล้ว → แผนการรักษาซ้าย · ผลประเมินขวา (ลำดับเดียวกับหลังนวด) */}
+      <View style={{ flexDirection: booked ? 'row-reverse' : 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <View style={{ width: halfW, gap: BENTO_GAP }}>
           {/* นัด */}
           {booked ? null : d.red ? (
@@ -3895,23 +3894,15 @@ function DraftBento({
         </View>
 
         <View style={{ width: halfW, gap: BENTO_GAP }}>
-          {/* แนวทางที่แนะนำ + ขั้นของใบนี้ */}
-          <Tile style={{ gap: space[3] }}>
-            <View style={{ gap: space[1] }}>
-              <TileTitle title={d.red ? 'แนวทาง' : 'แนวทางที่แนะนำ'} />
-              <Text variant="titleSm">{d.red ? 'ตรวจกับแพทย์ก่อน' : 'นวดราชสำนัก 60 นาที'}</Text>
-              {d.caution ? (
-                <Text variant="caption" color={colors.status.warning.fg}>
-                  {d.caution}
-                </Text>
-              ) : null}
-            </View>
-            <View style={{ flexDirection: 'row', gap: 3 }}>
-              {[0, 1, 2, 3].map((i) => (
-                <View key={i} style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: i < stepIdx ? colors.brand.primary : i === stepIdx ? colors.text.primary : colors.border.default }} />
-              ))}
-            </View>
-          </Tile>
+          {/* ควรพบแพทย์ก่อน → แนวทาง · นอกนั้น = แผนการรักษา แบบเดียวกับหลังนวด (ยังไม่นวด = 0 ครั้ง จุดเทาทั้งคอร์ส) */}
+          {d.red ? (
+            <Tile style={{ gap: space[1] }}>
+              <TileTitle title="แนวทาง" />
+              <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
+            </Tile>
+          ) : (
+            <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} note={d.caution} />
+          )}
 
           {d.red ? (
             // ควรพบแพทย์ก่อน → ทางไปต่อ: โรงพยาบาลใกล้คุณ (นำทาง) หรือดูทั้งหมด
@@ -4113,29 +4104,7 @@ function HomeBento({
 
       {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <Tile style={{ width: halfW, gap: space[2] }} onPress={onHistory} accessibilityLabel={`แผนการรักษา ${tc.course.done} จาก ${tc.course.total} ครั้ง ดูรายละเอียดการรักษา`}>
-          {/* รูปแบบการรักษาชิดขวาบน (แบบเดียวกับวันที่ในการ์ดผลครั้งที่ N) */}
-          {/* ที่ว่างขวาบนแคบ → ตัด "นวด" นำหน้า (หัวการ์ดบอกอยู่แล้วว่าเป็นแผนการรักษา) */}
-          <TileTitle title="แผนการรักษา" meta={tc.plan.replace(/^นวด/, '')} />
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
-            {/* ตัวเลขขนาดเดียวกับ Pain Score ข้าง ๆ (40) */}
-            <Text variant="displayXl" style={{ fontSize: 40, lineHeight: 52 }}>
-              {tc.course.done}
-            </Text>
-            {/* "ครั้ง" มีสระ/วรรณยุกต์ซ้อน 2 ชั้นด้านบน → เผื่อ lineHeight ไม่ให้ ้ ถูกตัด */}
-            <Text variant="titleXs" tone="secondary" style={{ lineHeight: 30 }}>
-              /{tc.course.total} ครั้ง
-            </Text>
-            {/* ที่เหลือ: ตัวเล็กขนาดเดิม ต่อท้ายจำนวนครั้ง */}
-            <Text variant="bodyXs" tone="tertiary" numberOfLines={1} style={{ flexShrink: 1 }}>
-              {tc.course.total > tc.course.done ? `· เหลือ ${tc.course.total - tc.course.done}` : '· ครบแล้ว'}
-            </Text>
-          </View>
-          {/* แนวโน้มความปวดหลังนวดทั้งคอร์ส: เต็มพื้นที่ที่เหลือ ชิดขอบซ้าย-ขวา-ล่างแบบกราฟใน Pain Score · นวดแล้ว = สีตามระดับปวด · ยังไม่ถึง = เทา */}
-          <View style={{ flex: 1, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD, marginTop: -space[2] }}>
-            <CourseTrend values={trendValues(tc)} total={tc.course.total} />
-          </View>
-        </Tile>
+        <PlanTile width={halfW} plan={tc.plan} done={tc.course.done} total={tc.course.total} values={trendValues(tc)} onPress={onHistory} />
         <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
           <View pointerEvents={needPost ? 'box-none' : 'none'}>
             <PainScoreCard
@@ -4263,6 +4232,42 @@ function PreVisitResult({ tc, focus }: { tc: TreatmentCase; focus?: string }) {
 }
 
 /** ค่าบนกราฟแนวโน้ม: ครั้งก่อน ๆ = หลังนวด · ครั้งล่าสุด = คะแนนที่ผู้ใช้ประเมินหลังนวด (ยังไม่ประเมิน = ยังไม่มีคะแนน) — ตรงกับการ์ด Pain Score */
+/**
+ * การ์ดแผนการรักษา (ใช้ทั้งก่อนและหลังนวดครั้งแรก): จำนวนครั้ง/ทั้งคอร์ส + กราฟแนวโน้มความปวด · รูปแบบนวดขวาบน
+ * note = ข้อควรระวังจากผลประเมิน (ถ้ามี)
+ */
+function PlanTile({ width, plan, done, total, values, note, onPress }: { width: number; plan: string; done: number; total: number; values: (number | undefined)[]; note?: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Tile style={{ width, gap: space[2] }} onPress={onPress} accessibilityLabel={`แผนการรักษา ${done} จาก ${total} ครั้ง${onPress ? ' ดูรายละเอียดการรักษา' : ''}`}>
+      {/* รูปแบบการรักษาชิดขวาบน · ที่ว่างแคบ → ตัด "นวด" นำหน้า (หัวการ์ดบอกอยู่แล้วว่าเป็นแผนการรักษา) */}
+      <TileTitle title="แผนการรักษา" meta={plan.replace(/^นวด/, '')} />
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
+        {/* ตัวเลขขนาดเดียวกับ Pain Score ข้าง ๆ (40) */}
+        <Text variant="displayXl" style={{ fontSize: 40, lineHeight: 52 }}>
+          {done}
+        </Text>
+        {/* "ครั้ง" มีสระ/วรรณยุกต์ซ้อน 2 ชั้นด้านบน → เผื่อ lineHeight ไม่ให้ ้ ถูกตัด */}
+        <Text variant="titleXs" tone="secondary" style={{ lineHeight: 30 }}>
+          /{total} ครั้ง
+        </Text>
+        <Text variant="bodyXs" tone="tertiary" numberOfLines={1} style={{ flexShrink: 1 }}>
+          {total > done ? `· เหลือ ${total - done}` : '· ครบแล้ว'}
+        </Text>
+      </View>
+      {note ? (
+        <Text variant="caption" color={colors.status.warning.fg} numberOfLines={2} style={{ marginTop: -space[2] }}>
+          {note}
+        </Text>
+      ) : null}
+      {/* แนวโน้มความปวดหลังนวดทั้งคอร์ส: เต็มพื้นที่ที่เหลือ ชิดขอบซ้าย-ขวา-ล่าง · นวดแล้ว = สีตามระดับปวด · ยังไม่ถึง = เทา */}
+      <View style={{ flex: 1, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD, marginTop: -space[2] }}>
+        <CourseTrend values={values} total={total} />
+      </View>
+    </Tile>
+  );
+}
+
 const trendValues = (tc: TreatmentCase) => tc.visits.slice(0, tc.course.total).map((_, i) => afterOf(tc, i));
 
 /** กราฟแนวโน้มความปวดย่อ (การ์ดแผนการรักษา): เส้น + พื้นไล่จางของครั้งที่นวดแล้ว · จุดเทาของครั้งที่ยังไม่ถึง (วางบนเส้นฐาน) */
