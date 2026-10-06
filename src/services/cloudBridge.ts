@@ -196,11 +196,12 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     });
   let tick = 0;
   void refreshAvailability().catch(() => undefined);
+  // สำรอง realtime ทุก 3 วินาที (แจ้งเตือนไม่ช้าแม้ realtime หลุด)
   const t = setInterval(() => {
     void fetchAll(true);
     // เวลาว่างของคลินิก ทุก ~30 วินาที
-    if (++tick % 5 === 0) void refreshAvailability().catch(() => undefined);
-  }, 6000);
+    if (++tick % 10 === 0) void refreshAvailability().catch(() => undefined);
+  }, 3000);
   return () => {
     stopped = true;
     clearInterval(t);

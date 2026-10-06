@@ -85,6 +85,8 @@ export interface Booking {
   visit: number;
   /** จองจากแอป = คำขอจอง รอเจ้าหน้าที่คลินิกยืนยัน (หลังบ้าน: คำขอจองคิว) · ไม่ระบุ = ยืนยันแล้ว */
   status?: 'pending' | 'confirmed';
+  /** ที่คลินิกวันนี้ (cloud): เช็กอินแล้ว · ถึงคิว · กำลังรับบริการ */
+  stage?: 'checked_in' | 'called' | 'in_service';
 }
 export type LooseBooking = Booking & { id: string };
 /** สรุปจากการประเมินกับ AI (ใช้ต่อในหน้าจอง / หน้าแรก / ผู้ให้บริการ) */
@@ -355,6 +357,7 @@ export interface CaseAppt {
   queue?: string;
   clinic: string;
   therapist: string;
+  stage?: 'checked_in' | 'called' | 'in_service';
 }
 
 const Ctx = createContext<JourneyState | null>(null);
@@ -530,9 +533,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     void setupNotifications();
     return listenClinic((ev) => {
+      // เด้งแจ้งเตือนเฉพาะนัด/บิลของผู้ใช้คนนี้ (cloud มีนัดของทุกคน) — ตรวจก่อนประมวลผล เพราะนัดที่จบแล้วจะถูกลืม
+      const me = patientOf().id;
+      const mine = ev.filter((e) => ('ref' in e && (bridgeRefs.current[e.ref] || caseLinks.current[e.ref])) || ('patientId' in e && e.patientId === me));
       onClinic.current(ev);
-      // เด้งแจ้งเตือนบนเครื่องทุกครั้งที่คลินิกส่งข้อมูลมา
-      for (const e of ev) {
+      for (const e of mine) {
         const n = noticeOf(e);
         if (n) void notify(...n);
       }
@@ -643,7 +648,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           pending: [...extra.map((v, i) => ({ id: `sess-${c.id}-${c.visits.length + i + 1}`, date: v.date, plan: c.plan, areas: c.areas })).reverse(), ...c.pending],
           course: { ...c.course, done: Math.min(c.course.total, c.course.done + extra.length) },
           therapist: a?.therapist || c.therapist,
-          appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue } : c.appointment,
+          appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage } : c.appointment,
         };
       }),
     [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains],
@@ -766,9 +771,10 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setCaseAppointment(l.caseId, { today: date === 'วันนี้', date, time: e.start, clinic: '', therapist: e.therapist });
       note('confirmed', `คลินิกยืนยันนัดรักษา${tc?.short ?? ''} ${date} ${e.start}${e.therapist ? ` · ${e.therapist}` : ''}`);
     } else if (e.type === 'queue') {
-      setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), queue: e.queue || m[l.caseId]?.queue } }));
+      setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), queue: e.queue || m[l.caseId]?.queue, stage: e.called ? 'called' : 'checked_in' } }));
       note('reminder', e.called ? `ถึงคิว ${e.queue} แล้ว เชิญเข้ารับบริการ` : `เช็กอินแล้ว ได้คิว ${e.queue} · รอเรียกคิวในแอป`);
     } else if (e.type === 'started') {
+      setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), stage: 'in_service' } }));
       note('reminder', `เริ่มรับบริการแล้ว · รักษา${tc?.short ?? ''}`);
     } else if (e.type === 'completed' && !l.done) {
       // คลินิกบันทึกการนวด → ครั้งใหม่ของใบนี้ (คะแนนของคลินิก) · บิลจริงตามมาจากคลินิก
@@ -822,13 +828,16 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const note = (kind: ApptNotice['kind'], text: string) => setApptNotices((all) => [{ id: `n-${e.type}-${e.id}`, ...(e.type === 'approved' ? target : {}), kind, text, at: nowAtLabel() }, ...all]);
       if (e.type === 'queue') {
         // คลินิกออกเลขคิว (หลังเช็กอิน) / เรียกคิว → แสดงที่นัด + แจ้งเตือน
-        const withQueue = (b: Booking): Booking => ({ ...b, queue: e.queue || b.queue });
+        const withQueue = (b: Booking): Booking => ({ ...b, queue: e.queue || b.queue, stage: e.called ? 'called' : 'checked_in' });
         if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking ? { ...d, booking: withQueue(d.booking) } : d)));
         if (t.looseId) setLooseBookings((all) => all.map((b) => (b.id === t.looseId ? { ...withQueue(b), id: b.id } : b)));
         note('reminder', e.called ? `ถึงคิว ${e.queue} แล้ว เชิญเข้ารับบริการ` : `เช็กอินแล้ว ได้คิว ${e.queue} · รอเรียกคิวในแอป`);
         continue;
       }
       if (e.type === 'started') {
+        const started = (b: Booking): Booking => ({ ...b, stage: 'in_service' });
+        if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking ? { ...d, booking: started(d.booking) } : d)));
+        if (t.looseId) setLooseBookings((all) => all.map((b) => (b.id === t.looseId ? { ...started(b), id: b.id } : b)));
         note('reminder', `เริ่มรับบริการแล้ว ${t.label}`);
         continue;
       }
