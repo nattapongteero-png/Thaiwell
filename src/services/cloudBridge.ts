@@ -137,10 +137,10 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
 }
 
 /** มาถึงคลินิก → checked_in (คลินิกออกเลขคิวแล้วเขียนกลับมาใน queue_no) */
-export async function cloudCheckIn(id: string, who?: string) {
+export async function cloudCheckIn(id: string, who?: string, code?: string) {
   const r = rows.get(id);
   if (r && r.status !== 'confirmed') return false;
-  const { data, error } = await cloud.from('tw_appointments').update({ status: 'checked_in' }).eq('id', id).eq('status', 'confirmed').select('id');
+  const { data, error } = await cloud.from('tw_appointments').update({ status: 'checked_in', note: code ? `checkin:${code.toUpperCase()}` : null }).eq('id', id).eq('status', 'confirmed').select('id');
   if (error) throw error;
   if (!data?.length) return false; // ไม่ได้อยู่ในสถานะยืนยันแล้ว (เช็กอินไปแล้ว / คลินิกยังไม่ยืนยัน)
   await logEvent('visit.checked_in', id, who, 'มาถึงคลินิก กดเช็กอินในแอป');
@@ -182,7 +182,9 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
   const s = row.status;
   const p = prev?.status;
   if (s !== p) {
-    if (s === 'confirmed') out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true });
+    // คลินิกส่งเช็กอินกลับ (รหัส QR ไม่ผ่าน) → ไม่ใช่การยืนยันนัดใหม่
+    if (s === 'confirmed' && p === 'checked_in' && (row.note ?? '').startsWith('checkin-rejected')) out.push({ id: id('ckno'), at, type: 'checkinRejected', ref: row.id, reason: (row.note ?? '').replace(/^checkin-rejected:\s*/, '') });
+    else if (s === 'confirmed') out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true });
     else if (s === 'rejected') out.push({ id: id('no'), at, type: 'rejected', ref: row.id, reason: row.note ?? '' });
     else if (s === 'called') out.push({ id: id('call'), at, type: 'queue', ref: row.id, queue: row.queue_no ?? '', called: true });
     else if (s === 'in_service') out.push({ id: id('start'), at, type: 'started', ref: row.id });

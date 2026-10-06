@@ -41,6 +41,8 @@ export function noticeOf(e: ClinicEvent): [string, string] | null {
       return ['คลินิกไม่สามารถรับนัดได้', e.reason || 'แตะเพื่อเลือกเวลาใหม่'];
     case 'queue':
       return e.called ? [`ถึงคิว ${e.queue} แล้ว`, 'เชิญเข้ารับบริการได้เลย'] : [`เลขคิวของคุณ ${e.queue}`, 'เช็กอินแล้ว รอเรียกคิว'];
+    case 'checkinRejected':
+      return ['เช็กอินไม่สำเร็จ', e.reason];
     case 'started':
       return ['เริ่มรับบริการแล้ว', 'ผู้ให้บริการกำลังดูแลคุณ'];
     case 'completed':

@@ -298,7 +298,10 @@ interface JourneyState {
   /** ส่งคำขอจองไปคลินิก (ต้นแบบ: จำลองว่าเจ้าหน้าที่ยืนยันหลังไม่กี่วินาที แล้วแจ้งเตือนในแอป) */
   requestBooking: (target: { draftId?: string; looseId?: string }, label: string) => void;
   /** เช็กอินที่คลินิก — นัดที่จองผ่าน cloud: คลินิกออกเลขคิวแล้วส่งกลับมา */
-  checkIn: (target: { draftId?: string; looseId?: string; caseId?: string }) => void;
+  /** เช็กอินที่คลินิกด้วยรหัสจาก QR ที่เคาน์เตอร์ → คลินิกตรวจแล้วออกเลขคิว · false = ส่งไม่สำเร็จ */
+  checkIn: (target: { draftId?: string; looseId?: string; caseId?: string }, code?: string) => Promise<boolean>;
+  /** เช็กอินไม่ผ่าน (cloud ref → เหตุผล) */
+  checkinErrors: Record<string, string>;
   /** ยกเลิกนัดที่ส่งไปคลินิกแล้ว (แจ้งหลังบ้าน) */
   cancelBooking: (target: { draftId?: string; looseId?: string }) => void;
   /** นัดนี้เชื่อมกับหลังบ้านผ่าน cloud (คลินิกเป็นคนปิดการรักษา/ออกบิล — ไม่ต้องจำลอง) · คืน id ใน cloud */
@@ -580,9 +583,12 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       return (!!target.draftId && t.draftId === target.draftId) || (!!target.looseId && t.looseId === target.looseId);
     });
   const cloudRefOf = useCallback((target: { draftId?: string; looseId?: string; caseId?: string }) => (isCloud() ? refOf(target) : undefined), []);
-  const checkIn = useCallback((target: { draftId?: string; looseId?: string; caseId?: string }) => {
+  const [checkinErrors, setCheckinErrors] = useState<Record<string, string>>({});
+  const checkIn = useCallback(async (target: { draftId?: string; looseId?: string; caseId?: string }, code?: string) => {
     const ref = refOf(target);
-    if (ref) sendCheckIn(ref, patientOf().name);
+    if (!ref) return false;
+    setCheckinErrors((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== ref)));
+    return sendCheckIn(ref, patientOf().name, code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const cancelBooking = useCallback((target: { draftId?: string; looseId?: string }) => {
@@ -911,7 +917,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       };
       // นัดที่จบแล้ว (ปฏิเสธ/นวดเสร็จ/ยกเลิก) ถูกเอาออก → แจ้งเตือนไม่ผูกกับนัดนั้น (ไม่อย่างนั้นถูกกรองทิ้ง)
       const note = (kind: ApptNotice['kind'], text: string) => setApptNotices((all) => [{ id: `n-${e.type}-${e.id}`, ...(e.type === 'approved' ? target : {}), kind, text, at: nowAtLabel() }, ...all]);
+      if (e.type === 'checkinRejected') {
+        // เช็กอินไม่ผ่าน → หน้าเช็กอินบอกเหตุผลให้สแกนใหม่
+        setCheckinErrors((m) => ({ ...m, [e.ref]: e.reason }));
+        note('reminder', `เช็กอินไม่สำเร็จ · ${e.reason}`);
+        continue;
+      }
       if (e.type === 'queue') {
+        setCheckinErrors((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== e.ref)));
         // คลินิกออกเลขคิว (หลังเช็กอิน) / เรียกคิว → แสดงที่นัด + แจ้งเตือน
         const withQueue = (b: Booking): Booking => ({ ...b, queue: e.queue || b.queue, stage: e.called ? 'called' : 'checked_in' });
         if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking ? { ...d, booking: withQueue(d.booking) } : d)));
@@ -1125,6 +1138,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     payBill,
     requestBooking,
     checkIn,
+    checkinErrors,
     cancelBooking,
     cloudRefOf,
   };

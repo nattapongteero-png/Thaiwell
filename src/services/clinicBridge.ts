@@ -87,6 +87,8 @@ export type ClinicEvent =
   | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string }
   /** เลขคิวจากคลินิก (หลังเช็กอิน) · called = ถึงคิวแล้ว */
   | { id: string; at: string; type: 'queue'; ref: string; queue: string; called: boolean }
+  /** เช็กอินไม่ผ่าน (รหัส QR ผิด/หมดอายุ/ไม่ใช่วันนัด) → สแกนใหม่ */
+  | { id: string; at: string; type: 'checkinRejected'; ref: string; reason: string }
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
@@ -132,6 +134,8 @@ export interface Availability {
   at: string;
   clinicName: string;
   clinic?: { name: string; address?: string; phone?: string; lat?: number; lng?: number };
+  /** คิววันนี้ของคลินิก (เฉพาะเลขคิว) */
+  queue?: { date: string; serving?: string; waiting: string[] };
   therapists: { id: string; name: string; role: string; photo?: string }[];
   days: Record<string, Record<string, Record<string, string[]>>>;
 }
@@ -174,9 +178,8 @@ export const sendNote = (title: string, body: string, patientId?: string, patien
   return true;
 };
 /** เช็กอินที่คลินิก (เฉพาะสะพาน cloud — localStorage ไม่มีขั้นนี้) */
-export const sendCheckIn = (ref: string, who?: string) => {
-  if (CLOUD) void cloudCheckIn(ref, who).catch(() => undefined);
-};
+/** code = รหัสจาก QR เช็กอินที่เคาน์เตอร์ (คลินิกตรวจก่อนออกเลขคิว) */
+export const sendCheckIn = (ref: string, who?: string, code?: string) => (CLOUD ? cloudCheckIn(ref, who, code).catch(() => false) : Promise.resolve(false));
 /** ยกเลิกนัดที่ส่งไปแล้ว */
 export const sendCancel = (ref: string, who?: string) => {
   if (CLOUD) void cloudCancel(ref, who).catch(() => undefined);
