@@ -340,11 +340,6 @@ export function HomeScreen() {
       !drafts.some((d) => d.chatId === c.id) &&
       !Object.values(caseChats).includes(c.id),
   );
-  // นับข้อแบบเดียวกับการ์ดประเมินในแชท (ข้อร้าวนับเมื่ออาการมีรูปแบบการร้าว)
-  const assessSteps = unfinished ? ASSESS_ORDER.filter((x) => x !== 'topic' && (x !== 'radiate' || unfinished.assess.radiate || radiateFor(Object.keys(unfinished.assess.sel)))) : [];
-  const resume = unfinished
-    ? { done: unfinished.assess.step === 'review' ? assessSteps.length : Math.max(0, assessSteps.indexOf(unfinished.assess.step as (typeof assessSteps)[number])), total: assessSteps.length }
-    : null;
   const startWelcome = (intent?: string, fresh = false) => {
     if (!fresh && intent === INTENTS[0] && unfinished) return openChat(unfinished.id);
     pendingIntent.current = intent ?? null;
@@ -511,7 +506,8 @@ export function HomeScreen() {
     if (!started) {
       // โหมด focus: แตะ mark = ข้ามไปจุดนั้น · หน้าแรก: แตะตรงที่ปวด = เริ่มประเมินโดยเลือกจุดนั้นไว้ให้
       if (focus) onFocusTap(pageX, pageY);
-      else startFromBody(pageX, pageY);
+      // ยังไม่มีข้อมูล → เริ่มด้วยปุ่ม ThaiWell AI กลางจอ (แตะหุ่นไม่เริ่มประเมิน)
+      else if (!chatHome) startFromBody(pageX, pageY);
       return;
     }
     // แชท: ไม่แตะเลือกบนหุ่นตรง ๆ แล้ว → ปุ่ม "ชี้จุดบนหุ่น" / แตะหุ่นเล็กในการ์ดประเมิน เปิดหน้าเลือกจุด (BodyPicker)
@@ -2049,20 +2045,6 @@ export function HomeScreen() {
   const [areaPt, setAreaPt] = React.useState<{ x: number; y: number } | null>(null);
   const rootRef = React.useRef<View>(null);
   const rootOffset = React.useRef({ x: 0, y: 0 });
-  /** ตำแหน่งจุดชวนแตะบนหุ่น (บ่า) — ฉายจากหุ่นจริง ตามขนาด/การหมุน */
-  const [tapHint, setTapHint] = React.useState<{ x: number; y: number } | null>(null);
-  React.useEffect(() => {
-    if (!(chatHome && !started && !focus)) return;
-    const t = setInterval(() => {
-      rootRef.current?.measureInWindow((x, y) => (rootOffset.current = { x, y }));
-      // บ่าอีกข้าง (ฝั่งซ้ายของจอ) → ป้ายไม่ชนป้าย "จองนวดใกล้บ้าน" ฝั่งขวา
-      const w = bodyRef.current?.projectPin('trapRight');
-      if (!w) return;
-      const p = Platform.OS !== 'web' ? { x: w.x - rootOffset.current.x, y: w.y - rootOffset.current.y } : w;
-      setTapHint((cur) => (cur && Math.abs(cur.x - p.x) < 1 && Math.abs(cur.y - p.y) < 1 ? cur : p));
-    }, 400);
-    return () => clearInterval(t);
-  }, [chatHome, started, focus]);
   // ปิดป้าย / เริ่มแชท → เก็บเส้น + หุ่นกลับหันหน้าตรง
   React.useEffect(() => {
     if (started) setFocus(false);
@@ -2314,7 +2296,8 @@ export function HomeScreen() {
       >
       <Animated.View
         pointerEvents="none"
-        style={{ position: 'absolute', top: introTop, left: (winW - introW) / 2, width: introW, height: introH, transform: bodyTransform }}
+        // ยังไม่มีข้อมูล → ซ่อนหุ่น (หน้าแรกมีแค่ปุ่ม AI) · คงไว้ในหน้า ไม่ต้องโหลดใหม่ตอนเข้าแชท
+        style={{ position: 'absolute', top: introTop, left: (winW - introW) / 2, width: introW, height: introH, transform: bodyTransform, opacity: chatHome && !started ? 0 : 1 }}
       >
         <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : 0} />
       </Animated.View>
@@ -2636,16 +2619,7 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
-      {/* ยังไม่มีข้อมูล: จุดกะพริบบนหุ่น + "แตะตรงที่ปวด" (หุ่น = ปุ่มเริ่มประเมิน) */}
-      {chatHome && !started && !focus && tapHint ? (
-        <Animated.View
-          pointerEvents="none"
-          style={{ position: 'absolute', left: tapHint.x, top: tapHint.y, opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.4)], outputRange: [1, 0], extrapolate: 'clamp' }) }}
-        >
-          <TapHint />
-        </Animated.View>
-      ) : null}
-      {/* ยังไม่มีข้อมูล: ขั้นการใช้งาน 3 ขั้น เป็น pill ลอยรอบหุ่น (สลับซ้าย–ขวา) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
+      {/* ยังไม่มีข้อมูล: ลูกแก้ว ThaiWell AI กลางจอ + ข้อความชวน (ทางเริ่มเดียว) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
       {chatHome && !started && sheetTop > 0 ? (
         <Animated.View
           pointerEvents="box-none"
@@ -2655,17 +2629,29 @@ export function HomeScreen() {
             right: 0,
             top: headerBottom + space[2],
             height: Math.max(0, bentoGap - space[5] - space[2]),
+            alignItems: 'center',
+            justifyContent: 'center',
             opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.5)], outputRange: [1, 0], extrapolate: 'clamp' }),
           }}
         >
-          <StepPills
-            onAI={() => startWelcome(INTENTS[0])}
-            onPlaces={() => nav.navigate('ClientTabs', { screen: 'Places' })}
-            resume={resume}
-          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ThaiWell AI เล่าอาการให้ AI ช่วยประเมิน"
+            onPress={openAI}
+            style={({ pressed }) => ({ alignItems: 'center', gap: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}
+          >
+            <View style={{ borderRadius: 70, shadowColor: '#8B6BFF', shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
+              <AIBall size={140} />
+            </View>
+            <View style={{ alignItems: 'center', gap: space[1] }}>
+              <Text variant="titleLg">ThaiWell AI</Text>
+              <Text variant="bodyBase" tone="secondary" align="center">
+                ปวดตรงไหน เล่าให้ฟังได้เลย
+              </Text>
+            </View>
+          </Pressable>
         </Animated.View>
       ) : null}
-
 
       {/* header ข้อมูลผู้ป่วย (ชื่อ + ธาตุ): ตรึงกับจอ ไม่ขยับตามการเลื่อน · ไม่มีพื้นทับ จึงเห็นหุ่นด้านหลังเสมอ */}
       <Animated.View
@@ -2712,7 +2698,7 @@ export function HomeScreen() {
             {/* แท็บเรื่องที่ดูแล — ตรึงใน header (เลื่อนดูช่องล่าง ๆ ก็ยังรู้ว่าดูเรื่องไหน และสลับได้ทันที) */}
             {/* แถวแท็บมีปุ่ม "ถาม AI" → แสดงเสมอเมื่อมีข้อมูล (จองไว้นัดเดียวก็แสดง) */}
             {!started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
           </View>
@@ -4401,100 +4387,6 @@ function AIButton({ label, onPress }: { label: string; onPress?: () => void }) {
         </Text>
       </View>
     </Pressable>
-  );
-}
-
-/**
- * ผู้ใช้ใหม่: ป้ายลอยรอบหุ่นบอกว่าแอปทำอะไรได้ (เล่าอาการ = ปุ่ม ThaiWell AI ด้านบน)
- * ป้ายไอคอนแบบการ์ดทางลัด · พื้นขาวโปร่ง ไม่มีขอบ · ชิดขอบจอ ไม่บังหุ่น · ลอยขึ้นลงเบา ๆ คนละจังหวะ
- */
-function StepPills({ onPlaces }: { onAI?: () => void; onPlaces: () => void; resume?: unknown }) {
-  const chips: { icon: React.ComponentProps<typeof Icon>['name']; tint: string; title: string; side: 'left' | 'right'; at: number; onPress?: () => void }[] = [
-    { icon: 'map-pin', tint: TINT.green, title: 'จองนวดใกล้บ้าน', side: 'right', at: 0.3, onPress: onPlaces },
-    { icon: 'trending-down', tint: TINT.violet, title: 'เห็นผลก่อน–หลังนวด', side: 'left', at: 0.6 },
-  ];
-  const float = React.useRef(chips.map(() => new Animated.Value(0))).current;
-  React.useEffect(() => {
-    const loops = float.map((v, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 700),
-          Animated.timing(v, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-          Animated.timing(v, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        ]),
-      ),
-    );
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [float]);
-  return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      {chips.map((c, i) => (
-        <Animated.View
-          key={c.title}
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            top: `${c.at * 100}%`,
-            ...(c.side === 'left' ? { left: space[4] } : { right: space[4] }),
-            transform: [{ translateY: float[i].interpolate({ inputRange: [0, 1], outputRange: [0, -5] }) }],
-          }}
-        >
-          <Pressable
-            accessibilityRole={c.onPress ? 'button' : 'text'}
-            accessibilityLabel={c.title}
-            disabled={!c.onPress}
-            onPress={c.onPress}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: space[2],
-              height: 36,
-              paddingLeft: 4,
-              paddingRight: space[3],
-              borderRadius: radius.full,
-              backgroundColor: 'rgba(255,255,255,0.78)',
-              shadowColor: '#0F172A',
-              shadowOpacity: 0.08,
-              shadowRadius: 10,
-              shadowOffset: { width: 0, height: 3 },
-              elevation: 3,
-              transform: [{ scale: pressed ? 0.97 : 1 }],
-            })}
-          >
-            <IconBox icon={c.icon} tint={c.tint} size={28} />
-            <Text variant="labelSm" style={{ transform: [{ translateY: 1 }] }}>
-              {c.title}
-            </Text>
-          </Pressable>
-        </Animated.View>
-      ))}
-    </View>
-  );
-}
-
-/** จุดชวนแตะบนหุ่น: วงกะพริบ (ศูนย์กลางตรงจุด) + ป้าย "แตะตรงที่ปวด" ด้านข้าง */
-function TapHint() {
-  const { colors } = useTheme();
-  const pulse = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
-    const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.out(Easing.quad), useNativeDriver: true }));
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-  const R = 14;
-  return (
-    <View style={{ position: 'absolute', left: -R, top: -R, width: R * 2, height: R * 2, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View style={{ position: 'absolute', width: R * 2, height: R * 2, borderRadius: R, backgroundColor: colors.brand.primary, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.8] }) }] }} />
-      <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colors.brand.primary, borderWidth: 2, borderColor: '#FFFFFF' }} />
-      {/* ป้ายอยู่ทางซ้ายของจุด */}
-      <View style={{ position: 'absolute', right: R * 2 + 4, top: R - 14, flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.text.primary }}>
-        <Icon name="target" size="xxs" color={colors.text.inverse} />
-        <Text variant="labelSm" color={colors.text.inverse} numberOfLines={1} style={{ transform: [{ translateY: 1 }] }}>
-          แตะตรงที่ปวด
-        </Text>
-      </View>
-    </View>
   );
 }
 
