@@ -2206,7 +2206,8 @@ export function HomeScreen() {
   /** ผู้ใช้ใหม่: 0 = ลูกแก้วกลางจอ · 1 = ปุ่ม ThaiWell AI แถวแท็บ (ตามระยะดึงแผ่นการ์ดขึ้น) */
   const welcomeMorph = sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.7)], outputRange: [0, 1], extrapolate: 'clamp' });
   const [pillOn, setPillOn] = React.useState(false);
-  /** ลูกแก้ว/ปุ่มกลางจอยังกดได้ (จางไปแล้ว → ไม่บังการ์ดที่เลื่อนขึ้นมา) */
+  /** ลูกแก้ว/ปุ่มกลางจอยังกดได้ (จางไปแล้ว → ไม่บังการ์ดที่เลื่อนขึ้นมา)
+   * มือถือ: แผ่นการ์ดขยับบน native thread → listener ไม่ถูกเรียก จึงใช้ sheetOpen (ตั้งตอนแผ่นหยุดที่ขั้น 2) ร่วมด้วย */
   const [heroOn, setHeroOn] = React.useState(true);
   React.useEffect(() => {
     const id = welcomeMorph.addListener(({ value }) => {
@@ -2639,7 +2640,7 @@ export function HomeScreen() {
       {/* ยังไม่มีข้อมูล: ลูกแก้ว ThaiWell AI กลางจอ + ข้อความชวน (ทางเริ่มเดียว) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
       {chatHome && !started && sheetTop > 0 ? (
         <Animated.View
-          pointerEvents={heroOn ? 'box-none' : 'none'}
+          pointerEvents={heroOn && !sheetOpen ? 'box-none' : 'none'}
           style={{
             position: 'absolute',
             left: 0,
@@ -2705,7 +2706,7 @@ export function HomeScreen() {
                 <Animated.View
                   ref={pillRef}
                   onLayout={measurePill}
-                  pointerEvents={pillOn ? 'auto' : 'none'}
+                  pointerEvents={pillOn || sheetOpen ? 'auto' : 'none'}
                   style={{ opacity: welcomeMorph.interpolate({ inputRange: [0, 0.8, 1], outputRange: [0, 0, 1] }) }}
                 >
                   <AIButton label="ThaiWell AI" onPress={openAI} />
