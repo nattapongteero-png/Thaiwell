@@ -11,6 +11,7 @@ import type { RegionId } from '../design-system/components/BodyMap';
 import type { ElementKey } from '../data/thaiMassageKnowledge';
 import { evaluateSafety, type HealthProfile, type SafetyResult } from '../services/safetyEngine';
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
+import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
@@ -518,7 +519,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   }, []);
   // รับเหตุการณ์จากหลังบ้าน: อนุมัติ/ปฏิเสธ · นวดเสร็จ · ยกเลิก/ไม่มา · (cloud) คิว · เริ่มบริการ · บิล · ใบเสร็จ
   const onClinic = React.useRef<(events: ClinicEvent[]) => void>(() => {});
-  React.useEffect(() => listenClinic((ev) => onClinic.current(ev)), []);
+  React.useEffect(() => {
+    void setupNotifications();
+    return listenClinic((ev) => {
+      onClinic.current(ev);
+      // เด้งแจ้งเตือนบนเครื่องทุกครั้งที่คลินิกส่งข้อมูลมา
+      for (const e of ev) {
+        const n = noticeOf(e);
+        if (n) void notify(...n);
+      }
+    });
+  }, []);
   const nowAtLabel = () => {
     const d = new Date();
     return `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
