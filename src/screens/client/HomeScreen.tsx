@@ -925,7 +925,11 @@ export function HomeScreen() {
       from: 'ai',
       source: 'AI Interview',
       time: nowTimeText(),
-      text: `${fuSessions.length > 1 ? `นวดวันที่ ${ss.date} ` : ''}อาการ${tcase.short}โดยรวมตอนนี้ปวดเท่าไหร่คะ? ก่อนนวด ${before}/10`,
+      // บอกว่าคะแนนหลังนวดที่คลินิกมีแล้ว → ที่ถามคือ "วันนี้" (ไม่ใช่ถามซ้ำ)
+      text: (() => {
+        const atClinic = tcase.visits.find((v) => v.date === ss.date)?.painAfter;
+        return `หลังนวดวันที่ ${ss.date} ปวด ${before} → ${atClinic ?? '-'}/10 วันนี้อาการ${tcase.short}ปวดเท่าไหร่คะ?`;
+      })(),
       card: { type: 'fuAsk', sessionId: ss.id, pin: '', label: `อาการ${tcase.short}`, before },
     };
   };
@@ -3365,13 +3369,14 @@ function DraftBento({
 
       {/* แถวล่าง: นวดแล้วเท่านั้น → ติดตามผลหลังนวด (ประเมินอาการซ้ำ = ปุ่มม่วง) */}
       {served ? (
-        <Tile style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }} onPress={onFollowUp} accessibilityLabel="ติดตามผลหลังนวด">
+        <Tile style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }} onPress={onFollowUp} accessibilityLabel="อัปเดตอาการวันนี้">
           <View style={{ flex: 1 }}>
+            <Text variant="labelMd">อาการวันนี้</Text>
             <Text variant="bodyXs" tone="secondary">
-              หลังนวดเป็นอย่างไร
+              หลังนวดดีขึ้นต่อไหม
             </Text>
           </View>
-          <TilePill icon="edit-3" label="ให้คะแนน" />
+          <TilePill icon="edit-3" label="อัปเดตอาการ" />
         </Tile>
       ) : null}
     </View>
@@ -3508,17 +3513,21 @@ function HomeBento({
           {/* ผลการรักษาของใบนี้ = การ์ด Pain Score แบบเดียวกับใบร่าง: หลังนวด (ตัวใหญ่) เทียบก่อนรักษา · แตะดูประวัติ */}
           <Pressable accessibilityRole="button" accessibilityLabel={`ผลการรักษา ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
             <View pointerEvents="none">
-              <PainScoreCard value={after} before={last.painBefore} stageLabel="หลังนวด" chart width={halfW} />
+              {/* หลังนวด = วัดที่คลินิกทันทีหลังนวด · ส่งผลติดตามแล้ว = อาการตอนนี้ (คนละช่วงเวลา) */}
+              <PainScoreCard value={after} before={last.painBefore} stageLabel={sentAfter === undefined ? 'หลังนวด' : 'ตอนนี้'} chart width={halfW} />
             </View>
           </Pressable>
 
-          {/* ติดตามผล — ให้คะแนนอาการโดยรวมของการรักษาครั้งนั้น (ไม่ใช่ทีละจุด) · ชิป = บริเวณที่รักษา · เติมที่ว่างคอลัมน์ซ้าย */}
-          <Tile style={{ flex: 1, gap: space[2], justifyContent: 'space-between' }} onPress={onFollowUp} accessibilityLabel="ติดตามผลหลังนวด">
+          {/* ติดตามผล — คะแนน "หลังนวด" วัดที่คลินิกแล้ว · ช่องนี้ถาม "อาการวันนี้" (ผ่านไปหลายวัน ผลคงอยู่ไหม — CPG หน้า 157) */}
+          <Tile style={{ flex: 1, gap: space[2], justifyContent: 'space-between' }} onPress={onFollowUp} accessibilityLabel="อัปเดตอาการวันนี้">
             <View style={{ gap: space[1] }}>
               {pending.length ? (
-                <Text variant="bodyXs" tone="secondary">
-                  หลังนวดเป็นอย่างไร
-                </Text>
+                <View>
+                  <Text variant="labelMd">อาการวันนี้</Text>
+                  <Text variant="bodyXs" tone="secondary">
+                    หลังนวด {pending[0].date} ดีขึ้นต่อไหม
+                  </Text>
+                </View>
               ) : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
                   <Icon name="check-circle" size="xs" color={colors.brand.primary} />
@@ -3536,18 +3545,24 @@ function HomeBento({
                 ))}
               </View>
             </View>
-            <TilePill icon={pending.length ? 'edit-3' : 'eye'} label={pending.length ? 'ให้คะแนน' : 'ดูผล'} dark={!!pending.length} />
+            <TilePill icon={pending.length ? 'edit-3' : 'eye'} label={pending.length ? 'อัปเดตอาการ' : 'ดูผล'} dark={!!pending.length} />
           </Tile>
         </View>
 
         {/* ขวา: แผนการรักษา · ดูแลตัวเองวันนี้ · ก่อนมานวด */}
         <View style={{ width: halfW, gap: BENTO_GAP }}>
           {/* แผนการรักษา: คอร์สถึงไหนแล้ว + ผู้ให้บริการ · ช่องไฟ 8 (ชดเชยบรรทัด "ครั้งที่" ที่สูงขึ้น → การ์ดสูงเท่าเดิม) */}
-          <Tile style={{ gap: space[2] }} onPress={onHistory} accessibilityLabel={`แผนการรักษา ครั้งที่ ${tc.course.done} จาก ${tc.course.total} ดูรายละเอียดการรักษา`}>
+          <Tile style={{ gap: space[2] }} onPress={onHistory} accessibilityLabel={`แผนการรักษา ครั้งที่ ${tc.course.done} จาก ${tc.course.total} เมื่อ ${last.date} ดูรายละเอียดการรักษา`}>
             <View>
-              <Text variant="bodyXs" tone="secondary">
-                แผนการรักษา
-              </Text>
+              {/* วันที่ของครั้งล่าสุด (ครั้งที่ N นวดเมื่อไหร่) ชิดขวาแถวเดียวกับหัวข้อ → การ์ดไม่สูงขึ้น */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space[2] }}>
+                <Text variant="bodyXs" tone="secondary">
+                  แผนการรักษา
+                </Text>
+                <Text variant="bodyXs" tone="tertiary">
+                  {last.date}
+                </Text>
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
                 {/* "ครั้ง" มีสระ/วรรณยุกต์ซ้อน 2 ชั้นด้านบน (ั + ้) → สูงเกินบรรทัด 1.5 เท่า · iOS ตัดที่ขอบบรรทัด → เผื่อ lineHeight */}
                 <Text variant="titleXl" style={{ lineHeight: 36 }}>

@@ -450,7 +450,7 @@ export interface TreatmentCase {
   clinic?: string;
 }
 
-const DM_AREAS: FollowUpArea[] = [
+const OFFICE_AREAS: FollowUpArea[] = [
   { label: 'บ่าซ้าย', pin: 'trapLeft', symptom: 'ปวดไหล่', before: 6 },
   { label: 'คอ', pin: 'neck', symptom: 'ปวดคอ', before: 4 },
 ];
@@ -462,11 +462,12 @@ const LUNG_AREAS: FollowUpArea[] = [
 
 export const TREATMENT_CASES: TreatmentCase[] = [
   {
-    id: 'case-dm',
-    condition: 'เบาหวาน',
-    short: 'เบาหวาน',
+    id: 'case-office',
+    // นวดเพื่อรักษาอาการปวดคอ บ่า ไหล่ จากการทำงาน (ลมปลายปัตฆาต สัญญาณ 4)
+    condition: 'ลมปลายปัตฆาต สัญญาณ 4 (คอ บ่า ไหล่)',
+    short: 'ออฟฟิศซินโดรม',
     plan: 'นวดราชสำนัก',
-    areas: DM_AREAS,
+    areas: OFFICE_AREAS,
     visits: [
       { date: '14 มิ.ย.', painBefore: 8, painAfter: 6 },
       { date: '28 มิ.ย.', painBefore: 8, painAfter: 5 },
@@ -474,9 +475,9 @@ export const TREATMENT_CASES: TreatmentCase[] = [
       { date: '2 ส.ค.', painBefore: 7, painAfter: 4 },
       { date: '30 ส.ค.', painBefore: 6, painAfter: 3 },
     ],
-    pending: [{ id: 'sess-2025-08-30', date: '30 ส.ค.', plan: 'นวดราชสำนัก', areas: DM_AREAS }],
+    pending: [{ id: 'sess-2025-08-30', date: '30 ส.ค.', plan: 'นวดราชสำนัก', areas: OFFICE_AREAS }],
     appointment: { today: true, date: 'วันนี้', time: '10:30', queue: 'A12', waitMin: 25 },
-    prep: ['ตรวจน้ำตาลก่อนนวด', 'วัดความดันก่อนนวด'],
+    prep: ['วัดความดันก่อนนวด', 'งดอาหารหนัก 30 นาที'],
     course: { done: 5, total: 8 },
     therapist: 'พท.ป. มาลี ใจดี',
     selfCare: { title: 'ท่าแก้เกียจ', minutes: 5, doneToday: false, groupId: 'office' },
