@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, Easing, Platform, Pressable, View } from 'react-native';
+import { Animated, Easing, Keyboard, LayoutAnimation, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -91,6 +91,27 @@ export function useDockHeight() {
  * - fade ผืนเดียวคลุมตั้งแต่ส่วนแชทลงไปถึง tab menu (เนื้อหาเลื่อนผ่านด้านหลังได้)
  * - เว้น safe area ล่าง + ระยะห่างจากขอบจอเสมอ
  */
+/** ความสูงแป้นพิมพ์ที่เปิดอยู่ (0 = ปิด) — iOS เท่านั้น (Android ย่อหน้าจอเองตามแป้นพิมพ์ · เว็บไม่มีแป้นพิมพ์ทับ) · ขยับพร้อมแป้นพิมพ์ */
+function useKeyboardHeight() {
+  const [kb, setKb] = React.useState(0);
+  React.useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const show = Keyboard.addListener('keyboardWillShow', (e) => {
+      LayoutAnimation.configureNext(LayoutAnimation.create(e.duration || 250, 'keyboard', 'opacity'));
+      setKb(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', (e) => {
+      LayoutAnimation.configureNext(LayoutAnimation.create(e.duration || 250, 'keyboard', 'opacity'));
+      setKb(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return kb;
+}
+
 export function TabBar({ state, navigation, items, hideTabs }: BottomTabBarProps & { items: Record<string, TabItem>; /** ซ่อนแถบแท็บ (เหลือแค่ส่วนเสริมของหน้า เช่น ช่องแชท AI) */ hideTabs?: boolean }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -100,6 +121,12 @@ export function TabBar({ state, navigation, items, hideTabs }: BottomTabBarProps
   const iconSize = componentTokens.tabBar.icon;
   const [h, setH] = React.useState(0);
   const [w, setW] = React.useState(0);
+  // แป้นพิมพ์เปิด (พิมพ์ในช่องแชท) → dock ลอยขึ้นเหนือแป้นพิมพ์ · ซ่อนแถบแท็บ เหลือแค่ช่องแชท
+  const kb = useKeyboardHeight();
+  React.useEffect(() => {
+    if (h) dock?.setHeight(h + kb);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kb]);
   // ซ่อนแท็บและไม่มีส่วนเสริม → ไม่มี dock เลย (หน้าจอไม่ต้องเว้นที่ด้านล่าง)
   const empty = (hideTabs || !!dock?.hideTabs) && !accessory;
   React.useEffect(() => {
@@ -115,16 +142,16 @@ export function TabBar({ state, navigation, items, hideTabs }: BottomTabBarProps
         const height = Math.round(e.nativeEvent.layout.height);
         setH(height);
         setW(Math.round(e.nativeEvent.layout.width));
-        dock?.setHeight(height);
+        dock?.setHeight(height + kb);
       }}
       style={{
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 0,
+        bottom: kb,
         paddingHorizontal: t.marginX,
         paddingTop: space[12],
-        paddingBottom: insets.bottom + t.marginBottom,
+        paddingBottom: kb ? space[2] : insets.bottom + t.marginBottom,
         gap: space[2],
       }}
     >
@@ -139,7 +166,7 @@ export function TabBar({ state, navigation, items, hideTabs }: BottomTabBarProps
           {dock.fab}
         </View>
       ) : null}
-      {hideTabs || dock?.hideTabs ? null : <DockTabs state={state} navigation={navigation} items={items} />}
+      {hideTabs || dock?.hideTabs || kb ? null : <DockTabs state={state} navigation={navigation} items={items} />}
     </View>
   );
 }
