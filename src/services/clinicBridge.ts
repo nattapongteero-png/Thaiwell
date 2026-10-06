@@ -99,6 +99,29 @@ const push = (event: Record<string, unknown>) => {
   write(BRIDGE_KEY, { ...b, toClinic: [...b.toClinic, { ...event, id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString() }].slice(-200) });
 };
 
+/** เวลาว่างจริงของคลินิก (หลังบ้านประกาศ) — days[YYYY-MM-DD][HH:mm][s1–s5] = id ผู้บำบัดที่ว่าง */
+export interface Availability {
+  at: string;
+  clinicName: string;
+  therapists: { id: string; name: string; role: string }[];
+  days: Record<string, Record<string, Record<string, string[]>>>;
+}
+const AVAILABILITY_KEY = 'thaiwell.bridge.availability';
+export const availabilityRaw = () => {
+  try {
+    return store()?.getItem(AVAILABILITY_KEY) ?? null;
+  } catch {
+    return null;
+  }
+};
+export const readAvailability = () => read<Availability | null>(AVAILABILITY_KEY, null);
+/** ผู้บำบัดของหลังบ้านสำหรับคำขอจอง: ตามชื่อที่เลือก · ไม่ระบุ = คนแรกที่ว่างรอบนั้น */
+export function clinicTherapistId(name: string, date: string, start: string, serviceId: string): string | undefined {
+  const a = readAvailability();
+  if (!a) return undefined;
+  return a.therapists.find((t) => t.name === name)?.id ?? a.days[date]?.[start]?.[serviceId]?.[0];
+}
+
 /** หลังบ้านเปิดอยู่ในเบราว์เซอร์นี้ (heartbeat ไม่เกิน 8 วินาที) */
 export const clinicOnline = () => Date.now() - Number(store()?.getItem(CLINIC_ALIVE_KEY) ?? 0) < 8000;
 

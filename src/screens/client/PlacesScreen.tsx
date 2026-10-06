@@ -44,7 +44,10 @@ const PLACE_LIST: Place[] = [
   { id: 'hsp2', phone: '02-249-7890', name: 'ศูนย์บริการสาธารณสุข คลองเตย', area: 'พระราม 4', km: 2.6, slots: [], uc: true, therapy: false, kind: 'hospital', services: [], lat: 13.7213, lng: 100.5578 },
 ];
 /** คิวว่างวันนี้ = จากตารางที่ผู้ให้บริการลงไว้จริง (ไม่ใช่ค่าตายตัว) → รายการ/แผนที่/หน้าจองตรงกัน */
-export const PLACES: Place[] = PLACE_LIST.map((p) => (p.kind === 'clinic' ? { ...p, slots: anyoneSlots(p.id).filter((f) => f.day === 0).map((f) => f.time) } : p));
+// "ว่างวันนี้" คำนวณทุกครั้งที่อ่าน → คลินิกที่เชื่อมหลังบ้าน (เปิดอยู่) แสดงเวลาว่างจริงของคลินิก ไม่ใช่ค่าตอนเปิดแอป
+export const PLACES: Place[] = PLACE_LIST.map((p) =>
+  p.kind === 'clinic' ? Object.defineProperty({ ...p }, 'slots', { enumerable: true, get: () => anyoneSlots(p.id).filter((f) => f.day === 0).map((f) => f.time) }) : p,
+);
 
 /** แนะนำที่ใกล้ที่สุด: นวดรักษา = มีแพทย์แผนไทย + บัตรทอง + มีคิว · พบแพทย์ = โรงพยาบาล */
 export const nearestClinic = () => PLACES.filter((p) => p.kind === 'clinic' && p.therapy && p.uc && p.slots.length).sort((a, b) => a.km - b.km)[0];

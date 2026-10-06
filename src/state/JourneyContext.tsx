@@ -11,7 +11,7 @@ import type { RegionId } from '../design-system/components/BodyMap';
 import type { ElementKey } from '../data/thaiMassageKnowledge';
 import { evaluateSafety, type HealthProfile, type SafetyResult } from '../services/safetyEngine';
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
-import { birthToISO, clinicOnline, isoToLabel, labelToISO, listenClinic, sendBooking, sendNote, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
+import { birthToISO, clinicOnline, clinicTherapistId, isoToLabel, labelToISO, listenClinic, sendBooking, sendNote, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
   pain: number;
@@ -435,8 +435,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       id,
       patientId: patient.id,
       serviceId: serviceCodeOf(b.service),
-      // แพทย์ของแอปคนละชุดกับหลังบ้าน → เจ้าหน้าที่เลือกตอนอนุมัติ (ค่าเริ่มต้น = แพทย์แผนไทยคนแรก)
-      therapistId: /s2|s3|s5/.test(serviceCodeOf(b.service)) ? 't2' : 't1',
+      // ผู้บำบัดของหลังบ้าน (จองจากตารางจริง → ชื่อตรงกัน · ไม่ระบุ = คนแรกที่ว่างรอบนั้น)
+      therapistId: clinicTherapistId(b.therapist, labelToISO(b.date), b.time, serviceCodeOf(b.service)) ?? (/s2|s3|s5/.test(serviceCodeOf(b.service)) ? 't2' : 't1'),
       date: labelToISO(b.date),
       start: b.time,
       painScore: d?.pain ?? 0,

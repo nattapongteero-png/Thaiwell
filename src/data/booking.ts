@@ -9,6 +9,8 @@
  * ⚠️ ต้นแบบ: ตารางผู้ให้บริการเป็นข้อมูลตัวอย่าง · เกณฑ์ความเร่งด่วนยังไม่ได้ให้แพทย์แผนไทยตรวจ
  */
 
+import { availabilityRaw, clinicOnline, type Availability } from '../services/clinicBridge';
+
 /** ประเภทบริการ — ชุดเดียวกับหลังบ้าน ThaiWellAI (s1–s5) · ตรงกับ SERVICES ในหน้าจอง */
 export type ServiceId = 'royal' | 'royal+compress' | 'relax' | 'compress' | 'foot';
 export const SERVICE_SHORT: Record<ServiceId, string> = { royal: 'นวดรักษา', 'royal+compress': 'นวด + ประคบ', relax: 'นวดสุขภาพ', compress: 'ประคบ', foot: 'นวดเท้า' };
@@ -60,6 +62,46 @@ export const THERAPIST_SCHEDULE: Record<string, Therapist[]> = {
   ],
 };
 
+/* ---------- ตารางจริงจากหลังบ้าน (ต้นแบบ) ----------
+ * หลังบ้าน ThaiWellAI เปิดอยู่ในเบราว์เซอร์เดียวกัน → คลินิกที่เชื่อมกับหลังบ้านใช้ผู้บำบัด/เวลาว่างจริงของคลินิก
+ * (เตียงว่าง · เข้าเวร · รับบริการนั้น · ยังไม่มีคิว) แทนตารางตัวอย่าง → คำขอจองตรงกับรอบของคลินิก อนุมัติได้ทันที */
+/** สถานที่ในแอปที่เป็นคลินิกของหลังบ้าน */
+export const BRIDGE_PLACE = 'skv';
+const SVC_OF: Record<string, ServiceId> = { s1: 'relax', s2: 'royal', s3: 'compress', s4: 'foot', s5: 'royal+compress' };
+let liveCache: { raw: string; list: Therapist[] } | null = null;
+export function liveTherapists(): Therapist[] | null {
+  if (!clinicOnline()) return null;
+  const raw = availabilityRaw();
+  if (!raw) return null;
+  if (liveCache?.raw === raw) return liveCache.list;
+  try {
+    const a = JSON.parse(raw) as Availability;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const byId = new Map<string, Therapist>(
+      a.therapists.map((t) => [t.id, { id: t.id, name: t.name, role: /นักศึกษา/.test(t.role) || !/แพทย์/.test(t.role) ? 'หมอนวด' : 'แพทย์แผนไทย', free: [] }]),
+    );
+    for (const [date, times] of Object.entries(a.days)) {
+      const [y, m, d] = date.split('-').map(Number);
+      const day = Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86400000);
+      for (const [time, svcs] of Object.entries(times))
+        for (const [code, ids] of Object.entries(svcs))
+          for (const id of ids) {
+            const t = byId.get(id);
+            if (!t || !SVC_OF[code]) continue;
+            const slot = t.free.find((f) => f.day === day && f.time === time);
+            if (slot) slot.services.push(SVC_OF[code]);
+            else t.free.push({ day, time, services: [SVC_OF[code]] });
+          }
+    }
+    const list = [...byId.values()].filter((t) => t.free.length);
+    liveCache = { raw, list };
+    return list;
+  } catch {
+    return null;
+  }
+}
+
 /** ช่วงว่างของผู้ให้บริการที่รับบริการนั้น (ไม่ระบุบริการ = ทุกช่วง) เรียงตามเวลา */
 export const freeFor = (t: Therapist, service?: ServiceId | null) =>
   t.free.filter((f) => !service || f.services.includes(service)).sort((a, b) => a.day - b.day || a.time.localeCompare(b.time));
@@ -96,7 +138,9 @@ export function urgencyOf(a: { pain: number; duration?: string; radiate?: string
 /** ผู้ให้บริการของสถานที่ เรียง: แพทย์แผนไทยก่อน (นวดเพื่อรักษา) → ว่างเร็วสุด */
 /** service = เฉพาะคนที่ลงตารางรับบริการนั้นไว้ (และ free เหลือเฉพาะช่วงที่รับบริการนั้น) */
 export function therapistsAt(placeId: string, service?: ServiceId | null) {
-  return (THERAPIST_SCHEDULE[placeId] ?? [])
+  // คลินิกที่เชื่อมหลังบ้าน (และหลังบ้านเปิดอยู่) → ตารางจริง
+  const live = placeId === BRIDGE_PLACE ? liveTherapists() : null;
+  return (live ?? THERAPIST_SCHEDULE[placeId] ?? [])
     .map((t) => ({ ...t, free: freeFor(t, service) }))
     .filter((t) => !service || t.free.length)
     .sort((a, b) => (a.role === b.role ? Math.min(...a.free.map((f) => f.day)) - Math.min(...b.free.map((f) => f.day)) : a.role === 'แพทย์แผนไทย' ? -1 : 1));
