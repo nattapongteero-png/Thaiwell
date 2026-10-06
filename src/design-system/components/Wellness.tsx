@@ -195,7 +195,8 @@ export function DeltaPill({ before, after }: { before: number; after: number }) 
   const pct = before > 0 ? Math.round(((before - after) / before) * 100) : 0;
   const tone = after < before ? colors.status.success : after > before ? colors.status.danger : null;
   const fg = tone ? tone.fg : colors.text.secondary;
-  const label = after === before ? 'เท่าเดิม' : `${after < before ? 'ลดลง' : 'เพิ่มขึ้น'} ${Math.abs(pct)}%`;
+  // ก่อน = 0 → คิดเป็น % ไม่ได้ → บอกเป็นคะแนน
+  const label = after === before ? 'เท่าเดิม' : before === 0 ? `เพิ่มขึ้น ${after} คะแนน` : `${after < before ? 'ลดลง' : 'เพิ่มขึ้น'} ${Math.abs(pct)}%`;
   return (
     <View
       accessibilityLabel={`ความปวด${label}จากก่อนรักษา`}

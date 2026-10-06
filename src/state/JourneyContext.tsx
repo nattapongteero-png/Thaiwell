@@ -408,7 +408,10 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const latest = React.useRef({ drafts, looseBookings, account, profile });
   latest.current = { drafts, looseBookings, account, profile };
   /** คำขอจองที่ส่งไปหลังบ้าน → เรื่องไหนในแอป */
-  const bridgeRefs = React.useRef<Record<string, { draftId?: string; looseId?: string; label: string }>>({});
+  const bridgeRefs = React.useRef<Record<string, { draftId?: string; looseId?: string; label: string; patientId?: string }>>({});
+  /** ผู้ป่วยในหลังบ้าน → เรื่องที่รักษาในแอป (เกิดตอนนวดครั้งแรกเสร็จ) · แผนที่มาก่อนมีเรื่อง → เก็บไว้ใช้ทีหลัง */
+  const bridgedCase = React.useRef<Record<string, string>>({});
+  const pendingPlan = React.useRef<Record<string, Extract<ClinicEvent, { type: 'plan' }>>>({});
   const patientOf = (): ClinicPatient => {
     const { account: acc, profile: pf } = latest.current;
     const name = acc ? acc.name : 'สมศักดิ์ รักดี';
@@ -462,7 +465,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       note: d?.caution,
       submittedAt: new Date().toISOString(),
     };
-    bridgeRefs.current[id] = { ...target, label };
+    bridgeRefs.current[id] = { ...target, label, patientId: patient.id };
     sendBooking(request, patient);
     return true;
   };
@@ -608,6 +611,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const no = tc ? tc.visits.length + 1 : 1;
       if (tc) recordCaseVisit(tc.id, painBefore, painAfter);
       else promoteDraft(d!.id, painAfter);
+      // คะแนนจากหลังบ้าน = ผู้ป่วยเลือกเองที่คลินิก (ขั้นประเมินหลังนวด) → นับเป็นการประเมินหลังนวดของครั้งนี้ ไม่ต้องประเมินซ้ำในแอป
+      if (clinicPainAfter !== undefined) setSelfPains((m) => ({ ...m, [caseId]: { n: no, v: clinicPainAfter } }));
       const service = tc ? tc.plan : d!.booking?.service ?? 'นวดไทยเพื่อการรักษา';
       const billId = `b-${caseId}-${no}`;
       setBills((all) => [{ id: billId, caseId, title: `${title} ครั้งที่ ${no}`, date: 'วันนี้', items: [{ name: service, amount: 450 }], total: 450, status: 'pending' }, ...all.filter((b) => b.id !== billId)]);
@@ -633,8 +638,30 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     [log],
   );
 
+  /** แผนจากคลินิก → นัดครั้งถัดไปของเรื่องนั้น + จำนวนครั้งของคอร์ส */
+  const applyPlan = (caseId: string, e: Extract<ClinicEvent, { type: 'plan' }>) => {
+    const tc = cases.find((c) => c.id === caseId);
+    if (e.course) setPromoted((cs) => cs.map((c) => (c.id === caseId ? { ...c, course: { ...c.course, total: Math.max(e.course!.total, c.course.done) } } : c)));
+    if (!e.next) return;
+    const date = isoToLabel(e.next.date);
+    setCaseAppointment(caseId, { today: date === 'วันนี้', date, time: e.next.start, clinic: tc?.clinic ?? '', therapist: e.next.therapist, queue: date === 'วันนี้' ? `A${++queueNo.current}` : undefined });
+    const no = (tc?.visits.length ?? 1) + 1;
+    setApptNotices((all) => [{ id: `n-plan-${e.id}`, caseId, kind: 'confirmed', text: `คลินิกนัดครั้งที่ ${no} ตามแผนการรักษา ${date} ${e.next!.start}${e.next!.therapist ? ` · ${e.next!.therapist}` : ''}`, at: nowAtLabel() }, ...all]);
+  };
   onClinic.current = (events) => {
     for (const e of events) {
+      if (e.type === 'plan') {
+        const caseId = bridgedCase.current[e.patientId];
+        if (caseId) applyPlan(caseId, e);
+        else pendingPlan.current[e.patientId] = e;
+        continue;
+      }
+      if (e.type === 'visit') {
+        // นวดครั้งต่อไปตามแผน → ครั้งใหม่ของเรื่องนั้น (คะแนนหลังนวดของคลินิก + บิล)
+        const caseId = bridgedCase.current[e.patientId];
+        if (caseId) clinicCloseVisit({ caseId }, e.painAfter);
+        continue;
+      }
       const t = bridgeRefs.current[e.ref];
       if (!t) continue;
       const target = { draftId: t.draftId, looseId: t.looseId };
@@ -656,10 +683,30 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         note('rejected', `คลินิกไม่สามารถรับนัด ${t.label}${e.reason ? ` · ${e.reason}` : ''}`);
       } else if (e.type === 'completed') {
         // นวดเสร็จ: ใบร่าง → ใบการรักษา (คะแนนหลังนวดของคลินิก + บิล) · นัดเรื่องใหม่ที่ยังไม่ประเมิน → ปิดนัด
-        if (t.draftId) clinicCloseVisit({ draftId: t.draftId }, e.painAfter);
-        else {
-          unbook();
+        let caseId: string | undefined;
+        if (t.draftId) caseId = clinicCloseVisit({ draftId: t.draftId }, e.painAfter);
+        else if (t.looseId) {
+          // นัดที่จองก่อนประเมิน → เป็นเรื่องที่รักษาด้วย (ไว้รับแผน/ครั้งต่อไปจากคลินิก)
+          const lb = latest.current.looseBookings.find((b) => b.id === t.looseId);
+          if (lb) {
+            const { id: _drop, ...booking } = lb;
+            const d: DraftCase = { id: `d-${t.looseId}`, title: 'นวดเพื่อสุขภาพ', symptoms: [], pain: e.painBefore, red: false, stage: 'booked', booking: { ...booking, status: 'confirmed' } };
+            setDrafts((all) => [...all, d]);
+            promoteDraft(d.id, e.painAfter ?? e.painBefore);
+            setLooseBookings((all) => all.filter((b) => b.id !== t.looseId));
+            caseId = `case-${d.id}`;
+            if (e.painAfter !== undefined) setSelfPains((m) => ({ ...m, [`case-${d.id}`]: { n: 1, v: e.painAfter! } }));
+          }
           note('confirmed', `คลินิกบันทึกการนวดแล้ว ${t.label}`);
+        }
+        if (caseId && t.patientId) {
+          bridgedCase.current[t.patientId] = caseId;
+          // แผนที่คลินิกลงไว้ก่อน → ใส่ให้เรื่องนี้ (รอ state ของเรื่องใหม่เข้าที่)
+          const pp = pendingPlan.current[t.patientId];
+          if (pp) {
+            delete pendingPlan.current[t.patientId];
+            setTimeout(() => onClinic.current([pp]), 300);
+          }
         }
       } else {
         unbook();
