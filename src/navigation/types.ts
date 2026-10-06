@@ -37,6 +37,8 @@ export type RootStackParamList = {
   Bill: { id: string };
   // ผู้รับบริการ — หลังรับบริการ
   PostAssessment: { caseId?: string; draftId?: string; looseId?: string } | undefined;
+  /** ประเมินก่อนนวด (กรอกเอง) ของเรื่องที่รักษา */
+  PreVisit: { caseId: string };
   SessionResult: { caseId?: string } | undefined;
   FollowUp: undefined;
   /** ไม่ระบุ groupId = หน้ารวมท่ายืด · ระบุ = รายละเอียดท่าของกลุ่มอาการนั้น */

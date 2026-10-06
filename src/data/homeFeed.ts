@@ -68,7 +68,9 @@ export type ThreadCard =
       plan: { summary: string; cautions: string[]; style: string; minutes: string; phases: { title: string; minutes: string; steps: string[] }[]; aftercare: string[] };
       refs: { f: string; p: number; quote: string }[];
     }
-  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' | 'CallClinic' };
+  /** ผลประเมินก่อนนวดครั้งถัดไป: วันนี้เป็นอย่างไร + ครั้งนี้จะรักษาอย่างไร · focus = บริเวณที่ยังปวด (ให้เน้น) */
+  | { type: 'preResult'; caseId: string; focus?: string }
+  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' | 'CallClinic' | 'CheckIn' };
 
 /* ---------- การประเมินอาการในแชท ----------
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)
@@ -215,10 +217,9 @@ export function assessmentResults(a: Assessment, symptoms: string[], related: st
   const t = nowTime();
   const k = Date.now();
   // อาการร่วมผิดปกติ (ตอบในแชท) = ต้องให้แพทย์ตรวจก่อน (CPG หน้า 139)
-  const redRelated = related.length > 0 && !related.includes('ไม่มี');
-  const safety: ChatSafety = redRelated
-    ? { ...base, level: 'red', items: [{ id: 'RF-06', title: 'มีอาการร่วมที่ต้องตรวจเพิ่ม', evidence: related.join(', '), source: 'CPG หน้า 139' }, ...base.items] }
-    : base;
+  // อาการร่วม (ปวดศีรษะ ตึงบ่าไหล่ …) ไม่ใช่ข้อห้ามนวด — CPG_PCU หน้า 139 ข้อ 2.1 รับรักษาอาการปวดศีรษะ คอ บ่า ไหล่
+  // ข้อห้ามมาจาก safetyEngine/อาการร้าว/ข้อห้ามช่วงนี้เท่านั้น (ทุกข้อมีแหล่งอ้างอิง)
+  const safety: ChatSafety = base;
   // แนวทางตามตำแหน่งที่ปวดจริง (knowledge hub: CPG + ตำราอ้างอิงฯ)
   const g = guideFor(symptoms, a.radiate);
   const out: ThreadItem[] = [
@@ -335,10 +336,14 @@ export const INTENTS = ['ปวดตรงไหน ประเมินอา
 /** อาการผิดปกติหลังนวด (ปวด บวม ชา มากขึ้นหลังรักษา = ส่งต่อ, CPG หน้า 139) */
 export const FU_ADVERSE = ['ไม่มี', 'ระบม/ช้ำ', 'ปวดมากขึ้น', 'ชา/อ่อนแรง'];
 /** ก่อนนวดครั้งถัดไป: ข้อห้ามใหม่ที่ต้องรู้ (ไข้/บาดเจ็บใหม่ = เลื่อนนัด · ยาใหม่ = แจ้งผู้ให้บริการ) */
-export const FU_RISK = ['ไม่มี', 'มีไข้', 'บาดเจ็บใหม่', 'เริ่มยาใหม่'];
+/** ข้อห้ามใหม่ก่อนนวด — บาดเจ็บตาม CPG_PCU หน้า 139 ข้อ 3.3 (หลังอุบัติเหตุภายใน 48 ชม.) ถ้อยคำเดียวกับการประเมินครั้งแรก */
+export const FU_RISK = ['ไม่มี', 'มีไข้', 'บาดเจ็บภายใน 2 วัน', 'เริ่มยาใหม่'];
 /** คำถามแนะนำในแชทของเรื่องที่รักษาอยู่ (ติดตามผลกับ AI) */
 /** นัดของการรักษา: ผู้ใช้ดูนัด/จองครั้งถัดไปได้ · เลื่อน/ยกเลิกต้องผ่านคลินิก (หลังบ้านโรงพยาบาล) */
-export const CASE_INTENTS = ['อาการตอนนี้', 'ดูผลการรักษา', 'นัดครั้งถัดไป'];
+export const CASE_INTENTS = ['ประเมินก่อนนวด', 'ดูผลการรักษา', 'นัดครั้งถัดไป'];
+/** ตัวเลือกจากปุ่ม "ถาม AI": เริ่มประเมินเรื่องใหม่ (มีทุกครั้งไม่ว่าเลือกแท็บไหน) · ใบร่าง = ประเมินซ้ำ */
+export const NEW_TOPIC_INTENT = 'ประเมินเรื่องใหม่';
+export const DRAFT_REASSESS_INTENT = 'ประเมินอีกครั้ง';
 /** แชทของเรื่องที่รักษาอยู่ — AI ทักพร้อมสรุปสั้น ๆ */
 export const caseChatSession = (title: string, summary: string): ChatSession => ({
   id: `cc${Date.now()}`,
@@ -490,7 +495,8 @@ export const TREATMENT_CASES: TreatmentCase[] = [
       { date: '28 มิ.ย.', painBefore: 8, painAfter: 5 },
       { date: '12 ก.ค.', painBefore: 7, painAfter: 5 },
       { date: '2 ส.ค.', painBefore: 7, painAfter: 4 },
-      { date: '30 ส.ค.', painBefore: 6, painAfter: 3 },
+      // ตัวอย่าง: ประเมินหลังนวดครั้งล่าสุดแล้ว (ภูมิแพ้ = ยังไม่ได้ประเมิน)
+      { date: '30 ส.ค.', painBefore: 6, painAfter: 3, selfPain: 3 },
     ],
     pending: [{ id: 'sess-2025-08-30', date: '30 ส.ค.', plan: 'นวดราชสำนัก', areas: OFFICE_AREAS }],
     appointment: { today: true, date: 'วันนี้', time: '10:30', queue: 'A12', waitMin: 25 },

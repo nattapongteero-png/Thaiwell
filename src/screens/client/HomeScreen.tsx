@@ -3,7 +3,7 @@ import { useIsFocused, useRoute } from '@react-navigation/native';
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
 import { Gesture, GestureDetector, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, LinearGradient, Polyline, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import {
   AIThreadMessage,
   Body3D,
@@ -15,6 +15,7 @@ import {
   Icon,
   LatticeLoader,
   PainScoreCard,
+  DeltaPill,
   ReplyChips,
   useDockHeight,
   useHideTabs,
@@ -90,6 +91,8 @@ import {
   HEALTH_OPTIONS,
   blankAssessment,
   CASE_INTENTS,
+  NEW_TOPIC_INTENT,
+  DRAFT_REASSESS_INTENT,
   FU_ADVERSE,
   FU_RISK,
   caseChatSession,
@@ -112,9 +115,11 @@ import { AssessWidget, AssessmentTracker } from './home/Assessment';
 import { BodyPicker, type BodySelection } from './home/BodyPicker';
 import { BookingEditSheet } from './home/BookingEditSheet';
 import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
-import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement } from '../../data/thaiMassageKnowledge';
+import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
+import { afterOf } from './home/TreatmentDetailBody';
+import { preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
 /** สัดส่วนกว้าง:สูงของกรอบหุ่น (Figma 232:583) */
@@ -224,7 +229,7 @@ export function HomeScreen() {
   const chatHome = noRecords && !looseBookings.length;
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, notifyClinic } = useJourney();
   const allAppts = useAllAppointments();
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;
@@ -354,14 +359,14 @@ export function HomeScreen() {
     const t = setTimeout(() => {
       const i = pendingIntent.current;
       pendingIntent.current = null;
-      if (i) pickIntent(i);
+      if (i) (INTENTS.includes(i) ? pickIntent(i) : send(i));
     }, 450);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, activeId]);
   /** หุ่นซ่อนอยู่จนกว่าจะมีเรื่องเกี่ยวกับร่างกาย: แชทครั้งแรกที่ยังไม่เริ่มประเมิน (คุยเรื่องอื่น เช่น หาที่นวด/ธาตุ ก็ยังไม่มีหุ่น) */
   // (เฟรมแรกก่อนสลับไปแชทต้อนรับ active ยังเป็นแชทตัวอย่าง → นับว่าซ่อน ไม่ให้หุ่นกะพริบ)
-  const bodyHidden = chatHome && (!started || active.assess.step === 'idle' || active.id === CURRENT_CHAT.id);
+  const bodyHidden = chatHome && started && (active.assess.step === 'idle' || active.id === CURRENT_CHAT.id);
   const bodyIn = React.useRef(new Animated.Value(bodyHidden ? 0 : 1)).current;
   React.useEffect(() => {
     Animated.timing(bodyIn, { toValue: bodyHidden ? 0 : 1, duration: 520, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: true }).start(() => bodyRef.current?.remeasure());
@@ -502,11 +507,35 @@ export function HomeScreen() {
   };
   const onBodyTap = (pageX: number, pageY: number) => {
     if (!started) {
-      // หน้าแรก: หุ่นดูอย่างเดียว · โหมด focus: แตะ mark = ข้ามไปจุดนั้น
+      // โหมด focus: แตะ mark = ข้ามไปจุดนั้น · หน้าแรก: แตะตรงที่ปวด = เริ่มประเมินโดยเลือกจุดนั้นไว้ให้
       if (focus) onFocusTap(pageX, pageY);
+      else startFromBody(pageX, pageY);
       return;
     }
     // แชท: ไม่แตะเลือกบนหุ่นตรง ๆ แล้ว → ปุ่ม "ชี้จุดบนหุ่น" / แตะหุ่นเล็กในการ์ดประเมิน เปิดหน้าเลือกจุด (BodyPicker)
+  };
+
+  /**
+   * หน้าแรก: แตะหุ่นตรงที่ปวด → แชทประเมินใหม่ที่ตอบข้อ "ปวดตรงไหน" ไว้แล้ว (จุดที่แตะ) → ถามอาการร้าว/อาการร่วมต่อ
+   * เลือกแท็บเรื่องที่รักษาอยู่ → หัวข้อ = เรื่องนั้น (บริเวณเดิม/ใหม่ แยกตามกฎเดิมตอนสรุปผล)
+   */
+  const startFromBody = (pageX: number, pageY: number) => {
+    const pick = bodyRef.current?.pickAt(pageX, pageY);
+    if (!pick?.region) return;
+    const label = labelOfRegion(pick.region);
+    const r = radiateFor([label]);
+    const next = r ? ('radiate' as const) : ('related' as const);
+    const base = newChatSession();
+    const time = nowTimeText();
+    const ss: ChatSession = {
+      ...base,
+      title: `ประเมิน${label}`,
+      items: [...base.items, { id: `u${Date.now()}`, day: 'today', from: 'user', text: label, time }, askItem(next, 'รับทราบค่ะ', r ? `${r.symptom}ร้าวไปที่อื่นไหมคะ?` : undefined)],
+      assess: { ...blankAssessment(), step: next, sel: { [label]: [pick.point] }, extra: HOME_CONTENT.symptoms.includes(label) ? [] : [label], topic: selCase ? tcase.short : undefined },
+    };
+    log('ผู้รับบริการ', `แตะหุ่นเริ่มประเมิน: ${label}`);
+    setSessions((all) => [ss, ...all]);
+    openChat(ss.id);
   };
 
   /* ---------- จองกับ AI ในแชท: แนะนำสถานที่ตามแนวทาง → เลือกเวลา → ยืนยัน ----------
@@ -958,7 +987,7 @@ export function HomeScreen() {
         duration: after.duration,
         cause: after.cause,
         caution,
-        red: level === 'red' || (rel.length > 0 && !rel.includes('ไม่มี')),
+        red: level === 'red',
         stage: old?.stage ?? (loose ? 'booked' : 'assessed'),
         booking: old?.booking ?? loose,
         chatId: sid,
@@ -1000,8 +1029,8 @@ export function HomeScreen() {
     const last = tcase.visits[tcase.visits.length - 1];
     const unsent = tcase.pending.some((ss) => !followUps.some((f) => f.sessionId === ss.id));
     const hasAppt = tcase.appointment.date !== '-';
-    // ยังไม่ได้บอกอาการวันนี้ และ (ยังไม่ได้ติดตามผล หรือ มีนัดครั้งถัดไป) → ถามก่อน
-    const needAsk = !caseToday[tcase.id] && (unsent || hasAppt);
+    // มีนัดครั้งถัดไปและยังไม่ได้ประเมินก่อนนวด → ถามก่อน (ไม่มีติดตามผลรายวัน)
+    const needAsk = !caseToday[tcase.id] && hasAppt;
     const askItems = (): ThreadItem[] =>
       [
         {
@@ -1029,6 +1058,42 @@ export function HomeScreen() {
     setSessions((all) => [ss, ...all]);
     setCaseChats((m) => ({ ...m, [tcase.id]: ss.id }));
     openChat(ss.id);
+  };
+  /**
+   * ปุ่ม "ถาม AI" (แถวแท็บเรื่อง) — AI ทักตามแท็บที่เลือก แล้วให้เลือกว่าจะทำอะไร · ประเมินเรื่องใหม่มีทุกครั้ง
+   * เรื่องที่รักษา: ประเมินก่อนนวด (มีนัด) · ดูผลการรักษา · นัดครั้งถัดไป · ใบร่าง: ประเมินอีกครั้ง · ไม่มีเรื่อง/นัดเรื่องใหม่: เริ่มประเมิน
+   */
+  const menuItem = (text: string, options: string[]): ThreadItem => ({ id: `menu-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text, card: { type: 'intents', options } });
+  const openAI = () => {
+    if (selCase) {
+      const hasAppt = tcase.appointment.date !== '-';
+      const item = menuItem(`เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...(hasAppt ? [CASE_INTENTS[0]] : []), CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
+      const id = caseChats[tcase.id] ?? tcase.chatId;
+      if (id && sessions.some((c) => c.id === id)) {
+        setThread((t) => [...t.filter((m) => m.card?.type !== 'intents' || m !== t[t.length - 1]), item], id);
+        return openChat(id);
+      }
+      const ss = { ...caseChatSession(`รักษา${tcase.short}`, ''), items: [item] };
+      setSessions((all) => [ss, ...all]);
+      setCaseChats((m) => ({ ...m, [tcase.id]: ss.id }));
+      return openChat(ss.id);
+    }
+    if (selDraft) {
+      const item = menuItem(`เรื่อง${selDraft.title} อยากให้ช่วยเรื่องไหนคะ?`, [DRAFT_REASSESS_INTENT, NEW_TOPIC_INTENT]);
+      const id = selDraft.chatId && sessions.some((c) => c.id === selDraft.chatId) ? selDraft.chatId : null;
+      if (id) {
+        setThread((t) => [...t, item], id);
+        return openChat(id);
+      }
+      const ss: ChatSession = { ...newChatSession(), title: `ประเมิน${selDraft.title}`, items: [item], assess: { ...blankAssessment(), step: 'done' } };
+      setSessions((all) => [ss, ...all]);
+      upsertDraft({ ...selDraft, chatId: ss.id });
+      return openChat(ss.id);
+    }
+    if (unfinished) return openChat(unfinished.id);
+    // ยังไม่มีข้อมูล → แชทต้อนรับ (AI ถามว่าวันนี้สนใจเรื่องอะไร)
+    if (chatHome) return startWelcome();
+    newChat();
   };
   /** มาจากเช็กอิน "ประเมินก่อนนวด" → เปิดเรื่องนั้นแล้วเริ่มถามในแชทของเรื่องนั้น */
   const route = useRoute<{ key: string; name: string; params?: { assessCase?: string } }>();
@@ -1067,6 +1132,11 @@ export function HomeScreen() {
   /** คะแนนวันนี้ที่ตอบล่าสุด (ใช้เป็น "ก่อนนวด" ของครั้งถัดไป) · อาการหลังนวดที่ตอบ (รอถามข้อห้ามใหม่) */
   const lastFuScore = React.useRef<number | null>(null);
   const pendingAdverse = React.useRef('ไม่มี');
+  /** ผลประเมินก่อนนวด (การ์ดสรุป: วันนี้เป็นอย่างไร + ครั้งนี้จะรักษาอย่างไร) · เช็กอินได้เมื่อนัดวันนี้ */
+  const preResultItems = (fc: TreatmentCase, focus?: string, urgent?: boolean): ThreadItem[] => [
+    { id: `pre-r-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `ผลประเมินก่อนนวดครั้งที่ ${fc.course.done + 1} ค่ะ ส่งให้ผู้ให้บริการแล้ว`, card: { type: 'preResult', caseId: fc.id, focus } },
+    ...(fc.appointment.today && !urgent ? [{ id: `pre-c-${Date.now()}`, day: 'today' as const, from: 'ai' as const, source: 'AI Interview' as const, time: nowTimeText(), text: '', card: { type: 'action' as const, label: 'เช็กอิน', to: 'CheckIn' as const } }] : []),
+  ];
   /**
    * ติดตามผล = ประเมินอาการโดยรวมของการรักษาครั้งนั้น (ไม่ใช่ทีละจุด) — วัดแบบเดียวกับตอนประเมินก่อนรักษา จึงเทียบกันได้
    * CPG หน้า 157: ประเมินความปวดก่อนและหลังการรักษา · ยังไม่ดีขึ้นค่อยถามว่าตรงไหนยังปวด
@@ -1139,9 +1209,10 @@ export function HomeScreen() {
     const before = all.reduce((n, a) => n + a.painBefore, 0) / Math.max(1, all.length);
     const after = all.reduce((n, a) => n + a.painAfter, 0) / Math.max(1, all.length);
     const pct = Math.round(((before - after) / Math.max(1, before)) * 100);
-    // ไข้/บาดเจ็บใหม่ = ข้อห้ามนวดชั่วคราว (เลื่อนนัด) · เกณฑ์ปวด ≥ 7 เดียวกับฝั่งผู้ให้บริการ
-    const riskRed = risk === 'มีไข้' || risk === 'บาดเจ็บใหม่';
-    const urgent = opt === 'ชา/อ่อนแรง' || all.some((a) => a.painAfter >= 7) || riskRed;
+    // งดนวดเฉพาะเกณฑ์ไม่รับเข้าการรักษาใน CPG_PCU หน้า 139: ไข้ (2.4.2) · หลังอุบัติเหตุภายใน 48 ชม. (3.3) · อาการทางระบบประสาท ชา/อ่อนแรง (3.1)
+    // ไม่ใช้ระดับปวดเป็นเกณฑ์ห้ามนวด (เอกสารไม่มีเกณฑ์ตัวเลข — ปวดมากยังรักษาได้ตามปกติ)
+    const riskRed = risk === 'มีไข้' || risk === FU_RISK[2];
+    const urgent = preVisitRed(opt, risk);
     const notBetter = opt === 'ปวดมากขึ้น' || all.some((a) => a.painAfter >= a.painBefore);
     // อาการวันนี้ = ก่อนนวดของครั้งถัดไป → การ์ดหน้าแรก/เช็กอิน/ผู้ให้บริการใช้ค่าเดียวกัน
     setCaseToday(fc.id, { pain: today, adverse: opt, risk, red: urgent });
@@ -1149,7 +1220,7 @@ export function HomeScreen() {
     lastFuScore.current = null;
     if (urgent) {
       // แจ้งผู้ให้บริการจริง (ไม่ใช่แค่ข้อความ) + งดจองนวดเรื่องนี้จนกว่าแพทย์ตรวจ
-      const why = riskRed ? `${risk}ก่อนนวด` : opt === 'ชา/อ่อนแรง' ? 'ชา/อ่อนแรงหลังนวด' : 'ยังปวดมากหลังนวด';
+      const why = riskRed ? `${risk}ก่อนนวด` : 'ชา/อ่อนแรงหลังนวด';
       log('ระบบ → ผู้ให้บริการ', `ติดตามผล${fc.short}: ${why} — ขอให้ทบทวนก่อนนวดครั้งถัดไป`);
       setUrgentCases((m) => ({ ...m, [fc.id]: why }));
     }
@@ -1161,6 +1232,8 @@ export function HomeScreen() {
           { id: `fu-r-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: 'อาการยังไม่ดีขึ้นค่ะ ตรงไหนยังปวดอยู่บ้างคะ? ผู้ให้บริการจะเน้นให้ครั้งหน้า', card: { type: 'fuWhere', options: [...fc.areas.map((a) => a.label), 'ปวดเท่า ๆ กัน'] } }
         : { id: `fu-r-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `วันนี้ปวด ${today}/10 ดีขึ้น ${pct}% จากก่อนรักษาค่ะ ส่งให้ผู้ให้บริการแล้ว${risk === 'เริ่มยาใหม่' ? ' (แจ้งเรื่องยาใหม่ด้วย)' : ''} นวดต่อตามแผน${next ? ` · ${next}` : ''}` };
     if (!urgent && notBetter) return [analysis];
+    // ประเมินก่อนนวด (มีนัดครั้งถัดไป) → สรุปผลประเมิน + ครั้งนี้จะรักษาอย่างไร (ไม่ชวนดูผลการรักษาย้อนหลัง)
+    if (fc.appointment.date !== '-') return [...(urgent ? [analysis] : []), ...preResultItems(fc, undefined, urgent)];
     return [
       analysis,
       // ต้องพบแพทย์ → ไม่เสนอเลื่อน/จองนัดนวด
@@ -1168,7 +1241,14 @@ export function HomeScreen() {
     ];
   };
   /** ตอบว่าตรงไหนยังปวด → ส่งให้ผู้ให้บริการ */
-  const fuWhereItems = (where: string): ThreadItem[] => [
+  const fuWhereItems = (where: string): ThreadItem[] => {
+    const fc = chatCase() ?? tcase;
+    // ก่อนนวดครั้งถัดไป → สรุปผลประเมิน (เน้นบริเวณที่บอก)
+    if (fc.appointment.date !== '-') {
+      log('ระบบ → ผู้ให้บริการ', `ก่อนนวด${fc.short}: ยังปวด ${where}`);
+      return preResultItems(fc, where === 'ปวดเท่า ๆ กัน' ? undefined : where);
+    }
+    return [
     {
       id: `fu-w-${Date.now()}`,
       day: 'today',
@@ -1181,6 +1261,7 @@ export function HomeScreen() {
     // ทางไปต่อ (ไม่มี "อาการตอนนี้" — เพิ่งประเมินไป)
     { id: `fu-q-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: 'อยากทราบอะไรเพิ่มคะ?', card: { type: 'intents', options: CASE_INTENTS.filter((o) => o !== CASE_INTENTS[0]) } },
   ];
+  };
   const answerFuWhere = (where: string) => aiReply(activeId, where, () => fuWhereItems(where));
   /** ประเมิน → ประเมินคัดกรองอีกครั้ง: ต่อในแชทเดิมของเรื่องนั้น ใช้คำตอบโรคประจำตัวชุดเดิม ถามเฉพาะอาการตอนนี้ */
   /** ข้อความ AI + การ์ดทบทวนข้อมูลชุดเดิม (เหลือการ์ดล่าสุดใบเดียว) */
@@ -1295,12 +1376,19 @@ export function HomeScreen() {
   /** คำถามแนะนำ → แต่ละข้อพาไปคนละเส้น */
   const pickIntent = (label: string) => {
     const born = account ? birthElement(account.birthDate) : null;
+    // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
+    if (label === NEW_TOPIC_INTENT) return newChat();
+    if (label === DRAFT_REASSESS_INTENT) {
+      const d = drafts.find((x) => x.chatId === activeId) ?? selDraft;
+      return d ? reassessDraft(d) : startAssess(label);
+    }
     // แชทของเรื่องที่รักษาอยู่
     if (CASE_INTENTS.includes(label)) {
       const last = tcase.visits[tcase.visits.length - 1];
       if (label === CASE_INTENTS[0]) {
         // ประเมินวันนี้ไปแล้ว → สรุปผลเดิม (ไม่ถามซ้ำ) · ยังไม่ได้ประเมิน → ถามแบบสั้น (ปวดวันนี้ · อาการหลังนวด · ข้อห้ามใหม่)
         const done = caseToday[tcase.id];
+        if (done && tcase.appointment.date !== '-') return aiReply(activeId, label, () => preResultItems(tcase, undefined, done.red));
         if (done)
           return aiReply(activeId, label, () => [
             aiText(
@@ -1311,7 +1399,7 @@ export function HomeScreen() {
       }
       if (label === CASE_INTENTS[1])
         return aiReply(activeId, label, () => [
-          { id: `h-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `ประวัติการรักษา${tcase.short}ค่ะ`, card: { type: 'history', caseId: tcase.id } },
+          { id: `h-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `ผลการรักษา${tcase.short}ค่ะ`, card: { type: 'history', caseId: tcase.id } },
         ]);
       return startCaseBooking(label);
     }
@@ -1349,6 +1437,8 @@ export function HomeScreen() {
             : nav.navigate('ClientTabs', { screen: 'History' })
           : to === 'Places'
           ? nav.navigate('ClientTabs', { screen: 'Places' })
+          : to === 'CheckIn'
+          ? nav.navigate('CheckIn', { caseId: (chatCase() ?? tcase).id })
           : to === 'CallClinic'
           ? (log('ผู้รับบริการ', 'โทรหาคลินิกเรื่องนัด'), callClinic(chatCase() ? caseClinic(chatCase()!) : undefined))
           : to === 'RedFlag'
@@ -1606,7 +1696,7 @@ export function HomeScreen() {
   /** ข้อห้ามใหม่ก่อนนวด: พิมพ์ตอบ (เช่น "ตัวร้อนนิดหน่อย") → เลือกจากตัวเลือก · ไม่เกี่ยว = ถามซ้ำ */
   const answerFuRiskByText = (text: string) =>
     aiReplyAsync(activeId, text, async () => {
-      const r = await extractAI<{ value: string | null }>(`ผู้ใช้ตอบว่าก่อนนวดครั้งถัดไปมีข้อห้ามใหม่ไหม เลือกจาก: ${FU_RISK.join(', ')} · ตัวร้อน/เป็นไข้ = มีไข้ · ล้ม/เคล็ด/บาดเจ็บ = บาดเจ็บใหม่ · ได้ยาใหม่ = เริ่มยาใหม่ · ปกติดี = ไม่มี · ไม่เกี่ยว = null`, text, {
+      const r = await extractAI<{ value: string | null }>(`ผู้ใช้ตอบว่าก่อนนวดครั้งถัดไปมีข้อห้ามใหม่ไหม เลือกจาก: ${FU_RISK.join(', ')} · ตัวร้อน/เป็นไข้ = มีไข้ · ล้ม/เคล็ด/บาดเจ็บภายใน 2 วัน = บาดเจ็บภายใน 2 วัน · บาดเจ็บนานกว่า 2 วัน = ไม่มี · ได้ยาใหม่ = เริ่มยาใหม่ · ปกติดี = ไม่มี · ไม่เกี่ยว = null`, text, {
         type: 'object',
         properties: { value: { type: ['string', 'null'], enum: [...FU_RISK, null] } },
         required: ['value'],
@@ -1736,6 +1826,7 @@ export function HomeScreen() {
     const tc = chatCase();
     if (o === c.options[0]) {
       log('ระบบ → ผู้ให้บริการ', `ผู้รับบริการแจ้ง${tc ? ` (${tc.short})` : ''}: ${c.payload}`);
+      notifyClinic('ผู้รับบริการร้องเรียนผ่านแอป', `${tc ? `${tc.short}: ` : ''}${c.payload}`);
       return aiReply(activeId, o, () => [aiText('แจ้งคลินิกแล้วค่ะ คลินิกจะติดต่อกลับ ถ้าอาการแย่ลงเร็ว โทรหาคลินิกได้เลย', { type: 'action', label: 'ติดต่อคลินิก', to: 'CallClinic' }), ...afterChoice.current]);
     }
     aiReply(activeId, o, () => [aiText('ได้ค่ะ ไม่แจ้ง ถ้าเปลี่ยนใจพิมพ์บอกได้เลย'), ...afterChoice.current]);
@@ -1892,79 +1983,84 @@ export function HomeScreen() {
   };
 
   // คำแนะนำ + ช่องแชท AI ลอยเหนือ tab menu ใน dock เดียวกัน
-  // ก่อนเริ่ม: ปุ่ม AI = ลูกแก้ว AI ของ ThaiWell (AIBall) เป็นปุ่มลอย (FAB) มุมขวาเหนือ tab menu
-  useTabFab(
-    !started && !chatHome ? (
-      <Animated.View pointerEvents={focus ? 'none' : 'auto'} style={[{ flex: 1 }, focusOut]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={selCase ? 'ติดตามผลกับ AI' : selDraft ? 'ประเมินคัดกรองอีกครั้ง' : 'เริ่มประเมินคัดกรอง'}
-          onPress={selCase ? followCaseChat : selDraft ? () => reassessDraft(selDraft) : unfinished ? () => openChat(unfinished.id) : newChat}
-          style={({ pressed }) => ({ flex: 1, alignItems: 'center', justifyContent: 'center', transform: [{ scale: pressed ? 0.92 : 1 }] })}
-        >
-          <AIBall size={componentTokens.voice.cta} />
-        </Pressable>
-      </Animated.View>
-    ) : null,
-    [started, focus, caseIdx, drafts, caseChats, sessions, chatHome],
-  );
+  // ปุ่ม AI อยู่ในแถวแท็บเรื่อง ("ถาม AI" · openAI) — ไม่มีปุ่มลอยมุมขวาแล้ว
+  useTabFab(null, [started]);
+  /* ---------- ทางลัดเหนือช่องแชท (ตามบริบท) ---------- */
+  const SC = { pre: CASE_INTENTS[0], result: CASE_INTENTS[1], appt: CASE_INTENTS[2], stretch: 'ท่ายืดวันนี้', fresh: NEW_TOPIC_INTENT, plan: 'ขอแผนการนวด', book: 'จองนัด', edit: 'แก้ไขข้อมูล' };
+  const shortcuts: string[] = (() => {
+    const lastItem = thread[thread.length - 1];
+    if (!lastItem || lastItem.thinking) return [];
+    // มีคำถาม/ตัวเลือกรอตอบในแชท → คำตอบอยู่ในแชทแล้ว
+    const waiting = lastItem.from === 'ai' && ((!!lastItem.card && WAITING.includes(lastItem.card.type)) || lastItem.card?.type === 'review' || (!!lastItem.ask && lastItem.ask === assess.step));
+    if (waiting || (assess.step !== 'idle' && assess.step !== 'done')) return [];
+    const cc = chatCase();
+    // ไม่เสนอสิ่งที่เพิ่งทำไป (เพิ่งกด "ดูผลการรักษา" → ไม่ขึ้นซ้ำ)
+    const justDid = [...thread].reverse().find((m) => m.from === 'user')?.text;
+    const fresh = (opts: string[]) => opts.filter((o) => o !== justDid);
+    if (cc) {
+      const hasAppt = cc.appointment.date !== '-';
+      return fresh([
+        ...(hasAppt && !caseToday[cc.id] ? [SC.pre] : []),
+        SC.result,
+        ...(urgentCases[cc.id] ? [] : [SC.appt]),
+        SC.stretch,
+        SC.fresh,
+      ]);
+    }
+    // ประเมินเสร็จแล้ว (ใบร่างของแชทนี้)
+    const d = drafts.find((x) => x.chatId === activeId);
+    if (d && assess.step === 'done') return fresh([...(d.red ? [] : [SC.plan]), ...(!d.booking && !d.red ? [SC.book] : []), SC.edit]);
+    return [];
+  })();
+  const pickShortcut = (o: string) => {
+    const cc = chatCase();
+    if (o === SC.stretch) return setSheetStretch(cc?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)));
+    if (o === SC.plan) return requestPlan();
+    if (o === SC.book) return startBooking();
+    if (o === SC.edit) return editAssessment();
+    return pickIntent(o);
+  };
   useTabAccessory(
     !started ? null : (
     <View style={{ width: '100%', maxWidth: g.maxContentWidth, alignSelf: 'center' }}>
     <Animated.View style={[{ gap: space[2] }, reveal]} pointerEvents={leaving ? 'none' : 'auto'}>
+      {/* ทางลัดเหนือช่องแชท: เสริมแชท ไม่ซ้ำแชท — ซ่อนเมื่อข้อความล่าสุดมีตัวเลือก/คำถามรอตอบ · แสดงเมื่อคุยจบแล้ว ตามเรื่องของแชทนี้ */}
       {/* ชิดขอบจอทั้งสองข้าง: ตัวเลือกเลื่อนออกนอกจอได้ ไม่ถูกตัดที่ระยะขอบของ dock */}
-      {/* คนที่ยังไม่มีข้อมูล: คำถามแนะนำอยู่ในแชทแล้ว → ไม่มีทางลัดของคนไข้เดิม (ผลก่อน–หลัง / เลื่อนนัด) */}
-      {/* ทางลัดของเรื่องที่รักษาอยู่ (ผลก่อน–หลัง/เลื่อนนัด) → เฉพาะแชทของเรื่องนั้น (และแชทหลักของคนไข้ตัวอย่าง) */}
-      {!(chatCase() || activeId === CURRENT_CHAT.id) ? null : (
+      {shortcuts.length ? (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ marginHorizontal: -componentTokens.dock.marginX }}
         contentContainerStyle={{ gap: space[2], paddingHorizontal: componentTokens.dock.marginX }}
       >
-        <ReplyChips
-          // ต้องพบแพทย์ก่อน → ไม่มีทางลัดเลื่อนนัด
-          options={HOME_SNAPSHOT.suggestions.filter((o) => !(o === 'นัดครั้งถัดไป' && chatCase() && urgentCases[chatCase()!.id]))}
-          // ผลก่อน–หลัง = การ์ดผลการรักษาชุดเดียวกับหน้าแรก (ไม่ให้ AI เล่าเป็นข้อความ)
-          onPick={(o) => (o === 'เล่าอาการใหม่' ? newChat() : o === 'ผลก่อน–หลัง' ? pickIntent(CASE_INTENTS[1]) : o === 'นัดครั้งถัดไป' ? pickIntent(CASE_INTENTS[2]) : send(o))}
-        />
+        <ReplyChips options={shortcuts} onPick={pickShortcut} />
       </ScrollView>
-      )}
+      ) : null}
       <ChatComposer onSend={send} onVoice={openVoice} />
     </Animated.View>
-      {/* ปุ่มเริ่มประเมิน "หด" เข้าไปเป็นลูกแก้วไมค์ในช่องแชท (และขยายกลับตอนออกจากแชท) */}
-      {dockW > 0 && !chatHome ? (
-        <Animated.View
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={{
-            // ลูกแก้วขนาดคงที่ วางกึ่งกลาง dock แล้วเลื่อน/ย่อด้วย transform (ไม่ยืดตามความกว้าง)
-            position: 'absolute',
-            left: dockW / 2 - componentTokens.voice.cta / 2,
-            width: componentTokens.voice.cta,
-            bottom: (componentTokens.composerV2.height - componentTokens.voice.cta) / 2,
-            opacity: intro.interpolate({ inputRange: [0, 0.45, 0.7], outputRange: [1, 1, 0] }),
-            transform: [
-              // เริ่มจาก FAB (มุมขวา เหนือ tab menu) → เลื่อนลงแถวแชทแล้วหดไปเป็นลูกแก้วไมค์ทางซ้ายของช่องแชท
-              { translateY: intro.interpolate({ inputRange: [0, 0.7], outputRange: [-(componentTokens.dock.height + space[3] + (componentTokens.dock.height - componentTokens.composerV2.height) / 2), 0], extrapolate: 'clamp' }) },
-              { translateX: intro.interpolate({ inputRange: [0, 0.7], outputRange: [dockW / 2 - componentTokens.voice.cta / 2, orbX - dockW / 2], extrapolate: 'clamp' }) },
-              { scale: intro.interpolate({ inputRange: [0, 0.7], outputRange: [1, orbD / componentTokens.voice.cta], extrapolate: 'clamp' }) },
-            ],
-          }}
-        >
-          <AIBall size={componentTokens.voice.cta} />
-        </Animated.View>
-      ) : null}
     </View>
     ),
-    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases],
+    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases, shortcuts.join('|'), assess.step, caseToday],
   );
 
   /* ---------- หน้าเริ่มต้น: ป้ายชี้บริเวณที่รักษาครั้งล่าสุดบนหุ่น ---------- */
   const [areaPt, setAreaPt] = React.useState<{ x: number; y: number } | null>(null);
   const rootRef = React.useRef<View>(null);
   const rootOffset = React.useRef({ x: 0, y: 0 });
+  /** ตำแหน่งจุดชวนแตะบนหุ่น (บ่า) — ฉายจากหุ่นจริง ตามขนาด/การหมุน */
+  const [tapHint, setTapHint] = React.useState<{ x: number; y: number } | null>(null);
+  React.useEffect(() => {
+    if (!(chatHome && !started && !focus)) return;
+    const t = setInterval(() => {
+      rootRef.current?.measureInWindow((x, y) => (rootOffset.current = { x, y }));
+      // บ่าอีกข้าง (ฝั่งซ้ายของจอ) → ป้ายไม่ชนป้าย "จองนวดใกล้บ้าน" ฝั่งขวา
+      const w = bodyRef.current?.projectPin('trapRight');
+      if (!w) return;
+      const p = Platform.OS !== 'web' ? { x: w.x - rootOffset.current.x, y: w.y - rootOffset.current.y } : w;
+      setTapHint((cur) => (cur && Math.abs(cur.x - p.x) < 1 && Math.abs(cur.y - p.y) < 1 ? cur : p));
+    }, 400);
+    return () => clearInterval(t);
+  }, [chatHome, started, focus]);
   // ปิดป้าย / เริ่มแชท → เก็บเส้น + หุ่นกลับหันหน้าตรง
   React.useEffect(() => {
     if (started) setFocus(false);
@@ -2225,7 +2321,7 @@ export function HomeScreen() {
       {/* ชั้นกลาง: เนื้อหาเลื่อนผ่านหน้าหุ่น · จางหายที่ขอบล่างของ header ด้วย mask (โปร่งจนเห็นหุ่น ไม่ใช่แผ่นทับ) */}
       {/* กรอบแผ่นข้อมูล (พื้น + ขอบโค้ง + ขีดจับ) — ไม่อยู่ในรายการที่เลื่อน: ขึ้นตามแผ่นจนถึงขั้น 2 แล้วค้างใต้แท็บ
        * ขั้น 2 เลื่อนเฉพาะการ์ดข้างใน (การ์ดจางหายใต้ขีดจับ) · ขั้น 1 พื้นโปร่ง เห็นหุ่น */}
-      {!started && !chatHome && sheetTop > 0 ? (
+      {!started && sheetTop > 0 ? (
         <Animated.View
           pointerEvents="none"
           style={{
@@ -2322,7 +2418,18 @@ export function HomeScreen() {
           {!started || leaving ? (
             <Animated.View pointerEvents={started ? 'none' : 'box-none'} style={[introOut, { marginTop: bentoGap }]}>
               <Animated.View pointerEvents={focus ? 'none' : 'box-none'} style={focusOut}>
-                {chatHome ? null : homeLoading ? (
+                {chatHome ? (
+                  // ยังไม่มีข้อมูล: แผ่นการ์ดต้อนรับ (โครงเดียวกับหน้าแรกปกติ — หุ่น · ThaiWell AI · การ์ด)
+                  <WelcomeBento
+                    width={bentoW}
+                    element={account ? birthElement(account.birthDate) : null}
+                    onStart={(i) => startWelcome(i)}
+                    onPlace={(id) => nav.navigate('PlaceDetail', { id })}
+                    onPlaces={() => nav.navigate('ClientTabs', { screen: 'Places' })}
+                    onElement={() => nav.navigate('ElementQuiz')}
+                    onStretch={(groupId) => nav.navigate('SelfCare', { groupId })}
+                  />
+                ) : homeLoading ? (
                   <BentoSkeleton width={bentoW} />
                 ) : selLoose ? (
                   <BookingBento width={bentoW} booking={selLoose} onCheckIn={() => nav.navigate('CheckIn', { looseId: selLoose.id })} onEdit={() => nav.navigate('AppointmentDetail', { looseId: selLoose.id })} />
@@ -2357,6 +2464,7 @@ export function HomeScreen() {
                   onEdit={() => nav.navigate('Booking', { caseId: tcase.id, clinic: caseClinic(tcase) })}
                   onOpen={() => nav.navigate('AppointmentDetail', { caseId: tcase.id })}
                   onBook={() => nav.navigate('Booking', { caseId: tcase.id, clinic: caseClinic(tcase) })}
+                  onPreVisit={() => nav.navigate('PreVisit', { caseId: tcase.id })}
                 />
                 )}
               </Animated.View>
@@ -2488,6 +2596,8 @@ export function HomeScreen() {
                     />
                   ) : m.card?.type === 'fuWhere' ? (
                     i === thread.length - 1 ? <ReplyChips options={m.card.options} onPick={answerFuWhere} /> : null
+                  ) : m.card?.type === 'preResult' ? (
+                    <PreVisitResult tc={cases.find((c) => c.id === (m.card as Extract<ThreadCard, { type: 'preResult' }>).caseId) ?? tcase} focus={m.card.focus} />
                   ) : m.card?.type === 'choice' ? (
                     i === thread.length - 1 ? <ReplyChips options={m.card.options} onPick={once((o: string) => pickChoice(m.card as Extract<ThreadCard, { type: 'choice' }>, o))} /> : null
                   ) : m.card?.type === 'planChoice' ? (
@@ -2524,22 +2634,36 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
-
-      {/* คนที่ยังไม่มีข้อมูล: ปุ่ม AI ใหญ่กลางจอ → แตะเข้าแชท (ลูกแก้วจางออกตอนเข้าแชท · กลับมาตอนออก) */}
-      {/* คนที่ยังไม่มีข้อมูล: หน้าต้อนรับ (แอปนี้ทำอะไร · เริ่มประเมิน · ใช้งานอย่างไร · ทางลัด) → จางออกตอนเข้าแชท */}
-      {chatHome && (!started || leaving) ? (
-        <Animated.View pointerEvents={started ? 'none' : 'box-none'} style={[StyleSheet.absoluteFill, introOut]}>
-          <WelcomeHome
-            top={headerBottom}
-            bottom={dockH}
-            width={content}
-            onStart={(i) => startWelcome(i)}
-            onRestart={() => startWelcome(INTENTS[0], true)}
+      {/* ยังไม่มีข้อมูล: จุดกะพริบบนหุ่น + "แตะตรงที่ปวด" (หุ่น = ปุ่มเริ่มประเมิน) */}
+      {chatHome && !started && !focus && tapHint ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{ position: 'absolute', left: tapHint.x, top: tapHint.y, opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.4)], outputRange: [1, 0], extrapolate: 'clamp' }) }}
+        >
+          <TapHint />
+        </Animated.View>
+      ) : null}
+      {/* ยังไม่มีข้อมูล: ขั้นการใช้งาน 3 ขั้น เป็น pill ลอยรอบหุ่น (สลับซ้าย–ขวา) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
+      {chatHome && !started && sheetTop > 0 ? (
+        <Animated.View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: headerBottom + space[2],
+            height: Math.max(0, bentoGap - space[5] - space[2]),
+            opacity: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.5)], outputRange: [1, 0], extrapolate: 'clamp' }),
+          }}
+        >
+          <StepPills
+            onAI={() => startWelcome(INTENTS[0])}
+            onPlaces={() => nav.navigate('ClientTabs', { screen: 'Places' })}
             resume={resume}
-            onStretch={() => nav.navigate('ClientTabs', { screen: 'Stretch' } as never)}
           />
         </Animated.View>
       ) : null}
+
 
       {/* header ข้อมูลผู้ป่วย (ชื่อ + ธาตุ): ตรึงกับจอ ไม่ขยับตามการเลื่อน · ไม่มีพื้นทับ จึงเห็นหุ่นด้านหลังเสมอ */}
       <Animated.View
@@ -2584,8 +2708,9 @@ export function HomeScreen() {
               </View>
             </View>
             {/* แท็บเรื่องที่ดูแล — ตรึงใน header (เลื่อนดูช่องล่าง ๆ ก็ยังรู้ว่าดูเรื่องไหน และสลับได้ทันที) */}
-            {(!started || leaving) && !chatHome && (!bookedOnly || looseBookings.length > 1) ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => `นัด ${b.date} ${b.time}`)} value={caseIdx} onChange={setCaseIdx} onNew={newChat} />
+            {/* แถวแท็บมีปุ่ม "ถาม AI" → แสดงเสมอเมื่อมีข้อมูล (จองไว้นัดเดียวก็แสดง) */}
+            {!started || leaving ? (
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => `นัด ${b.date} ${b.time}`)} value={caseIdx} onChange={setCaseIdx} onNew={openAI} />
             ) : null}
           </View>
           </View>
@@ -2747,7 +2872,8 @@ function TilePill({ icon, label, dark = true }: { icon: React.ComponentProps<typ
       }}
     >
       <Icon name={icon} size="xs" color={dark ? colors.text.inverse : colors.text.primary} />
-      <Text variant="labelSm" color={dark ? colors.text.inverse : colors.text.primary} numberOfLines={1}>
+      {/* ฟอนต์ไทยดูสูงกว่าไอคอน ~1pt → ขยับลงให้อยู่กึ่งกลาง */}
+      <Text variant="labelSm" color={dark ? colors.text.inverse : colors.text.primary} numberOfLines={1} style={{ transform: [{ translateY: 1 }] }}>
         {label}
       </Text>
     </View>
@@ -2841,103 +2967,126 @@ function ReviewCard({
 }
 
 /**
- * ประวัติการรักษาของเรื่องหนึ่ง แบบ bento ในแชท/หน้าประวัติ
- * ผลการรักษา (การ์ด Pain Score เดียวกับหน้าแรก) · คอร์สถึงไหน · รายครั้ง · จุดที่นวด · ผู้ให้บริการ
+ * ผลการรักษาของเรื่องหนึ่ง (แชท → "ดูผลการรักษา") — ตอบคำถาม "รักษาแล้วได้ผลไหม" ตามลำดับที่ผู้ใช้อยากรู้
+ * 1) ภาพรวมทั้งคอร์ส: ก่อนครั้งแรก → หลังครั้งล่าสุด + กราฟแนวโน้ม (จุดเทา = ครั้งที่ยังไม่ถึง)
+ * 2) ครั้งล่าสุด (คะแนนของคลินิก) · อาการตอนนี้ (ติดตามผล/ประเมินก่อนนวด — ผลคงอยู่ไหม)
+ * 3) แต่ละครั้ง (ล่าสุดก่อน) → ดูรายละเอียดทั้งหมด
+ * ไม่ใส่: ท่ายืด (มีตัวเลือกแยก) · จุดที่นวด · ผู้ให้บริการ (อยู่ในรายละเอียด)
  */
-export function HistoryBento({ tc, onAll, onSelfCare }: { tc: TreatmentCase; onAll?: () => void; /** เปิดวิดีโอท่ายืด (groupId = ท่าของเรื่องนี้) */ onSelfCare?: (groupId?: string) => void }) {
+export function HistoryBento({ tc, onAll }: { tc: TreatmentCase; onAll?: () => void; onSelfCare?: (groupId?: string) => void }) {
   const { colors } = useTheme();
-  const { followUps } = useJourney();
-  // กว้างตามที่วางจริง (ในแชทมีคอลัมน์รูป AI · ในหน้าประวัติเต็มจอ)
+  const { followUps, caseToday } = useJourney();
   const [width, setWidth] = React.useState(0);
   const halfW = (width - BENTO_GAP) / 2;
-  // คะแนนหลังนวดที่ส่งผลติดตามแล้ว = ค่าล่าสุดจริง
-  const sent = followUps.filter((f) => tc.pending.some((ss) => ss.id === f.sessionId)).flatMap((f) => f.areas);
-  const sentAfter = sent.length ? Math.round(sent.reduce((n, a) => n + a.painAfter, 0) / sent.length) : undefined;
+  const first = tc.visits[0];
   const last = tc.visits[tc.visits.length - 1];
-  const lastAfter = sentAfter ?? last.painAfter;
+  // อาการตอนนี้: ประเมินก่อนนวดวันนี้ > ผลติดตามหลังนวดครั้งล่าสุด (เฉลี่ยทุกจุด) · ไม่มี = ยังไม่ได้บอก
+  const latestSession = tc.pending[0];
+  const fu = latestSession ? followUps.find((f) => f.sessionId === latestSession.id) : undefined;
+  const fuPain = fu?.areas.length ? Math.round(fu.areas.reduce((n, a) => n + a.painAfter, 0) / fu.areas.length) : undefined;
+  const now = caseToday[tc.id]?.pain ?? fuPain;
+  const remain = tc.course.total - tc.course.done;
+  // ชุดเดียวกับหน้าแรก: ครั้งล่าสุดที่ยังไม่ประเมินหลังนวด = ยังไม่มีคะแนน → ล่าสุดที่มีคะแนนคือครั้งก่อนหน้า
+  const trend = trendValues(tc);
+  const latest = [...trend].reverse().find((v) => v !== undefined) ?? first.painBefore;
   if (!width) return <View style={{ alignSelf: 'stretch' }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))} />;
+  const big = (v: number) => (
+    <Text variant="displayXl" style={{ fontSize: 32, lineHeight: 42 }} color={painColorOf(v)}>
+      {v}
+    </Text>
+  );
   return (
     <View style={{ alignSelf: 'stretch', gap: BENTO_GAP }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
-      {/* ผลการรักษา = การ์ด Pain Score ชุดเดียวกับหน้าแรก (ครั้งล่าสุด: ก่อนรักษา → หลังนวด/ผลติดตาม) · คอร์ส */}
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <View pointerEvents="none" style={{ width: halfW }}>
-          <PainScoreCard value={lastAfter} before={last.painBefore} stageLabel="หลังนวด" chart width={halfW} />
-        </View>
-        <View style={{ width: halfW, gap: BENTO_GAP }}>
-        <Tile style={{ flex: 1, gap: space[2] }}>
-          <Text variant="bodyXs" tone="secondary">
-            คอร์สการรักษา
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
-            <Text variant="titleXl">{tc.course.done}</Text>
-            <Text variant="labelSm" tone="secondary">
-              / {tc.course.total} ครั้ง
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 3 }}>
-            {Array.from({ length: tc.course.total }, (_, i) => (
-              <View key={i} style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: i < tc.course.done ? colors.brand.primary : colors.border.default }} />
-            ))}
-          </View>
-          <Text variant="bodyXs" tone="tertiary" numberOfLines={1}>
-            ครั้งล่าสุด {last.date}
-          </Text>
-        </Tile>
-        {/* วิดีโอท่ายืดของเรื่องนี้ — การ์ดแบบเดียวกับหน้าแรก */}
-        <SelfCareTile groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare?.(tc.selfCare.groupId)} />
-        </View>
-      </View>
-
-      {/* รายครั้ง (ล่าสุดก่อน) */}
+      {/* 1) ภาพรวมทั้งคอร์ส */}
       <Tile style={{ gap: space[2] }}>
-        <Text variant="bodyXs" tone="secondary">
-          แต่ละครั้ง
-        </Text>
-        {[...tc.visits].reverse().map((v) => (
-          <View key={v.date} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-            <Text variant="labelSm" style={{ width: 64 }}>
-              {v.date}
-            </Text>
-            {/* แถบก่อน (เทา) → หลัง (สีแบรนด์) */}
-            <View style={{ flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.border.default, overflow: 'hidden' }}>
-              <View style={{ width: `${(v.painAfter / 10) * 100}%`, height: 8, borderRadius: 4, backgroundColor: colors.brand.primary }} />
-            </View>
-            <Text variant="bodyXs" tone="secondary" style={{ width: 44, textAlign: 'right' }}>
-              {v.painBefore} → {v.painAfter}
-            </Text>
+        <TileTitle title="ตั้งแต่เริ่มรักษา" meta={`${tc.course.done}/${tc.course.total} ครั้ง${remain > 0 ? ` · เหลือ ${remain}` : ''}`} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          {big(first.painBefore)}
+          <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
+          {big(latest)}
+          <Text variant="titleXs" tone="secondary">
+            /10
+          </Text>
+          <View style={{ marginLeft: 'auto' }}>
+            <DeltaPill before={first.painBefore} after={latest} />
           </View>
-        ))}
+        </View>
+        <View style={{ height: 96, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD }}>
+          <CourseTrend values={trend} total={tc.course.total} />
+        </View>
       </Tile>
 
+      {/* 2) ครั้งล่าสุด · อาการตอนนี้ */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        {/* จุดที่นวด */}
-        <Tile style={{ width: halfW, gap: space[2] }}>
-          <Text variant="bodyXs" tone="secondary">
-            จุดที่นวด
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-            {tc.areas.map((a) => (
-              <View key={a.pin} style={{ paddingHorizontal: space[2], height: 22, borderRadius: radius.full, backgroundColor: colors.surface.sunken, justifyContent: 'center' }}>
-                <Text variant="caption">{a.label}</Text>
-              </View>
-            ))}
-          </View>
-        </Tile>
-        {/* ผู้ให้บริการ */}
-        <Tile style={{ width: halfW, gap: 2 }} onPress={onAll} accessibilityLabel={onAll ? 'ดูประวัติทั้งหมด' : undefined}>
-          <Text variant="bodyXs" tone="secondary">
-            ผู้ให้บริการ
-          </Text>
-          <Text variant="labelSm" numberOfLines={2}>
-            {tc.therapist}
-          </Text>
-          {onAll ? (
-            <Text variant="caption" color={colors.brand.primary} style={{ marginTop: 'auto' }}>
-              ดูประวัติทั้งหมด
+        <Tile style={{ width: halfW, gap: space[1] }}>
+          <TileTitle title="ครั้งล่าสุด" meta={last.date} />
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
+            <Text variant="titleXl">
+              {last.painBefore} → {last.selfPain ?? '–'}
             </Text>
-          ) : null}
+            <Text variant="labelSm" tone="secondary">
+              /10
+            </Text>
+          </View>
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            ก่อน → หลังนวด
+          </Text>
+        </Tile>
+        <Tile style={{ width: halfW, gap: space[1] }}>
+          <TileTitle title="อาการตอนนี้" />
+          {now !== undefined ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
+                <Text variant="titleXl" color={painColorOf(now)}>
+                  {now}
+                </Text>
+                <Text variant="labelSm" tone="secondary">
+                  /10
+                </Text>
+              </View>
+              {/* เทียบหลังนวดครั้งล่าสุด: ผลคงอยู่ไหม */}
+              <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+                {now <= last.painAfter ? 'ผลยังคงอยู่' : `ปวดกลับมา +${now - last.painAfter}`}
+              </Text>
+            </>
+          ) : (
+            <Text variant="bodyXs" tone="secondary">
+              ยังไม่ได้บอกอาการหลังนวด
+            </Text>
+          )}
         </Tile>
       </View>
+
+      {/* 3) แต่ละครั้ง (ล่าสุดก่อน) */}
+      <Tile style={{ gap: space[2] }} onPress={onAll} accessibilityLabel={onAll ? 'ดูรายละเอียดการรักษาทั้งหมด' : undefined}>
+        <TileTitle title="แต่ละครั้ง" />
+        {[...tc.visits].reverse().map((v, k) => {
+          const no = tc.visits.length - k;
+          const va = afterOf(tc, no - 1);
+          const d = va === undefined ? null : v.painBefore - va;
+          return (
+            <View key={`${no}-${v.date}`} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+              <Text variant="bodySm" style={{ width: 64 }}>
+                ครั้งที่ {no}
+              </Text>
+              <Text variant="bodyXs" tone="tertiary" style={{ flex: 1 }} numberOfLines={1}>
+                {v.date}
+              </Text>
+              <Text variant="labelSm">
+                {v.painBefore} → <Text variant="labelSm" color={va === undefined ? colors.text.tertiary : painColorOf(va)}>{va ?? '–'}</Text>
+              </Text>
+              <Text variant="bodyXs" tone={d !== null && d > 0 ? undefined : 'tertiary'} color={d !== null && d > 0 ? colors.brand.primary : undefined} style={{ width: 28, textAlign: 'right' }}>
+                {d === null ? '' : d > 0 ? `-${d}` : d === 0 ? '0' : `+${-d}`}
+              </Text>
+            </View>
+          );
+        })}
+        {onAll ? (
+          <Text variant="labelSm" color={colors.brand.primary}>
+            ดูรายละเอียดทั้งหมด
+          </Text>
+        ) : null}
+      </Tile>
     </View>
   );
 }
@@ -3272,28 +3421,8 @@ function CaseTabs({ cases, drafts, extras = [], value, onChange, onNew }: { case
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: BENTO_CASE_H, marginRight: -space[5] }}>
         {onNew ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ประเมินคัดกรองใหม่"
-            onPress={onNew}
-            style={({ pressed }) => ({
-              height: 36,
-              paddingHorizontal: space[3],
-              borderRadius: radius.full,
-              borderWidth: 1,
-              borderStyle: 'dashed',
-              borderColor: colors.brand.primary,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: space[1],
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <Icon name="plus" size="xs" color={colors.brand.primary} />
-            <Text variant="labelMd" color={colors.brand.primary}>
-              ประเมินใหม่
-            </Text>
-          </Pressable>
+          // ThaiWell AI: คุยเรื่องของแท็บที่เลือก หรือเริ่มประเมินเรื่องใหม่ (ตรึงซ้าย ไม่เลื่อนตามแท็บ)
+          <AIButton label={`ThaiWell AI${items[value] ? ` เรื่อง${items[value]}` : ''}`} onPress={onNew} />
         ) : null}
       {items.length ? (
         <EdgeFade horizontal top={onNew ? TAB_GAP - 2 : 0} bottom={space[5]}>
@@ -3391,115 +3520,108 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number;
  * หน้าแรกของคนที่ยังไม่มีข้อมูล — บอกว่าแอปทำอะไร แล้วพาไปขั้นแรก
  * 1) แอปนี้คืออะไร (หนึ่งประโยค) → 2) ปุ่มหลัก: ประเมินอาการกับ AI → 3) ใช้งานอย่างไร 3 ขั้น → 4) ทางลัดเรื่องอื่น (เข้าแชทพร้อมหัวข้อ)
  */
-function WelcomeHome({
-  top,
-  bottom,
+/**
+ * แผ่นการ์ดของผู้ใช้ใหม่ (ยังไม่มีข้อมูล) — ข้อมูลจริงที่ใช้ได้ทันที ไม่ใช่แค่ทางลัด
+ * คลินิกใกล้คุณ (คิวว่างวันนี้) · ธาตุเจ้าเรือน (จากวันเกิด) · ท่ายืดแนะนำ · อาการที่นวดไทยช่วยได้ (แตะ = เริ่มประเมินอาการนั้น)
+ */
+function WelcomeBento({
   width,
+  element,
   onStart,
-  onRestart,
-  resume,
+  onPlace,
+  onPlaces,
+  onElement,
   onStretch,
 }: {
-  top: number;
-  bottom: number;
-  width: object;
+  width: number;
+  element: ElementKey | null;
   onStart: (intent?: string) => void;
-  onRestart: () => void;
-  /** ประเมินค้างไว้: ตอบไปแล้วกี่ข้อ */
-  resume: { done: number; total: number } | null;
-  onStretch: () => void;
+  onPlace: (id: string) => void;
+  onPlaces: () => void;
+  onElement: () => void;
+  onStretch: (groupId: string) => void;
 }) {
   const { colors } = useTheme();
-  const steps: { title: string; sub: string }[] = [
-    { title: 'เล่าอาการกับ AI', sub: 'คัดกรองความปลอดภัยก่อนนวด' },
-    { title: 'จองนวดใกล้บ้าน', sub: 'เลือกแพทย์แผนไทยและเวลาว่าง' },
-    { title: 'ติดตามผลหลังนวด', sub: 'เห็นอาการก่อน–หลังทุกครั้ง' },
-  ];
-  const tiles: { icon: React.ComponentProps<typeof Icon>['name']; tint: string; title: string; onPress: () => void }[] = [
-    { icon: 'map-pin', tint: TINT.green, title: 'หาที่นวดใกล้ฉัน', onPress: () => onStart(INTENTS[1]) },
-    { icon: 'sun', tint: TINT.amber, title: 'ธาตุของฉัน', onPress: () => onStart(INTENTS[2]) },
-    { icon: 'activity', tint: TINT.violet, title: 'ท่ายืดเหยียด', onPress: onStretch },
-    { icon: 'help-circle', tint: TINT.blue, title: 'นวดไทยช่วยอะไร', onPress: () => onStart(INTENTS[3]) },
-  ];
+  const halfW = (width - BENTO_GAP) / 2;
+  const near = nearestClinic();
+  const info = element ? ELEMENT_INFO[element] : null;
+  // 3 กลุ่มที่มารับบริการแพทย์แผนไทยมากที่สุด (Health Profile 2568 หน้า 13) + ปวดศีรษะ (ลมปะกัง — CPG_PCU หน้า 139 ข้อ 2.1)
+  const common = ['ปวดคอ-บ่า', 'ปวดหลัง', 'ปวดขา', 'ปวดศีรษะ'];
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[width, { paddingTop: top + space[6], paddingBottom: bottom + space[4], gap: space[5] }]}>
-      <View style={{ gap: space[1] }}>
-        <Text variant="titleLg">นวดไทยที่เข้าใจร่างกายคุณ</Text>
-        <Text variant="bodyMd" tone="secondary">
-          เล่าอาการกับ AI ก่อนมา ผู้ให้บริการรู้ล่วงหน้าว่าต้องดูแลตรงไหน
-        </Text>
-      </View>
-
-      {/* ปุ่มหลัก: เริ่มประเมินอาการ */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="เริ่มประเมินอาการกับ AI"
-        onPress={() => onStart(INTENTS[0])}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[4], padding: space[4], paddingRight: space[5], borderRadius: 24, backgroundColor: colors.text.primary, transform: [{ scale: pressed ? 0.98 : 1 }] })}
-      >
-        <AIBall size={64} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text variant="titleSm" color={colors.text.inverse}>
-            {resume ? 'ประเมินต่อจากเดิม' : 'เริ่มประเมินอาการ'}
+    <View style={{ gap: BENTO_GAP }}>
+      {/* 1) คลินิกใกล้คุณ */}
+      {near ? (
+        <Tile style={{ gap: space[2] }} onPress={() => onPlace(near.id)} accessibilityLabel={`คลินิกใกล้คุณ ${near.name} ${near.km} กม.`}>
+          <TileTitle title="คลินิกใกล้คุณ" meta={`${near.km} กม.`} />
+          <Text variant="bodyMd" numberOfLines={1}>
+            {near.name}
           </Text>
-          <Text variant="bodySm" color="rgba(255,255,255,0.7)">
-            {resume ? (resume.done >= resume.total ? 'เหลือตรวจสอบคำตอบ' : `ค้างไว้ที่ข้อ ${resume.done + 1} จาก ${resume.total}`) : 'ชี้จุดที่ปวดบนหุ่น ใช้เวลา 2 นาที'}
-          </Text>
-          {/* ความคืบหน้าของการประเมินที่ค้างไว้ */}
-          {resume ? (
-            <View style={{ height: 4, borderRadius: 2, marginTop: space[2], backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden' }}>
-              <View style={{ width: `${Math.max(6, Math.round((resume.done / resume.total) * 100))}%`, height: 4, borderRadius: 2, backgroundColor: '#5EE0B0' }} />
-            </View>
-          ) : null}
-        </View>
-        <Icon name="arrow-right" size="sm" color={colors.text.inverse} />
-      </Pressable>
-      {resume ? (
-        <Pressable accessibilityRole="button" onPress={onRestart} style={{ alignSelf: 'center', minHeight: 44, justifyContent: 'center', marginTop: -space[3] }}>
-          <Text variant="labelMd" tone="secondary">
-            เริ่มประเมินใหม่
-          </Text>
-        </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <Text variant="bodyXs" tone="secondary">
+              ว่างวันนี้
+            </Text>
+            {near.slots.slice(0, 3).map((t) => (
+              <View key={t} style={{ paddingHorizontal: space[2], height: 24, justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
+                <Text variant="labelSm" color={colors.brand.primary} style={{ transform: [{ translateY: 1 }] }}>
+                  {t}
+                </Text>
+              </View>
+            ))}
+            <Pressable accessibilityRole="button" accessibilityLabel="ดูสถานที่ทั้งหมด" onPress={onPlaces} hitSlop={8} style={{ marginLeft: 'auto' }}>
+              <Text variant="labelSm" color={colors.brand.primary}>
+                ดูทั้งหมด
+              </Text>
+            </Pressable>
+          </View>
+        </Tile>
       ) : null}
 
-      {/* ใช้งานอย่างไร */}
-      <Panel title="ใช้งานอย่างไร">
-        {steps.map((st, i) => (
-          <View key={st.title} style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-            <View style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: i === 0 ? colors.brand.primary : colors.surface.sunken }}>
-              <Text variant="labelMd" color={i === 0 ? colors.text.inverse : colors.text.secondary}>
-                {i + 1}
+      {/* 2) ธาตุเจ้าเรือน · ท่ายืดแนะนำ */}
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+        <Tile style={{ width: halfW, gap: space[2] }} onPress={onElement} accessibilityLabel={info ? `ธาตุเจ้าเรือน ${info.label}` : 'ธาตุเจ้าเรือน'}>
+          <TileTitle title="ธาตุเจ้าเรือน" />
+          {info && element ? (
+            <>
+              <Text variant="titleSm">{info.label}</Text>
+              <Text variant="bodyXs" tone="secondary" numberOfLines={3}>
+                {info.advice.replace('\n', ' ')}
               </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="labelMd">{st.title}</Text>
-              <Text variant="bodyXs" tone="secondary">
-                {st.sub}
-              </Text>
-            </View>
-          </View>
-        ))}
-      </Panel>
+            </>
+          ) : (
+            <Text variant="bodyXs" tone="secondary">
+              ทำแบบประเมินสั้น ๆ เพื่อดูธาตุของคุณ
+            </Text>
+          )}
+          <Text variant="labelSm" color={colors.brand.primary} style={{ marginTop: 'auto' }}>
+            ดูธาตุปัจจุบัน
+          </Text>
+        </Tile>
+        <View style={{ width: halfW }}>
+          <SelfCareTile groupId="office" title="ยืดคอ-บ่า" onPress={() => onStretch('office')} />
+        </View>
+      </View>
 
-      {/* ทางลัด */}
-      <View style={{ gap: space[2] }}>
-        <Text variant="labelLg">หรือเริ่มจาก</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
-          {tiles.map((t) => (
+      {/* 3) อาการที่นวดไทยช่วยได้ → แตะเริ่มประเมินอาการนั้น */}
+      <Tile style={{ gap: space[3] }}>
+        <TileTitle title="นวดไทยช่วยอาการไหนได้" meta="แตะเพื่อเริ่มประเมิน" />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
+          {common.map((sym) => (
             <Pressable
-              key={t.title}
+              key={sym}
               accessibilityRole="button"
-              accessibilityLabel={t.title}
-              onPress={t.onPress}
-              style={({ pressed }) => ({ flexBasis: '47%', flexGrow: 1, gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: pressed ? colors.surface.sunken : colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle })}
+              accessibilityLabel={`เริ่มประเมิน ${sym}`}
+              onPress={() => onStart(sym)}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 34, paddingHorizontal: space[3], borderRadius: radius.full, borderWidth: 1, borderColor: colors.border.subtle, backgroundColor: pressed ? colors.surface.sunken : colors.surface.default })}
             >
-              <IconBox icon={t.icon} tint={t.tint} size={36} />
-              <Text variant="labelMd">{t.title}</Text>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
+              <Text variant="labelSm" style={{ transform: [{ translateY: 1 }] }}>
+                {sym.replace('-', ' ')}
+              </Text>
             </Pressable>
           ))}
         </View>
-      </View>
-    </ScrollView>
+      </Tile>
+    </View>
   );
 }
 
@@ -3837,7 +3959,10 @@ function HomeBento({
   onEdit,
   onOpen,
   onBook,
+  onPreVisit,
 }: {
+  /** ประเมินก่อนนวด (แบบฟอร์ม) */
+  onPreVisit: () => void;
   width: number;
   caseIdx: number;
   tcase: TreatmentCase;
@@ -3881,6 +4006,8 @@ function HomeBento({
   // บิลของเรื่องนี้: รอชำระก่อน · ไม่มี = ใบเสร็จล่าสุด
   const bill = bills.find((b) => b.caseId === tc.id && b.status === 'pending') ?? bills.find((b) => b.caseId === tc.id);
   const preDone = !!today;
+  // ประเมินหลังนวดครั้งล่าสุดแล้วหรือยัง: บอกความรู้สึกหลังนวด / ส่งผลติดตาม / ประเมินก่อนนวดครั้งถัดไป (ถามอาการหลังนวดครั้งก่อนแล้ว)
+  const needPost = last.selfPain === undefined;
 
   return (
     <View style={{ gap: BENTO_GAP }}>
@@ -3925,7 +4052,7 @@ function HomeBento({
             </View>
             {/* ยังไม่ประเมิน = ประเมิน (หลัก) · ประเมินแล้ว + วันนี้ = เช็กอิน (หลัก) */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-              <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onFollowUp} style={{ flex: 1 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onPreVisit} style={{ flex: 1 }}>
                 <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมิน'} dark={!preDone} />
               </Pressable>
               {ap.today ? (
@@ -3944,51 +4071,57 @@ function HomeBento({
           </>
         ) : (
           <>
-            {/* ยังไม่มีนัด: ติดตามผลหลังนวดครั้งล่าสุด */}
-            <StepRow
-              done={preDone}
-              warn={today?.red}
-              text={today ? `อาการวันนี้ ปวด ${today.pain}/10 · ${today.red ? 'ควรพบแพทย์' : 'ส่งให้ผู้ให้บริการแล้ว'}` : justServed ? 'นวดวันนี้แล้ว · ติดตามผลพรุ่งนี้' : `หลังนวด ${(pending[0] ?? { date: last.date }).date} ดีขึ้นต่อไหม`}
-            />
-            <Pressable accessibilityRole="button" accessibilityLabel={today ? 'ดูผล' : 'อัปเดตอาการ'} onPress={onFollowUp}>
-              <TilePill icon={today ? 'eye' : 'edit-3'} label={today ? 'ดูผล' : 'อัปเดตอาการ'} dark={!today && !justServed} />
-            </Pressable>
+            {/* ยังไม่มีนัด: นวดครั้งล่าสุดแล้ว → คลินิกนัดครั้งถัดไปตามแผน (การประเมินมีแค่ก่อน/หลังนวด ไม่มีติดตามรายวัน) */}
+            <StepRow done text={`นวดครั้งที่ ${tc.visits.length} แล้ว · ${last.date}`} />
+            <StepRow text="คลินิกจะนัดครั้งถัดไป และแจ้งเตือนในแอป" />
           </>
         )}
       </Tile>
 
-      {/* 3) ผลการรักษาที่ผ่านมา: ผลครั้งล่าสุด · คอร์สถึงไหน */}
+      {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
-          <View pointerEvents="none">
-            <PainScoreCard value={after} before={last.painBefore} stageLabel="หลังนวด" title={`ผลครั้งที่ ${tc.visits.length}`} strongTitle padding={TILE_PAD} subtitle={last.date} chart width={halfW} />
-          </View>
-        </Pressable>
-        <Tile style={{ width: halfW, gap: space[2], justifyContent: 'space-between' }} onPress={onHistory} accessibilityLabel={`แผนการรักษา ${tc.course.done} จาก ${tc.course.total} ครั้ง ดูรายละเอียดการรักษา`}>
-          <TileTitle title="แผนการรักษา" meta={tc.course.total > tc.course.done ? `เหลือ ${tc.course.total - tc.course.done}` : 'ครบแล้ว'} />
+        <Tile style={{ width: halfW, gap: space[2] }} onPress={onHistory} accessibilityLabel={`แผนการรักษา ${tc.course.done} จาก ${tc.course.total} ครั้ง ดูรายละเอียดการรักษา`}>
+          {/* รูปแบบการรักษาชิดขวาบน (แบบเดียวกับวันที่ในการ์ดผลครั้งที่ N) */}
+          {/* ที่ว่างขวาบนแคบ → ตัด "นวด" นำหน้า (หัวการ์ดบอกอยู่แล้วว่าเป็นแผนการรักษา) */}
+          <TileTitle title="แผนการรักษา" meta={tc.plan.replace(/^นวด/, '')} />
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
             {/* ตัวเลขขนาดเดียวกับ Pain Score ข้าง ๆ (40) */}
             <Text variant="displayXl" style={{ fontSize: 40, lineHeight: 52 }}>
               {tc.course.done}
             </Text>
-            <Text variant="titleXs" tone="secondary">
+            {/* "ครั้ง" มีสระ/วรรณยุกต์ซ้อน 2 ชั้นด้านบน → เผื่อ lineHeight ไม่ให้ ้ ถูกตัด */}
+            <Text variant="titleXs" tone="secondary" style={{ lineHeight: 30 }}>
               /{tc.course.total} ครั้ง
             </Text>
-          </View>
-          {/* แท่งละครั้ง: สูง/สีตามความปวดหลังนวดของครั้งนั้น (เห็นแนวโน้มทั้งคอร์ส) · ครั้งที่ยังไม่ถึง = แท่งเทาเตี้ย */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 28 }}>
-            {Array.from({ length: tc.course.total }, (_, i) => {
-              const v = tc.visits[i];
-              return <View key={i} style={{ flex: 1, height: v ? Math.max(6, (v.painAfter / 10) * 28) : 6, borderRadius: 3, backgroundColor: v ? painColorOf(v.painAfter) : colors.border.default }} />;
-            })}
-          </View>
-          <View>
-            {/* คะแนนปวดอยู่ในการ์ด Pain Score แล้ว → ที่นี่บอกแค่รูปแบบการรักษา */}
-            <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-              {tc.plan}
+            {/* ที่เหลือ: ตัวเล็กขนาดเดิม ต่อท้ายจำนวนครั้ง */}
+            <Text variant="bodyXs" tone="tertiary" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {tc.course.total > tc.course.done ? `· เหลือ ${tc.course.total - tc.course.done}` : '· ครบแล้ว'}
             </Text>
           </View>
+          {/* แนวโน้มความปวดหลังนวดทั้งคอร์ส: เต็มพื้นที่ที่เหลือ ชิดขอบซ้าย-ขวา-ล่างแบบกราฟใน Pain Score · นวดแล้ว = สีตามระดับปวด · ยังไม่ถึง = เทา */}
+          <View style={{ flex: 1, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD, marginTop: -space[2] }}>
+            <CourseTrend values={trendValues(tc)} total={tc.course.total} />
+          </View>
         </Tile>
+        <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
+          <View pointerEvents={needPost ? 'box-none' : 'none'}>
+            <PainScoreCard
+              // หลัง = คะแนนที่ผู้ใช้ประเมินหลังนวด · ยังไม่ประเมิน = ว่าง (–)
+              value={last.selfPain ?? last.painBefore}
+              missing={last.selfPain === undefined}
+              before={last.painBefore}
+              stageLabel="หลังนวด"
+              title={`ผลครั้งที่ ${tc.visits.length}`}
+              strongTitle
+              padding={TILE_PAD}
+              subtitle={last.date}
+              chart
+              width={halfW}
+              // ยังไม่ได้ประเมินหลังนวดครั้งนี้ → ปุ่มแทน pill เปอร์เซ็นต์ → แบบประเมินหลังนวด (วันนี้หรือย้อนหลังก็ได้)
+              action={needPost ? { label: 'ประเมินหลังนวด', onPress: () => nav.navigate('PostAssessment', { caseId: tc.id }) } : undefined}
+            />
+          </View>
+        </Pressable>
       </View>
 
       {/* 4) ระหว่างรอครั้งถัดไป: ท่าดูแลตัวเอง · บิล/ใบเสร็จ · ติดต่อคลินิก */}
@@ -4025,10 +4158,312 @@ function HomeBento({
   );
 }
 
+/**
+ * ผลประเมินก่อนนวดครั้งถัดไป (ในแชท): วันนี้เป็นอย่างไร → ครั้งนี้จะรักษาอย่างไร
+ * สถานะตามกฎเดียวกับเช็กอิน: ควรพบแพทย์ (red) / มีข้อควรระวัง / นวดได้ตามแผน
+ */
+function PreVisitResult({ tc, focus }: { tc: TreatmentCase; focus?: string }) {
+  const { colors } = useTheme();
+  const { caseToday } = useJourney();
+  const t = caseToday[tc.id];
+  if (!t) return null;
+  // เกณฑ์/แผนชุดเดียวกับแบบฟอร์มประเมินก่อนนวด
+  const sum = preVisitSummary(tc, t, focus);
+  const last = { painAfter: sum.prevAfter };
+  const diff = sum.diff;
+  const status = { label: sum.label, icon: sum.status === 'red' ? ('alert-triangle' as const) : sum.status === 'caution' ? ('alert-circle' as const) : ('check-circle' as const), tone: sum.status === 'red' ? colors.status.danger : sum.status === 'caution' ? colors.status.warning : colors.status.success };
+  const plan = sum.plan;
+  return (
+    <View style={{ alignSelf: 'stretch', gap: BENTO_GAP }}>
+      <Tile style={{ gap: space[3] }}>
+        <TileTitle title={`ก่อนนวดครั้งที่ ${tc.course.done + 1}`} meta={tc.appointment.date !== '-' ? `${tc.appointment.date} ${tc.appointment.time}` : undefined} />
+        {/* สถานะ */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], alignSelf: 'flex-start', paddingHorizontal: space[2], height: 26, borderRadius: radius.full, backgroundColor: status.tone.bg }}>
+          <Icon name={status.icon} size="xs" color={status.tone.fg} />
+          <Text variant="labelSm" color={status.tone.fg}>
+            {status.label}
+          </Text>
+        </View>
+        {/* วันนี้ เทียบหลังนวดครั้งก่อน */}
+        <View style={{ flexDirection: 'row', gap: space[2] }}>
+          <View style={{ flex: 1 }}>
+            <Text variant="bodyXs" tone="secondary">
+              วันนี้ปวด
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
+              <Text variant="titleXl" color={painColorOf(t.pain)}>
+                {t.pain}
+              </Text>
+              <Text variant="labelSm" tone="secondary">
+                /10
+              </Text>
+            </View>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text variant="bodyXs" tone="secondary">
+              หลังนวดครั้งก่อน
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
+              <Text variant="titleXl">{last.painAfter}</Text>
+              <Text variant="labelSm" tone="secondary">
+                /10 {diff > 0 ? `· ปวดกลับมา +${diff}` : '· ผลยังคงอยู่'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        {/* อาการหลังนวด/ข้อห้ามใหม่ (แสดงเฉพาะที่มี) */}
+        {(t.adverse && t.adverse !== 'ไม่มี') || (t.risk && t.risk !== 'ไม่มี') ? (
+          <Text variant="bodySm" color={t.red ? colors.status.danger.fg : colors.status.warning.fg}>
+            {[t.adverse && t.adverse !== 'ไม่มี' ? `หลังนวดครั้งก่อน${t.adverse}` : '', t.risk && t.risk !== 'ไม่มี' ? t.risk : ''].filter(Boolean).join(' · ')}
+          </Text>
+        ) : null}
+      </Tile>
+      <Tile style={{ gap: space[2] }}>
+        <TileTitle title={t.red ? 'ครั้งนี้' : 'ครั้งนี้จะได้รับ'} meta={t.red ? undefined : 'ผู้ให้บริการยืนยันหน้างาน'} />
+        {plan.map((it) => (
+          <StepRow key={it} text={it} done={!t.red} warn={t.red} />
+        ))}
+        {!t.red && tc.prep.length ? <StepRow text={`ก่อนมา: ${tc.prep.join(' · ')}`} /> : null}
+      </Tile>
+    </View>
+  );
+}
+
+/** ค่าบนกราฟแนวโน้ม: ครั้งก่อน ๆ = หลังนวด · ครั้งล่าสุด = คะแนนที่ผู้ใช้ประเมินหลังนวด (ยังไม่ประเมิน = ยังไม่มีคะแนน) — ตรงกับการ์ด Pain Score */
+const trendValues = (tc: TreatmentCase) => tc.visits.slice(0, tc.course.total).map((_, i) => afterOf(tc, i));
+
+/** กราฟแนวโน้มความปวดย่อ (การ์ดแผนการรักษา): เส้น + พื้นไล่จางของครั้งที่นวดแล้ว · จุดเทาของครั้งที่ยังไม่ถึง (วางบนเส้นฐาน) */
+function CourseTrend({ values, total }: { values: (number | undefined)[]; total: number }) {
+  const { colors } = useTheme();
+  const [size, setSize] = React.useState({ w: 0, h: 0 });
+  const { w } = size;
+  const H = size.h;
+  // แกน Y (0 · 5 · 10) ชิดซ้ายตรงขอบเนื้อหาการ์ด · จุดเริ่มหลังตัวเลขแกน · ล่างเว้นให้จุดเทาไม่ชนขอบการ์ด
+  const PAD = TILE_PAD;
+  const AXIS = 16;
+  const L = PAD + AXIS;
+  const T = 8;
+  const B = 12;
+  const x = (i: number) => L + 6 + (total > 1 ? (i * (w - L - 6 - PAD)) / (total - 1) : (w - L - 6 - PAD) / 2);
+  const y = (v: number) => T + ((10 - v) / 10) * (H - T - B);
+  // เส้นเฉพาะครั้งที่มีคะแนน (ต่อเนื่องจากครั้งแรก)
+  const n = values.findIndex((v) => v === undefined);
+  const scored = (n === -1 ? values : values.slice(0, n)) as number[];
+  const pts = scored.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const area = scored.length > 1 ? `M${x(0)},${y(0)} L${scored.map((v, i) => `${x(i)},${y(v)}`).join(' L')} L${x(scored.length - 1)},${y(0)} Z` : '';
+  return (
+    <View onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} style={{ flex: 1, minHeight: 56 }}>
+      {w > 0 && H > 0 ? (
+        <Svg width={w} height={H}>
+          <Defs>
+            <LinearGradient id="ct" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={colors.brand.primary} stopOpacity={0.24} />
+              <Stop offset="1" stopColor={colors.brand.primary} stopOpacity={0.02} />
+            </LinearGradient>
+          </Defs>
+          {/* แกน Y: เส้นประ + ตัวเลข 0 · 5 · 10 (แบบกราฟในหน้ารายละเอียด) */}
+          {[0, 5, 10].map((g) => (
+            <React.Fragment key={g}>
+              <Line x1={L} x2={w - PAD} y1={y(g)} y2={y(g)} stroke={colors.border.subtle} strokeDasharray="3 4" />
+              <SvgText fontFamily={fontFamily.medium} x={PAD} y={y(g) + 3.5} fontSize={10} fill={colors.text.tertiary}>
+                {g}
+              </SvgText>
+            </React.Fragment>
+          ))}
+          {area ? <Path d={area} fill="url(#ct)" /> : null}
+          {scored.length > 1 ? <Polyline points={pts} fill="none" stroke={colors.brand.primary} strokeWidth={2.5} strokeLinejoin="round" /> : null}
+          {Array.from({ length: total }, (_, i) => {
+            const v = values[i];
+            // นวดแล้วแต่ยังไม่ประเมิน = วงเทาโปร่งบนเส้นฐาน · ยังไม่ถึง = จุดเทา
+            if (i < values.length && v === undefined) return <Circle key={i} cx={x(i)} cy={y(0)} r={4} fill="#FFFFFF" stroke={colors.border.default} strokeWidth={2.5} />;
+            return v !== undefined ? (
+              <Circle key={i} cx={x(i)} cy={y(v)} r={5} fill="#FFFFFF" stroke={painColorOf(v)} strokeWidth={3} />
+            ) : (
+              <Circle key={i} cx={x(i)} cy={y(0)} r={4} fill={colors.border.default} />
+            );
+          })}
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * ปุ่ม ThaiWell AI — พื้นพาสเทลอ่อน + ขอบบางไล่สีชุดเดียวกับลูกแก้ว AI · ตัวอักษรเข้ม · เงาม่วงจาง
+ * แสงวิ่งผ่านเบา ๆ ทุก 4 วินาที · สูง 38 เท่าแท็บที่เลือก
+ */
+const AI_GRAD = ['#2FD39A', '#3AA8FF', '#8B6BFF', '#E45BD1'];
+const AI_PASTEL = ['#E6FAF2', '#E8F3FF', '#EFEAFF', '#FBEAF7'];
+function AIButton({ label, onPress }: { label: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const [w, setW] = React.useState(0);
+  const H = 38;
+  const sweep = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(3000),
+        Animated.timing(sweep, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(sweep, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sweep]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        borderRadius: H / 2,
+        shadowColor: '#8B6BFF',
+        shadowOpacity: 0.2,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 4,
+        transform: [{ scale: pressed ? 0.96 : 1 }],
+      })}
+    >
+      <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height: H, borderRadius: H / 2, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: space[2], paddingLeft: 4, paddingRight: space[3] + 2 }}>
+        {w > 0 ? (
+          <Svg width={w} height={H} style={StyleSheet.absoluteFill}>
+            <Defs>
+              <LinearGradient id="aiFill" x1="0" y1="0" x2="1" y2="0">
+                {AI_PASTEL.map((c, i) => (
+                  <Stop key={c} offset={i / (AI_PASTEL.length - 1)} stopColor={c} />
+                ))}
+              </LinearGradient>
+              <LinearGradient id="aiStroke" x1="0" y1="0" x2="1" y2="0.6">
+                {AI_GRAD.map((c, i) => (
+                  <Stop key={c} offset={i / (AI_GRAD.length - 1)} stopColor={c} />
+                ))}
+              </LinearGradient>
+            </Defs>
+            <Rect x={0.75} y={0.75} width={w - 1.5} height={H - 1.5} rx={(H - 1.5) / 2} fill="url(#aiFill)" stroke="url(#aiStroke)" strokeWidth={1.5} />
+          </Svg>
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: AI_PASTEL[1] }]} />
+        )}
+        {/* แสงวิ่งผ่าน (เบา) */}
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: -6,
+            bottom: -6,
+            width: 26,
+            backgroundColor: 'rgba(255,255,255,0.7)',
+            transform: [{ translateX: sweep.interpolate({ inputRange: [0, 1], outputRange: [-40, Math.max(40, w + 20)] }) }, { rotate: '20deg' }],
+          }}
+        />
+        <AIBall size={30} />
+        <Text variant="labelMd" color={colors.text.primary} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
+          ThaiWell AI
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * ผู้ใช้ใหม่: ป้ายลอยรอบหุ่นบอกว่าแอปทำอะไรได้ (เล่าอาการ = ปุ่ม ThaiWell AI ด้านบน)
+ * ป้ายไอคอนแบบการ์ดทางลัด · พื้นขาวโปร่ง ไม่มีขอบ · ชิดขอบจอ ไม่บังหุ่น · ลอยขึ้นลงเบา ๆ คนละจังหวะ
+ */
+function StepPills({ onPlaces }: { onAI?: () => void; onPlaces: () => void; resume?: unknown }) {
+  const chips: { icon: React.ComponentProps<typeof Icon>['name']; tint: string; title: string; side: 'left' | 'right'; at: number; onPress?: () => void }[] = [
+    { icon: 'map-pin', tint: TINT.green, title: 'จองนวดใกล้บ้าน', side: 'right', at: 0.3, onPress: onPlaces },
+    { icon: 'trending-down', tint: TINT.violet, title: 'เห็นผลก่อน–หลังนวด', side: 'left', at: 0.6 },
+  ];
+  const float = React.useRef(chips.map(() => new Animated.Value(0))).current;
+  React.useEffect(() => {
+    const loops = float.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 700),
+          Animated.timing(v, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(v, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [float]);
+  return (
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+      {chips.map((c, i) => (
+        <Animated.View
+          key={c.title}
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            top: `${c.at * 100}%`,
+            ...(c.side === 'left' ? { left: space[4] } : { right: space[4] }),
+            transform: [{ translateY: float[i].interpolate({ inputRange: [0, 1], outputRange: [0, -5] }) }],
+          }}
+        >
+          <Pressable
+            accessibilityRole={c.onPress ? 'button' : 'text'}
+            accessibilityLabel={c.title}
+            disabled={!c.onPress}
+            onPress={c.onPress}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space[2],
+              height: 36,
+              paddingLeft: 4,
+              paddingRight: space[3],
+              borderRadius: radius.full,
+              backgroundColor: 'rgba(255,255,255,0.78)',
+              shadowColor: '#0F172A',
+              shadowOpacity: 0.08,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: 3,
+              transform: [{ scale: pressed ? 0.97 : 1 }],
+            })}
+          >
+            <IconBox icon={c.icon} tint={c.tint} size={28} />
+            <Text variant="labelSm" style={{ transform: [{ translateY: 1 }] }}>
+              {c.title}
+            </Text>
+          </Pressable>
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+
+/** จุดชวนแตะบนหุ่น: วงกะพริบ (ศูนย์กลางตรงจุด) + ป้าย "แตะตรงที่ปวด" ด้านข้าง */
+function TapHint() {
+  const { colors } = useTheme();
+  const pulse = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.out(Easing.quad), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const R = 14;
+  return (
+    <View style={{ position: 'absolute', left: -R, top: -R, width: R * 2, height: R * 2, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View style={{ position: 'absolute', width: R * 2, height: R * 2, borderRadius: R, backgroundColor: colors.brand.primary, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.8] }) }] }} />
+      <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colors.brand.primary, borderWidth: 2, borderColor: '#FFFFFF' }} />
+      {/* ป้ายอยู่ทางซ้ายของจุด */}
+      <View style={{ position: 'absolute', right: R * 2 + 4, top: R - 14, flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.text.primary }}>
+        <Icon name="target" size="xxs" color={colors.text.inverse} />
+        <Text variant="labelSm" color={colors.text.inverse} numberOfLines={1} style={{ transform: [{ translateY: 1 }] }}>
+          แตะตรงที่ปวด
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /** หัวการ์ดในหน้าแรก — รูปแบบเดียวกันทุกการ์ด: หัวข้อตัวหนา (labelMd) ซ้าย · ข้อมูลประกอบตัวเล็กขวา */
 function TileTitle({ title, meta }: { title: string; meta?: string }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space[2] }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space[1] }}>
       <Text variant="labelMd" numberOfLines={1} style={{ flexShrink: 0 }}>
         {title}
       </Text>

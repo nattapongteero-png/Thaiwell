@@ -155,9 +155,9 @@ const SCORE_SM = { size: 40, line: 52 };
  * คะแนนหนึ่งค่าในโหมดเทียบ: pill (สีเดียวกับจุดบนกราฟ + เครื่องหมายแบบเดียวกับจุด) · ตัวเลข / max
  * ก่อน = วงโปร่ง (เหมือนจุดโปร่งบนกราฟ) · หลัง = จุดทึบ
  */
-function ScoreBlock({ value, label, max, hollow }: { value: number; label: string; max: number; hollow?: boolean }) {
+function ScoreBlock({ value, label, max, hollow, missing }: { value: number; label: string; max: number; hollow?: boolean; /** ยังไม่มีคะแนน (ยังไม่ได้ประเมิน) → แสดง – */ missing?: boolean }) {
   const { colors } = useTheme();
-  const c = painColor(value, max);
+  const c = missing ? colors.border.default : painColor(value, max);
   return (
     <View style={{ flex: 1, gap: space[1] }} accessibilityLabel={`${label} ${value} จาก ${max}`}>
       <View
@@ -169,7 +169,7 @@ function ScoreBlock({ value, label, max, hollow }: { value: number; label: strin
           paddingHorizontal: space[2],
           paddingVertical: 2,
           borderRadius: radius.full,
-          backgroundColor: painTint(value, 0.22, max),
+          backgroundColor: missing ? colors.surface.sunken : painTint(value, 0.22, max),
         }}
       >
         <View style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 2, borderColor: c, backgroundColor: hollow ? colors.surface.default : c }} />
@@ -178,8 +178,8 @@ function ScoreBlock({ value, label, max, hollow }: { value: number; label: strin
         </Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-        <Text variant="displayXl" style={{ fontSize: SCORE_SM.size, lineHeight: SCORE_SM.line }}>
-          {value}
+        <Text variant="displayXl" tone={missing ? 'tertiary' : undefined} style={{ fontSize: SCORE_SM.size, lineHeight: SCORE_SM.line }}>
+          {missing ? '–' : value}
         </Text>
         <Text variant="titleXs" tone="secondary">
           /{max}
@@ -190,7 +190,7 @@ function ScoreBlock({ value, label, max, hollow }: { value: number; label: strin
 }
 
 /** ดีขึ้น/แย่ลงกี่ % เทียบก่อนรักษา — pill แบบเดียวกับ pill ก่อน/หลัง แต่สีตามสถานะ (ลดลง = เขียว · เพิ่มขึ้น = แดง · เท่าเดิม = เทา) */
-function DeltaPill({ before, after }: { before: number; after: number }) {
+export function DeltaPill({ before, after }: { before: number; after: number }) {
   const { colors } = useTheme();
   const pct = before > 0 ? Math.round(((before - after) / before) * 100) : 0;
   const tone = after < before ? colors.status.success : after > before ? colors.status.danger : null;
@@ -212,8 +212,8 @@ function DeltaPill({ before, after }: { before: number; after: number }) {
         backgroundColor: tone ? tone.bg : colors.border.default,
       }}
     >
-      {after === before ? null : <Icon name={after < before ? 'trending-down' : 'trending-up'} size="xs" color={fg} />}
-      <Text variant="bodyXs" color={fg} style={{ fontFamily: fontFamily.semibold }}>
+      {after === before ? null : <Icon name={after < before ? 'trending-down' : 'trending-up'} size="xxs" color={fg} />}
+      <Text variant="bodyXs" color={fg} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
         {label}
       </Text>
     </View>
@@ -233,7 +233,13 @@ export function PainScoreCard({
   title = 'Pain Score',
   strongTitle,
   padding,
+  action,
+  missing,
 }: {
+  /** ยังไม่มีคะแนนหลัง (ยังไม่ได้ประเมินหลังนวด) → ช่องหลังแสดง – · กราฟแสดงเฉพาะก่อน */
+  missing?: boolean;
+  /** แทน pill เปอร์เซ็นต์ด้วยปุ่มสีเข้ม (เช่น ยังไม่ได้ประเมินหลังนวด → "ประเมินหลังนวด") */
+  action?: { label: string; onPress: () => void };
   /** ระยะขอบในการ์ด (ค่าเริ่มต้นตาม token) — หน้าแรกส่งค่าเดียวกับการ์ดอื่นใน bento ให้หัวการ์ดตรงกัน */
   padding?: number;
   value: number;
@@ -319,10 +325,25 @@ export function PainScoreCard({
           <View style={{ flexDirection: 'row', gap: space[2] }}>
             {/* การ์ดแคบ (เช่น ในแชท) → ป้ายสั้นลงไม่ให้ pill ชนกัน */}
             <ScoreBlock value={before} label="ก่อน" max={max} hollow />
-            <ScoreBlock value={value} label={shortStage} max={max} />
+            <ScoreBlock value={value} label={shortStage} max={max} missing={missing} />
           </View>
         ) : null}
-        {before !== undefined ? <DeltaPill before={before} after={value} /> : null}
+        {before !== undefined && action ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+            onPress={action.onPress}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginTop: -space[3], gap: 4, paddingHorizontal: space[3], paddingVertical: 2, borderRadius: radius.full, backgroundColor: colors.text.primary, opacity: pressed ? 0.85 : 1 })}
+          >
+            <Icon name="edit-3" size="xxs" color={colors.text.inverse} />
+            {/* ฟอนต์ไทยเผื่อที่สระบนในบรรทัด → ตัวอักษรดูสูงกว่าไอคอน ~1pt · ขยับลงให้อยู่กึ่งกลางไอคอน */}
+            <Text variant="bodyXs" color={colors.text.inverse} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
+              {action.label}
+            </Text>
+          </Pressable>
+        ) : before !== undefined ? (
+          <DeltaPill before={before} after={value} />
+        ) : null}
         {before === undefined && display ? (
           // ค่าเดียว (เช่น ก่อนรักษา) — รูปแบบเดียวกับการ์ดก่อน/หลัง
           <View style={{ flexDirection: 'row' }}>

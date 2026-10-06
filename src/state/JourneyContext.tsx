@@ -11,6 +11,7 @@ import type { RegionId } from '../design-system/components/BodyMap';
 import type { ElementKey } from '../data/thaiMassageKnowledge';
 import { evaluateSafety, type HealthProfile, type SafetyResult } from '../services/safetyEngine';
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
+import { birthToISO, clinicOnline, isoToLabel, labelToISO, listenClinic, sendBooking, sendNote, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
   pain: number;
@@ -253,7 +254,9 @@ interface JourneyState {
    * ไม่ขึ้นกับว่าผู้ใช้กรอกแบบประเมินหลังนวดหรือไม่ · คืน id ใบการรักษา
    * ⚠️ ต้นแบบ: จำลองคะแนนของคลินิก + แจ้งเตือนติดตามผลวันถัดไป (มาหลังจากนี้ไม่กี่วินาที)
    */
-  clinicCloseVisit: (target: { caseId?: string; draftId?: string }) => string | undefined;
+  clinicCloseVisit: (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number) => string | undefined;
+  /** แจ้งหลังบ้านคลินิก (เมื่อเปิดอยู่ในเบราว์เซอร์เดียวกัน — ต้นแบบ) */
+  notifyClinic: (title: string, body: string) => void;
   /** ความรู้สึกหลังนวดที่ผู้ใช้บอกเอง (ครั้งล่าสุด) — แสดงคู่กับคะแนนของคลินิก */
   setVisitSelfPain: (caseId: string, pain: number) => void;
   /** ออกเลขคิว (เฉพาะนัดวันนี้) */
@@ -323,7 +326,7 @@ export interface CaseToday {
   pain: number;
   /** อาการหลังนวดครั้งก่อน (ไม่มี / ระบม / ปวดมากขึ้น / ชา-อ่อนแรง) */
   adverse?: string;
-  /** ข้อห้ามใหม่ก่อนนวด (ไม่มี / มีไข้ / บาดเจ็บใหม่ / เริ่มยาใหม่) */
+  /** ข้อห้ามใหม่ก่อนนวด (ไม่มี / มีไข้ / บาดเจ็บภายใน 2 วัน / เริ่มยาใหม่) */
   risk?: string;
   /** ควรพบแพทย์ก่อนนวดครั้งถัดไป */
   red?: boolean;
@@ -392,6 +395,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   }, []);
   /** ครั้งที่นวดเพิ่มของใบการรักษา (ต่อท้าย visits เดิม) */
   const [caseVisits, setCaseVisits] = useState<Record<string, TreatmentCase['visits']>>({});
+  /** คะแนนหลังนวดที่ผู้ใช้ประเมินเอง: ครั้งที่ n ของแต่ละเรื่อง */
+  const [selfPains, setSelfPains] = useState<Record<string, { n: number; v: number }>>({});
   const queueNo = React.useRef(11);
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
   const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>({});
@@ -399,7 +404,75 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const dismissNotice = useCallback((id: string) => setApptNotices((all) => all.map((n) => (n.id === id ? { ...n, read: true } : n))), []);
   const markAllNoticesRead = useCallback(() => setApptNotices((all) => all.map((n) => ({ ...n, read: true }))), []);
   const [bills, setBills] = useState<Bill[]>(SAMPLE_BILLS);
+  /* ---------- สะพานไปหลังบ้าน (ต้นแบบ) ---------- */
+  const latest = React.useRef({ drafts, looseBookings, account, profile });
+  latest.current = { drafts, looseBookings, account, profile };
+  /** คำขอจองที่ส่งไปหลังบ้าน → เรื่องไหนในแอป */
+  const bridgeRefs = React.useRef<Record<string, { draftId?: string; looseId?: string; label: string }>>({});
+  const patientOf = (): ClinicPatient => {
+    const { account: acc, profile: pf } = latest.current;
+    const name = acc ? acc.name : 'สมศักดิ์ รักดี';
+    const key = Array.from(name).reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36);
+    return { id: `app-p-${key}`, hn: `APP-${key.slice(-4).toUpperCase()}`, name: acc ? `คุณ${acc.name}` : 'คุณสมศักดิ์ รักดี', gender: acc?.sex === 'หญิง' ? 'หญิง' : 'ชาย', age: pf.age, phone: '-', conditions: pf.conditions, complaint: '', painHistory: [], registeredOn: todayISO(), birthDate: birthToISO(acc?.birthDate) };
+  };
+  const notifyClinic = useCallback((title: string, body: string) => {
+    sendNote(title, `${patientOf().name} · ${body}`, patientOf().id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /** ส่งคำขอจอง + แบบประเมินก่อนรับบริการ ไปหลังบ้าน (รูปแบบ BookingRequest ของหลังบ้าน) */
+  const sendRequest = (target: { draftId?: string; looseId?: string }, label: string) => {
+    const { drafts: ds, looseBookings: ls, profile: pf } = latest.current;
+    const d = ds.find((x) => x.id === target.draftId);
+    const b = d?.booking ?? ls.find((x) => x.id === target.looseId);
+    if (!b) return false;
+    const patient = { ...patientOf(), complaint: d ? d.title : 'นวดเพื่อสุขภาพ', painHistory: d ? [{ date: todayISO(), score: d.pain }] : [] };
+    const risk = d?.risk ?? '';
+    const id = `app-${Date.now().toString(36)}`;
+    const request: ClinicRequest = {
+      id,
+      patientId: patient.id,
+      serviceId: serviceCodeOf(b.service),
+      // แพทย์ของแอปคนละชุดกับหลังบ้าน → เจ้าหน้าที่เลือกตอนอนุมัติ (ค่าเริ่มต้น = แพทย์แผนไทยคนแรก)
+      therapistId: /s2|s3|s5/.test(serviceCodeOf(b.service)) ? 't2' : 't1',
+      date: labelToISO(b.date),
+      start: b.time,
+      painScore: d?.pain ?? 0,
+      screening: { fever: /ไข้/.test(risk), highBP: pf.conditions.some((c) => /ความดัน/.test(c)), menstruation: /ประจำเดือน/.test(risk), pregnant: /ตั้งครรภ์/.test(risk), recentSurgery: /ผ่าตัด/.test(risk), contagious: /โรคติดต่อ/.test(risk) },
+      intake: d
+        ? {
+            at: new Date().toISOString(),
+            goal: /รักษา|ประคบ/.test(b.service) ? 'นวดเพื่อการรักษา' : 'นวดเพื่อสุขภาพ',
+            complaint: d.title,
+            pain: d.pain,
+            duration: d.duration ?? '-',
+            focusAreas: d.symptoms,
+            avoidAreas: d.avoid && d.avoid !== 'ไม่มี' ? [d.avoid] : [],
+            conditions: pf.conditions,
+            medications: pf.medications,
+            bloodThinner: pf.medications.some((m) => /ละลายลิ่มเลือด|warfarin|aspirin/i.test(m)),
+            skin: /แผล|ผื่น/.test(risk) ? 'มีแผลหรือผื่น' : 'ปกติ',
+            numbness: /ชา|อ่อนแรง/.test(d.radiate ?? ''),
+            fever: /ไข้/.test(risk),
+            pregnant: /ตั้งครรภ์/.test(risk) ? true : null,
+            pressure: d.pressure === 'หนัก' || d.pressure === 'เบา' ? d.pressure : 'ปานกลาง',
+            injury: /บาดเจ็บ/.test(risk) ? risk : undefined,
+            surgery: /ผ่าตัด/.test(risk) ? risk : undefined,
+          }
+        : undefined,
+      note: d?.caution,
+      submittedAt: new Date().toISOString(),
+    };
+    bridgeRefs.current[id] = { ...target, label };
+    sendBooking(request, patient);
+    return true;
+  };
   const requestBooking = useCallback((target: { draftId?: string; looseId?: string }, label: string) => {
+    // หลังบ้านเปิดอยู่ → รอเจ้าหน้าที่อนุมัติจริง · ไม่ได้เปิด → จำลองการยืนยัน
+    // (รอให้ใบร่าง/นัดที่เพิ่งสร้างเข้า state ก่อน)
+    if (clinicOnline()) {
+      setTimeout(() => sendRequest(target, label), 300);
+      return;
+    }
     setTimeout(() => {
       const confirm = (b: Booking): Booking => ({ ...b, status: 'confirmed', queue: b.date === 'วันนี้' ? `A${++queueNo.current}` : undefined });
       if (target.draftId) setDrafts((all) => all.map((d) => (d.id === target.draftId && d.booking ? { ...d, booking: confirm(d.booking) } : d)));
@@ -408,6 +481,13 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setApptNotices((all) => [{ id: `n-ok-${Date.now()}`, ...target, kind: 'confirmed', text: `คลินิกยืนยันนัด ${label}`, at: `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }, ...all]);
     }, 6000);
   }, []);
+  // รับเหตุการณ์จากหลังบ้าน: อนุมัติ/ปฏิเสธ · นวดเสร็จ · ยกเลิก/ไม่มา
+  const onClinic = React.useRef<(events: ClinicEvent[]) => void>(() => {});
+  React.useEffect(() => listenClinic((ev) => onClinic.current(ev)), []);
+  const nowAtLabel = () => {
+    const d = new Date();
+    return `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
   const payBill = useCallback((id: string) => {
     const d = new Date();
     const at = `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -439,6 +519,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setConsents({ service: false, aiProcessing: false, followUp: true, research: false });
     // ไม่ให้ข้อมูลของบัญชีก่อนหน้าค้าง (บันทึกการเข้าถึง · ธาตุ · คะแนนก่อน/หลัง · ฯลฯ)
     setCaseVisits({});
+    setSelfPains({});
     setCaseTodayState({});
     setApptNotices(SAMPLE_NOTICES);
     setBills(SAMPLE_BILLS);
@@ -494,9 +575,12 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const extra = caseVisits[c.id] ?? [];
         const a = caseAppts[c.id];
         const cancelled = cancelledAppts.includes(c.id);
+        const sp = selfPains[c.id];
+        const visits = [...c.visits, ...extra];
         return {
           ...c,
-          visits: [...c.visits, ...extra],
+          // คะแนนหลังนวดที่ผู้ใช้ประเมินเอง → ครั้งล่าสุด
+          visits: sp && sp.n === visits.length ? visits.map((v, i) => (i === visits.length - 1 ? { ...v, selfPain: sp.v } : v)) : visits,
           // ครั้งที่นวดเพิ่ม → มีรอบติดตามผลของครั้งนั้น (ล่าสุดอยู่หน้า)
           pending: [...extra.map((v, i) => ({ id: `sess-${c.id}-${c.visits.length + i + 1}`, date: v.date, plan: c.plan, areas: c.areas })).reverse(), ...c.pending],
           course: { ...c.course, done: Math.min(c.course.total, c.course.done + extra.length) },
@@ -504,14 +588,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue } : c.appointment,
         };
       }),
-    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits],
+    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains],
   );
   const nowAt = () => {
     const d = new Date();
     return `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
   const clinicCloseVisit = useCallback(
-    (target: { caseId?: string; draftId?: string }) => {
+    (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number) => {
       const tc = cases.find((c) => c.id === target.caseId);
       const d = drafts.find((x) => x.id === target.draftId);
       if (!tc && !d) return undefined;
@@ -519,7 +603,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const title = tc?.short ?? d!.title;
       // ก่อนนวด = ประเมินก่อนนวดวันนี้ / หลังนวดครั้งก่อน · หลังนวด = คลินิกบันทึก (จำลอง)
       const painBefore = tc ? caseToday[tc.id]?.pain ?? tc.visits[tc.visits.length - 1].painAfter : d!.pain;
-      const painAfter = Math.max(0, painBefore - 2);
+      // คะแนนจากหลังบ้าน (นวดเสร็จ) · ไม่มี = จำลอง
+      const painAfter = clinicPainAfter ?? Math.max(0, painBefore - 2);
       const no = tc ? tc.visits.length + 1 : 1;
       if (tc) recordCaseVisit(tc.id, painBefore, painAfter);
       else promoteDraft(d!.id, painAfter);
@@ -527,21 +612,16 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const billId = `b-${caseId}-${no}`;
       setBills((all) => [{ id: billId, caseId, title: `${title} ครั้งที่ ${no}`, date: 'วันนี้', items: [{ name: service, amount: 450 }], total: 450, status: 'pending' }, ...all.filter((b) => b.id !== billId)]);
       setApptNotices((all) => [{ id: `n-bill-${billId}`, caseId, kind: 'bill', billId, text: `บิล${title} ครั้งที่ ${no} รอชำระ 450 บาท`, at: nowAt() }, ...all]);
-      // วันถัดไป: ถามอาการหลังนวด (ต้นแบบ: มาหลังจากนี้ 8 วินาที)
-      setTimeout(
-        () => setApptNotices((all) => [{ id: `n-fu-${caseId}-${no}`, caseId, kind: 'followup', text: `หลังนวด${title}เมื่อวาน อาการเป็นยังไงบ้าง`, at: 'จำลอง: วันถัดไป 09:00' }, ...all]),
-        8000,
-      );
+      // การประเมินมีแค่ก่อนนวดและหลังนวด (ไม่มีติดตามผลรายวัน) → หลังนวดผู้ใช้ประเมินเองจากหน้าผลลัพธ์/หน้าแรก
       return caseId;
     },
     [cases, drafts, caseToday, recordCaseVisit, promoteDraft],
   );
   const setVisitSelfPain = useCallback((caseId: string, pain: number) => {
-    const withSelf = (vs: TreatmentCase['visits']) => vs.map((v, i) => (i === vs.length - 1 ? { ...v, selfPain: pain } : v));
-    // ครั้งล่าสุดอยู่ในครั้งที่นวดเพิ่ม (ถ้ามี) ไม่เช่นนั้นเป็นครั้งแรกของใบที่มาจากใบร่าง
-    if (caseVisits[caseId]?.length) setCaseVisits((m) => ({ ...m, [caseId]: withSelf(m[caseId]) }));
-    else setPromoted((cs) => cs.map((c) => (c.id === caseId ? { ...c, visits: withSelf(c.visits) } : c)));
-  }, [caseVisits]);
+    // คะแนนหลังนวดของครั้งล่าสุด (นับจากจำนวนครั้ง ณ ตอนประเมิน → ครั้งใหม่ไม่รับค่าเก่า)
+    const n = cases.find((c) => c.id === caseId)?.visits.length ?? 0;
+    setSelfPains((m) => ({ ...m, [caseId]: { n, v: pain } }));
+  }, [cases]);
 
   const sendFollowUp = useCallback(
     async (p: Omit<FollowUpPayload, 'hn' | 'channel'>) => {
@@ -552,6 +632,43 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     },
     [log],
   );
+
+  onClinic.current = (events) => {
+    for (const e of events) {
+      const t = bridgeRefs.current[e.ref];
+      if (!t) continue;
+      const target = { draftId: t.draftId, looseId: t.looseId };
+      const unbook = () => {
+        if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId ? { ...d, booking: undefined, stage: 'assessed' } : d)));
+        if (t.looseId) setLooseBookings((all) => all.filter((b) => b.id !== t.looseId));
+      };
+      // นัดที่จบแล้ว (ปฏิเสธ/นวดเสร็จ/ยกเลิก) ถูกเอาออก → แจ้งเตือนไม่ผูกกับนัดนั้น (ไม่อย่างนั้นถูกกรองทิ้ง)
+      const note = (kind: ApptNotice['kind'], text: string) => setApptNotices((all) => [{ id: `n-${e.type}-${e.id}`, ...(e.type === 'approved' ? target : {}), kind, text, at: nowAtLabel() }, ...all]);
+      if (e.type === 'approved') {
+        // คลินิกอาจย้ายวัน/เวลา/ผู้ให้บริการ → ใช้ค่าที่คลินิกยืนยัน
+        const date = isoToLabel(e.date);
+        const confirm = (b: Booking): Booking => ({ ...b, date, time: e.start, therapist: e.therapist || b.therapist, status: 'confirmed', queue: date === 'วันนี้' ? `A${++queueNo.current}` : undefined });
+        if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking ? { ...d, booking: confirm(d.booking) } : d)));
+        if (t.looseId) setLooseBookings((all) => all.map((b) => (b.id === t.looseId ? { ...confirm(b), id: b.id } : b)));
+        note('confirmed', `คลินิกยืนยันนัด ${date} ${e.start}${e.therapist ? ` · ${e.therapist}` : ''}`);
+      } else if (e.type === 'rejected') {
+        unbook();
+        note('rejected', `คลินิกไม่สามารถรับนัด ${t.label}${e.reason ? ` · ${e.reason}` : ''}`);
+      } else if (e.type === 'completed') {
+        // นวดเสร็จ: ใบร่าง → ใบการรักษา (คะแนนหลังนวดของคลินิก + บิล) · นัดเรื่องใหม่ที่ยังไม่ประเมิน → ปิดนัด
+        if (t.draftId) clinicCloseVisit({ draftId: t.draftId }, e.painAfter);
+        else {
+          unbook();
+          note('confirmed', `คลินิกบันทึกการนวดแล้ว ${t.label}`);
+        }
+      } else {
+        unbook();
+        note(e.type === 'absent' ? 'noshow' : 'cancelled', e.type === 'absent' ? `คลินิกบันทึกว่าไม่มาตามนัด ${t.label}` : `คลินิกยกเลิกนัด ${t.label}`);
+      }
+      // อนุมัติแล้วยังรอผลการนวด → จำไว้ · จบแล้ว (ปฏิเสธ/นวดเสร็จ/ยกเลิก) → ลบ
+      if (e.type !== 'approved') delete bridgeRefs.current[e.ref];
+    }
+  };
 
   const value: JourneyState = {
     client: account
@@ -612,6 +729,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     cases,
     recordCaseVisit,
     clinicCloseVisit,
+    notifyClinic,
     setVisitSelfPain,
     issueQueue,
     caseToday,

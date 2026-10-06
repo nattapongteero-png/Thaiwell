@@ -1,0 +1,169 @@
+/**
+ * สะพานไปหลังบ้านคลินิก (ต้นแบบ) — แอปผู้ป่วย ↔ ThaiWellAI back office ผ่าน localStorage ของเบราว์เซอร์เดียวกัน
+ * ------------------------------------------------------------------
+ * ทั้งสองเว็บอยู่ origin เดียวกัน (thaiwellai-svg.github.io/Thaiwell · /ThaiWellAI) → ใช้ที่เก็บข้อมูลร่วมกัน
+ * เปิดแอปกับหลังบ้านคนละแท็บในเบราว์เซอร์เดียวกัน → ส่งถึงกันทันที (storage event + ตรวจทุก 2 วินาที)
+ *
+ *   toClinic: แอป → หลังบ้าน (คำขอจอง + แบบประเมินก่อนรับบริการ · แจ้งเตือนทั่วไป)
+ *   toApp:    หลังบ้าน → แอป (อนุมัติ/ปฏิเสธ · นวดเสร็จพร้อมคะแนนหลังนวด · ยกเลิก/ไม่มาตามนัด)
+ * หลังบ้านไม่ได้เปิด (ไม่มี heartbeat) → แอปจำลองการยืนยันเองเหมือนเดิม
+ * รูปแบบข้อมูลตรงกับ ThaiWellAI/src/features/appBridge.ts (BookingRequest · Patient · Intake ของหลังบ้าน)
+ * ⚠️ ต้นแบบ: ข้อมูลตัวอย่างเท่านั้น — ของจริงต้องผ่าน backend (ยืนยันตัวตน · เข้ารหัส · PDPA)
+ */
+export const BRIDGE_KEY = 'thaiwell.bridge';
+const CLINIC_ALIVE_KEY = 'thaiwell.bridge.clinicAlive';
+const SEEN_KEY = 'thaiwell.bridge.seenByApp';
+
+/** โครงข้อมูลฝั่งหลังบ้าน (เฉพาะที่ส่ง) */
+export interface ClinicPatient {
+  id: string;
+  hn: string;
+  name: string;
+  gender: 'ชาย' | 'หญิง';
+  age: number;
+  phone: string;
+  conditions: string[];
+  complaint: string;
+  painHistory: { date: string; score: number }[];
+  registeredOn: string;
+  birthDate?: string;
+}
+export interface ClinicRequest {
+  id: string;
+  patientId: string;
+  serviceId: string;
+  therapistId: string;
+  date: string; // YYYY-MM-DD
+  start: string; // HH:mm
+  painScore: number;
+  screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
+  intake?: {
+    at: string;
+    goal: string;
+    complaint: string;
+    pain: number;
+    duration: string;
+    focusAreas: string[];
+    avoidAreas: string[];
+    conditions: string[];
+    medications: string[];
+    bloodThinner: boolean;
+    skin: string;
+    numbness: boolean;
+    fever: boolean;
+    pregnant: boolean | null;
+    pressure: 'เบา' | 'ปานกลาง' | 'หนัก';
+    injury?: string;
+    surgery?: string;
+  };
+  note?: string;
+  submittedAt: string;
+}
+
+export type ClinicEvent =
+  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string }
+  | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
+  | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number }
+  | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string };
+
+const store = (): Storage | null => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
+const read = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = store()?.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const write = (key: string, value: unknown) => {
+  try {
+    store()?.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable */
+  }
+};
+type Box = { toClinic: { id: string }[]; toApp: ClinicEvent[] };
+const box = (): Box => ({ toClinic: [], toApp: [], ...read<Partial<Box>>(BRIDGE_KEY, {}) });
+const push = (event: Record<string, unknown>) => {
+  const b = box();
+  write(BRIDGE_KEY, { ...b, toClinic: [...b.toClinic, { ...event, id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString() }].slice(-200) });
+};
+
+/** หลังบ้านเปิดอยู่ในเบราว์เซอร์นี้ (heartbeat ไม่เกิน 8 วินาที) */
+export const clinicOnline = () => Date.now() - Number(store()?.getItem(CLINIC_ALIVE_KEY) ?? 0) < 8000;
+
+export const sendBooking = (request: ClinicRequest, patient: ClinicPatient) => push({ type: 'booking', request, patient });
+export const sendNote = (title: string, body: string, patientId?: string) => clinicOnline() && push({ type: 'note', title, body, patientId });
+
+/** เหตุการณ์จากหลังบ้านที่แอปยังไม่ได้รับ (แล้วจำว่ารับแล้ว) */
+export function takeClinicEvents(): ClinicEvent[] {
+  const seen = new Set(read<string[]>(SEEN_KEY, []));
+  const fresh = box().toApp.filter((e) => !seen.has(e.id));
+  if (fresh.length) write(SEEN_KEY, [...seen, ...fresh.map((e) => e.id)].slice(-500));
+  return fresh;
+}
+
+/** ฟังเหตุการณ์จากหลังบ้าน (เว็บเท่านั้น) · คืนฟังก์ชันเลิกฟัง */
+export function listenClinic(cb: (events: ClinicEvent[]) => void): () => void {
+  if (!store() || typeof window === 'undefined' || !window.addEventListener) return () => {};
+  // เหตุการณ์เก่าก่อนเปิดแอป → ไม่นำมาใช้ซ้ำ (ข้อมูลแอปอยู่ในหน่วยความจำ เริ่มใหม่ทุกครั้งที่เปิด)
+  takeClinicEvents();
+  const pull = () => {
+    const ev = takeClinicEvents();
+    if (ev.length) cb(ev);
+  };
+  const onStorage = (e: StorageEvent) => e.key === BRIDGE_KEY && pull();
+  window.addEventListener('storage', onStorage);
+  const t = setInterval(pull, 2000);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    clearInterval(t);
+  };
+}
+
+/* ---------- แปลงข้อมูลแอป → หลังบ้าน ---------- */
+const pad = (n: number) => String(n).padStart(2, '0');
+const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+/** "วันนี้" / "พรุ่งนี้" / "พฤ. 9 ต.ค." → YYYY-MM-DD */
+export function labelToISO(label: string): string {
+  const d = new Date();
+  if (label === 'พรุ่งนี้') d.setDate(d.getDate() + 1);
+  else if (label !== 'วันนี้') {
+    const m = /(\d{1,2})\s+(\S+)$/.exec(label);
+    const mi = m ? MONTHS.indexOf(m[2]) : -1;
+    if (m && mi >= 0) {
+      const y = mi < d.getMonth() ? d.getFullYear() + 1 : d.getFullYear();
+      return `${y}-${pad(mi + 1)}-${pad(Number(m[1]))}`;
+    }
+  }
+  return iso(d);
+}
+/** YYYY-MM-DD → "วันนี้" / "พรุ่งนี้" / "พฤ. 9 ต.ค." */
+export function isoToLabel(date: string): string {
+  const [y, m, dd] = date.split('-').map(Number);
+  const target = new Date(y, m - 1, dd);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return 'วันนี้';
+  if (diff === 1) return 'พรุ่งนี้';
+  return `${['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][target.getDay()]} ${dd} ${MONTHS[m - 1]}`;
+}
+export const todayISO = () => iso(new Date());
+/** ป้ายบริการของแอป → รหัสบริการหลังบ้าน (s1–s5) */
+export const serviceCodeOf = (label: string) =>
+  /ร่วมประคบ|\+ ?ประคบ/.test(label) ? 's5' : /เพื่อการรักษา|นวดรักษา/.test(label) ? 's2' : /^ประคบ/.test(label) ? 's3' : /เท้า/.test(label) ? 's4' : 's1';
+/** วันเกิด "DD/MM/YYYY" (พ.ศ. หรือ ค.ศ.) → YYYY-MM-DD (ค.ศ.) */
+export function birthToISO(b?: string): string | undefined {
+  const m = b ? /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(b) : null;
+  if (!m) return undefined;
+  const y = Number(m[3]) > 2400 ? Number(m[3]) - 543 : Number(m[3]);
+  return `${y}-${m[2]}-${m[1]}`;
+}

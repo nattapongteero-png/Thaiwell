@@ -13,13 +13,18 @@ import { STRETCH_MOTION } from '../../../data/stretchMotion';
  * ใช้ร่วม: bottom sheet จากแชท · หน้ารายละเอียดจากแท็บประวัติ
  * ช่องสรุป 4 ช่อง → คอร์สการรักษา (ช่องรายครั้ง) → แนวโน้ม Pain Score → ประวัติการรับบริการ (timeline) → บริเวณ/ผู้ให้บริการ → ก่อนมานวด → ดูแลตัวเอง
  */
+/** คะแนนหลังนวดของครั้งที่ i: ครั้งล่าสุด = ที่ผู้ใช้ประเมินหลังนวด (ยังไม่ประเมิน = ไม่มี) · ครั้งก่อน ๆ = หลังนวด — ชุดเดียวกับหน้าแรก */
+export const afterOf = (tc: TreatmentCase, i: number) => (i === tc.visits.length - 1 ? tc.visits[i].selfPain : tc.visits[i].painAfter);
+
 export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /** ครั้งที่เลือกจากแถบ VisitTabs (ค้างไว้ใน header) · null = ภาพรวม */ visit?: number | null }) {
   const { colors } = useTheme();
   /** เปิดดูรายครั้ง (index ใน tc.visits) — เลือกจากแถบด้านบนที่เดียว (การ์ดด้านล่างเป็นสรุป ดูอย่างเดียว) */
   if (visit !== null && tc.visits[visit]) return <VisitDetail tc={tc} index={visit} />;
   const first = tc.visits[0];
   const last = tc.visits[tc.visits.length - 1];
-  const change = first && last ? first.painBefore - last.painAfter : 0;
+  // ล่าสุดที่มีคะแนน (ครั้งล่าสุดยังไม่ประเมิน → ใช้ครั้งก่อนหน้า)
+  const latest = [...tc.visits.keys()].reverse().map((i) => afterOf(tc, i)).find((v) => v !== undefined);
+  const change = first && latest !== undefined ? first.painBefore - latest : 0;
   const pct = first ? Math.round((change / Math.max(1, first.painBefore)) * 100) : 0;
   const group = SYMPTOM_GROUPS.find((g) => g.id === tc.selfCare.groupId);
   const motion = group ? STRETCH_MOTION[group.stretch.name] : undefined;
@@ -31,7 +36,7 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
       {/* สรุป 4 ช่อง (พื้นเทาอ่อน ไม่มีขอบ แบบหลังบ้าน) */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
         <Stat label="รับบริการแล้ว" value={`${tc.visits.length}`} unit="ครั้ง" />
-        <Stat label="Pain ล่าสุด" value={`${last?.painAfter ?? '-'}`} unit="/10" color={last ? painColor(last.painAfter) : undefined} />
+        <Stat label="Pain ล่าสุด" value={`${latest ?? '-'}`} unit="/10" color={latest !== undefined ? painColor(latest) : undefined} />
         <Stat label="เปลี่ยนแปลง" value={`${change > 0 ? '↘ ' : ''}${Math.abs(change)}`} unit={change > 0 ? 'ดีขึ้น' : 'เท่าเดิม'} color={change > 0 ? colors.brand.primary : undefined} />
         <Stat label="นัดถัดไป" value={hasNext ? tc.appointment.time : '-'} unit={hasNext ? tc.appointment.date : 'ยังไม่มีนัด'} small />
       </View>
@@ -71,8 +76,8 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
       </Section>
 
       {/* แนวโน้ม Pain Score */}
-      <Section icon="activity" tint="#D9534F" title="แนวโน้ม Pain Score" right={first && last ? <Chip text={`${first.painBefore} → ${last.painAfter} · ดีขึ้น ${pct}%`} tone="good" /> : null}>
-        <PainTrend values={tc.visits.map((v) => ({ label: v.date, v: v.painAfter }))} />
+      <Section icon="activity" tint="#D9534F" title="แนวโน้ม Pain Score" right={first && latest !== undefined ? <Chip text={`${first.painBefore} → ${latest} · ดีขึ้น ${pct}%`} tone="good" /> : null}>
+        <PainTrend values={tc.visits.map((v, i) => ({ label: v.date, v: afterOf(tc, i) }))} />
       </Section>
 
       {/* ประวัติการรับบริการ (timeline · ล่าสุดก่อน) */}
@@ -95,7 +100,8 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
                 <PainPill label="ก่อน" v={v.painBefore} />
-                <PainPill label="หลัง" v={v.painAfter} />
+                {/* ยังไม่ประเมินหลังนวด → กล่องหลังว่าง (ไม่มีสี) */}
+                <PainPill label="หลัง" v={afterOf(tc, arr.length - 1 - i)} />
               </View>
             </View>
           </View>
@@ -203,10 +209,10 @@ function Info({ k, v }: { k: string; v: string }) {
 }
 
 /** ป้ายคะแนนแบบหลังบ้าน: "หลัง ▮▮▯▯▯ 3" (แท่งสีตามระดับ) */
-export function PainPill({ label, v }: { label: string; v: number }) {
+export function PainPill({ label, v }: { label: string; v?: number }) {
   const { colors } = useTheme();
-  const c = painColor(v);
-  const n = Math.max(1, Math.ceil(v / 2));
+  const c = v === undefined ? colors.text.tertiary : painColor(v);
+  const n = v === undefined ? 0 : Math.max(1, Math.ceil(v / 2));
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 26, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
       <Text variant="bodyXs" tone="secondary">
@@ -217,13 +223,16 @@ export function PainPill({ label, v }: { label: string; v: number }) {
           <View key={i} style={{ width: 4, height: 12, borderRadius: 2, backgroundColor: i < n ? c : colors.border.subtle }} />
         ))}
       </View>
-      <Text style={{ fontFamily: fontFamily.bold, fontSize: 13, lineHeight: 18, color: c }}>{v}</Text>
+      <Text style={{ fontFamily: fontFamily.bold, fontSize: 13, lineHeight: 18, color: c }}>{v ?? '–'}</Text>
     </View>
   );
 }
 
 /** กราฟแนวโน้มแบบหลังบ้าน: เส้นเขียว + พื้นไล่จาง · จุดวงแหวนสีตามระดับ + ตัวเลขเหนือจุด */
-function PainTrend({ values }: { values: { label: string; v: number }[] }) {
+function PainTrend({ values: all }: { values: { label: string; v?: number }[] }) {
+  // เส้นเฉพาะครั้งที่มีคะแนน · ครั้งที่ยังไม่ประเมิน = วงเทาโปร่งบนเส้น 0 (ไม่มีตัวเลข)
+  const n = all.findIndex((p) => p.v === undefined);
+  const values = (n === -1 ? all : all.slice(0, n)) as { label: string; v: number }[];
   const { colors } = useTheme();
   const [w, setW] = React.useState(0);
   const H = 170;
@@ -231,7 +240,7 @@ function PainTrend({ values }: { values: { label: string; v: number }[] }) {
   const R = 24;
   const T = 26;
   const B = 26;
-  const x = (i: number) => L + (values.length > 1 ? (i * (w - L - R)) / (values.length - 1) : (w - L - R) / 2);
+  const x = (i: number) => L + (all.length > 1 ? (i * (w - L - R)) / (all.length - 1) : (w - L - R) / 2);
   const y = (v: number) => T + ((10 - v) / 10) * (H - T - B);
   const line = values.map((p, i) => `${x(i)},${y(p.v)}`).join(' ');
   const area = values.length ? `M${x(0)},${y(0)} L${values.map((p, i) => `${x(i)},${y(p.v)}`).join(' L')} L${x(values.length - 1)},${y(0)} Z` : '';
@@ -266,6 +275,17 @@ function PainTrend({ values }: { values: { label: string; v: number }[] }) {
               </SvgText>
             </React.Fragment>
           ))}
+          {all.slice(values.length).map((p, k) => {
+            const i = values.length + k;
+            return (
+              <React.Fragment key={`m-${p.label}`}>
+                <Circle cx={x(i)} cy={y(0)} r={6} fill="#FFFFFF" stroke={colors.border.default} strokeWidth={3} />
+                <SvgText fontFamily={fontFamily.medium} x={x(i)} y={H - 6} fontSize={10.5} fill={colors.text.tertiary} textAnchor="middle">
+                  {p.label}
+                </SvgText>
+              </React.Fragment>
+            );
+          })}
         </Svg>
       ) : (
         <View style={{ height: H }} />
@@ -297,7 +317,8 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
   const { colors } = useTheme();
   const v = tc.visits[index];
   const r = sessionRecord(tc, index);
-  const d = v.painBefore - v.painAfter;
+  const vAfter = afterOf(tc, index);
+  const d = vAfter === undefined ? 0 : v.painBefore - vAfter;
   const prev = index > 0 ? tc.visits[index - 1] : null;
   const dx = dxCode(tc.condition);
   // หัตถการที่ทำ → รหัส ICD-9-CM (ไม่ซ้ำ)
@@ -323,16 +344,16 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
         </View>
         <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
           <Text variant="bodyXs" tone="secondary">หลังนวด</Text>
-          <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: painColor(v.painAfter) }}>{v.painAfter}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
+          <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: vAfter === undefined ? colors.text.tertiary : painColor(vAfter) }}>{vAfter ?? '–'}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
         </View>
         <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: d > 0 ? colors.brand.subtle : colors.surface.sunken }}>
           <Text variant="bodyXs" tone="secondary">ครั้งนี้</Text>
           <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: d > 0 ? colors.brand.primary : colors.text.secondary }}>{d > 0 ? `↘${d}` : '–'}</Text>
         </View>
       </View>
-      {prev ? (
+      {prev && vAfter !== undefined ? (
         <Text variant="bodyXs" tone="tertiary">
-          เทียบครั้งก่อน ({prev.date}): หลังนวด {prev.painAfter} → {v.painAfter}
+          เทียบครั้งก่อน ({prev.date}): หลังนวด {prev.painAfter} → {vAfter}
         </Text>
       ) : null}
 

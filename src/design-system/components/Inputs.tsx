@@ -323,7 +323,10 @@ export function ScaleSelector({
   maxLabel = 'มากที่สุด',
   label,
   compareValue,
+  compareLabel = 'ก่อนนวด',
 }: {
+  /** ป้ายของค่าอ้างอิง (ค่าเริ่มต้น "ก่อนนวด") */
+  compareLabel?: string;
   value?: number;
   onChange: (v: number) => void;
   min?: number;
@@ -378,7 +381,7 @@ export function ScaleSelector({
         </Text>
         {compareValue !== undefined ? (
           <Text variant="labelSm" tone="secondary">
-            ┆ ก่อนนวด = {compareValue}
+            ┆ {compareLabel} = {compareValue}
           </Text>
         ) : null}
         <Text variant="labelSm" tone="tertiary">

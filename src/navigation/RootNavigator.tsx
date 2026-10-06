@@ -21,6 +21,7 @@ import { AIVoiceScreen } from '../screens/client/AIVoiceScreen';
 import { BodyMapScreen, AssessmentScreen } from '../screens/client/PreScreening';
 import { PreSummaryScreen, CheckInScreen, RedFlagScreen } from '../screens/client/PreSummary';
 import { PostAssessmentScreen, SessionResultScreen, FollowUpScreen, SelfCareScreen, StretchListScreen } from '../screens/client/AfterService';
+import { PreVisitScreen } from '../screens/client/PreVisitScreen';
 import { QueueScreen, InsightsScreen } from '../screens/provider/ProviderTabs';
 import { ClientBriefScreen, SafetyCheckScreen } from '../screens/provider/BriefAndSafety';
 import { CarePlanScreen, ServiceRecordScreen, ProviderDoneScreen } from '../screens/provider/PlanAndRecord';
@@ -101,6 +102,7 @@ export function RootNavigator() {
         <Stack.Screen name="RedFlag" component={RedFlagScreen} options={{ animation: 'fade_from_bottom' }} />
 
         <Stack.Screen name="PostAssessment" component={PostAssessmentScreen} />
+        <Stack.Screen name="PreVisit" component={PreVisitScreen} />
         <Stack.Screen name="SessionResult" component={SessionResultScreen} />
         <Stack.Screen name="FollowUp" component={FollowUpScreen} />
         <Stack.Screen name="SelfCare" component={SelfCareScreen} />

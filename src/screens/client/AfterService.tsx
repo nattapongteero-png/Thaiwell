@@ -51,13 +51,13 @@ import type { TreatmentCase } from '../../data/homeFeed';
 
 export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: string; draftId?: string; looseId?: string } } }) {
   const nav = useNav();
-  const { before, setBefore, setAfter, log, newPatient, setCareStage, drafts, promoteDraft, cases, recordCaseVisit, removeLooseBooking, caseToday, setVisitSelfPain } = useJourney();
+  const { before, setBefore, setAfter, log, newPatient, setCareStage, drafts, promoteDraft, cases, recordCaseVisit, removeLooseBooking, caseToday, setVisitSelfPain, notifyClinic } = useJourney();
   // นวดของเรื่องไหน (ส่งต่อมาจากเช็กอิน) → บันทึกผลลงเรื่องนั้นเท่านั้น
   const target = route?.params ?? {};
   const draft = drafts.find((x) => x.id === target.draftId);
   const tc = cases.find((c) => c.id === target.caseId);
-  // คลินิกปิดการรักษาครั้งนี้แล้ว (ครั้งล่าสุด = วันนี้) → แบบนี้เป็น "ความรู้สึกของคุณ" เสริมคะแนนของคลินิก ไม่สร้างครั้งใหม่
-  const closed = tc && tc.visits[tc.visits.length - 1].date === 'วันนี้' ? tc.visits[tc.visits.length - 1] : undefined;
+  // เรื่องที่รักษา: คลินิกปิดการรักษาแล้วเสมอ → แบบนี้คือประเมินหลังนวดของครั้งล่าสุด (วันนี้หรือย้อนหลังก็ได้) ไม่สร้างครั้งใหม่
+  const closed = tc ? tc.visits[tc.visits.length - 1] : undefined;
   // ก่อนนวด = คะแนนของเรื่องนี้ก่อนนวดครั้งนี้ (ปิดแล้ว = ก่อนนวดที่คลินิกบันทึก · ใบร่าง = ตอนประเมิน · ใบการรักษา = ประเมินก่อนนวด / หลังนวดครั้งก่อน)
   const basePain = closed?.painBefore ?? draft?.pain ?? (tc ? caseToday[tc.id]?.pain ?? tc.visits[tc.visits.length - 1]?.painAfter : undefined) ?? before.pain;
   React.useEffect(() => {
@@ -89,6 +89,7 @@ export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: 
             // คลินิกปิดแล้ว → เก็บเป็นความรู้สึกของผู้ใช้ แล้วกลับหน้าผลลัพธ์เดิม
             if (closed && tc) {
               setVisitSelfPain(tc.id, pain!);
+              notifyClinic('ประเมินหลังนวดจากแอป', `${tc.short} ครั้งที่ ${tc.visits.length} · ปวด ${closed.painBefore} → ${pain}${hasAdverse ? ` · ${adverse.join(', ')}` : ''}`);
               return nav.goBack();
             }
             // ใบร่าง → นวดครั้งแรกแล้ว ผู้ให้บริการตั้งชื่อโรค → ใบการรักษา · ใบการรักษา → เพิ่มครั้งการรักษา · จองไว้ก่อนประเมิน → นัดนี้ใช้แล้ว
@@ -326,9 +327,6 @@ function CaseResult({ tc }: { tc: TreatmentCase }) {
 
       <Panel title="ครั้งถัดไป">
         <Text variant="bodySm">{finished ? `ครบคอร์ส ${tc.course.total} ครั้งแล้ว แพทย์จะสรุปผลให้` : `คลินิกจะนัดครั้งที่ ${tc.course.done + 1}/${tc.course.total} ตามแผน และแจ้งเตือนในแอป`}</Text>
-        <Text variant="bodySm" tone="secondary">
-          พรุ่งนี้แอปจะถามอาการหลังนวด
-        </Text>
       </Panel>
     </Screen>
   );

@@ -29,7 +29,7 @@ export const grid: Record<Breakpoint, { columns: number; margin: number; gutter:
 export const sizing = {
   touchTargetMin: 48,
   control: { sm: 36, md: 48, lg: 56 },
-  icon: { xs: 14, sm: 16, md: 20, lg: 24, xl: 32 },
+  icon: { xxs: 12, xs: 14, sm: 16, md: 20, lg: 24, xl: 32 },
   avatar: { sm: 32, md: 40, lg: 56 },
   appBar: 56,
   tabBar: 64,
