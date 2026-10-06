@@ -482,6 +482,26 @@ const LUNG_AREAS: FollowUpArea[] = [
   { label: 'ไหล่ขวา', pin: 'shoulderRight', symptom: 'ปวดไหล่', before: 5 },
 ];
 
+/** วันทำการ (จ.–ศ.) ถัดไปอย่างน้อย n วัน → "พ. 14 ต.ค." (ค่าตั้งต้นเมื่อยังไม่ได้ข้อมูลจากคลินิก) */
+function nextWorkdayLabel(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  const M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  return `${['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][d.getDay()]} ${d.getDate()} ${M[d.getMonth()]}`;
+}
+
+/**
+ * บัญชีตัวอย่าง (คุณสมศักดิ์ รักดี · TW-000123) — ข้อมูลชุดเดียวกับหลังบ้าน ThaiWellAI (src/data/seed.ts addAppUser)
+ * นัดที่ยังไม่จบอยู่ใน cloud: id ตรงกับ DEMO_REFS ของหลังบ้าน
+ */
+export const DEMO_PATIENT_CLOUD_ID = 'app-p-zk6srq';
+export const DEMO_LINKS: Record<string, { caseId: string; billId?: string }> = {
+  'tw-demo-office-6': { caseId: 'case-office' },
+  'tw-demo-lung-4': { caseId: 'case-lung' },
+  'tw-demo-lung-3': { caseId: 'case-lung', billId: 'b-lung-3' },
+};
+
 export const TREATMENT_CASES: TreatmentCase[] = [
   {
     id: 'case-office',
@@ -499,10 +519,12 @@ export const TREATMENT_CASES: TreatmentCase[] = [
       { date: '30 ส.ค.', painBefore: 6, painAfter: 3, selfPain: 3 },
     ],
     pending: [{ id: 'sess-2025-08-30', date: '30 ส.ค.', plan: 'นวดราชสำนัก', areas: OFFICE_AREAS }],
-    appointment: { today: true, date: 'วันนี้', time: '10:30', queue: 'A12', waitMin: 25 },
+    // นัดวันนี้ (ครั้งที่ 6) — เวลา/ผู้บำบัดจริงมาจากคลินิกผ่าน cloud (DEMO_LINKS) · เลขคิวออกตอนเช็กอิน
+    appointment: { today: true, date: 'วันนี้', time: '10:00' },
     prep: ['วัดความดันก่อนนวด', 'งดอาหารหนัก 30 นาที'],
     course: { done: 5, total: 8 },
-    therapist: 'พท.ป. มาลี ใจดี',
+    // ผู้บำบัดชุดเดียวกับหลังบ้าน ThaiWellAI (seed.ts THERAPISTS)
+    therapist: 'พท.ป. วิภาวดี ศรีสุข',
     selfCare: { title: 'ท่าแก้เกียจ', minutes: 5, doneToday: false, groupId: 'office' },
   },
   {
@@ -517,10 +539,10 @@ export const TREATMENT_CASES: TreatmentCase[] = [
       { date: '16 ส.ค.', painBefore: 5, painAfter: 3 },
     ],
     pending: [{ id: 'sess-2025-08-16', date: '16 ส.ค.', plan: 'นวดหน้า ศีรษะ ไหล่', areas: LUNG_AREAS }],
-    appointment: { today: false, date: 'พฤ. 9 ต.ค.', time: '14:00' },
+    appointment: { today: false, date: nextWorkdayLabel(4), time: '14:00' },
     prep: ['พกยาพ่นติดตัว', 'งดอาหารหนัก 1 ชม.'],
     course: { done: 3, total: 6 },
-    therapist: 'พท.ป. สมชาย สุขใจ',
+    therapist: 'พท.ป. อรุณี แก้วมณี',
     // ภูมิแพ้: นวดใบหน้า (ทาแป้งข้างจมูก · ถูหน้าหู) ช่วยเลือดไหลเวียนบริเวณใบหน้า-โพรงจมูก
     selfCare: { title: 'ท่านวดกล้ามเนื้อใบหน้า', minutes: 3, doneToday: true, groupId: 'paralysis' },
   },
@@ -546,7 +568,7 @@ export const ARCHIVED_CASES: TreatmentCase[] = [
     appointment: { today: false, date: '-', time: '-' },
     prep: [],
     course: { done: 6, total: 6 },
-    therapist: 'พท.ป. มาลี ใจดี',
+    therapist: 'พท.ป. วิภาวดี ศรีสุข',
     selfCare: { title: 'ท่าชูหัตถ์วาดหลัง', minutes: 5, doneToday: false, groupId: 'herniated_disc' },
   },
 ];

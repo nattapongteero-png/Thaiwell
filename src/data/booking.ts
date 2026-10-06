@@ -46,11 +46,12 @@ const C: ServiceId = 'compress';
 const F: ServiceId = 'foot';
 
 /** ตารางผู้ให้บริการแต่ละสถานที่ (id ตรงกับ PLACES) · แพทย์ลงเองว่าช่วงไหนรับบริการอะไร */
+// skv = คลินิกที่เชื่อมหลังบ้าน: ชื่อผู้บำบัดชุดเดียวกับหลังบ้าน (ใช้เมื่อยังไม่ได้เวลาว่างจริงจาก cloud)
 export const THERAPIST_SCHEDULE: Record<string, Therapist[]> = {
   skv: [
-    { id: 'malee', name: 'พท.ป. มาลี ใจดี', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 8, focus: ['คอ บ่า ไหล่', 'ออฟฟิศซินโดรม'], free: [{ day: 0, time: '15:30', services: [R, RC] }, { day: 1, time: '13:00', services: [R, C] }, { day: 1, time: '15:00', services: [RC] }, { day: 3, time: '10:30', services: [R, X] }] },
-    { id: 'anan', name: 'พท.ป. อนันต์ สุขใจ', role: 'แพทย์แผนไทย', sex: 'ชาย', years: 12, focus: ['ปวดหลัง', 'ข้อเข่า'], free: [{ day: 0, time: '17:00', services: [RC] }, { day: 2, time: '09:00', services: [R, RC] }, { day: 4, time: '14:00', services: [R] }] },
-    { id: 'somjai', name: 'คุณสมใจ รักษ์ไทย', role: 'หมอนวด', sex: 'หญิง', years: 5, focus: ['นวดเพื่อสุขภาพ'], free: [{ day: 0, time: '13:00', services: [X, F] }, { day: 1, time: '17:00', services: [X] }, { day: 2, time: '10:30', services: [X, F] }] },
+    { id: 't2', name: 'พท.ป. วิภาวดี ศรีสุข', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 8, focus: ['คอ บ่า ไหล่', 'ออฟฟิศซินโดรม'], free: [{ day: 0, time: '15:30', services: [R, RC] }, { day: 1, time: '13:00', services: [R, C] }, { day: 1, time: '15:00', services: [RC] }, { day: 3, time: '10:30', services: [R, X] }] },
+    { id: 't6', name: 'พท.ป. ปิยะพงษ์ รุ่งเรือง', role: 'แพทย์แผนไทย', sex: 'ชาย', years: 12, focus: ['ปวดหลัง', 'ข้อเข่า'], free: [{ day: 0, time: '17:00', services: [RC] }, { day: 2, time: '09:00', services: [R, RC] }, { day: 4, time: '14:00', services: [R] }] },
+    { id: 't1', name: 'นศ.พท. สมชาย', role: 'หมอนวด', sex: 'ชาย', years: 2, focus: ['นวดเพื่อสุขภาพ'], free: [{ day: 0, time: '13:00', services: [X, F] }, { day: 1, time: '17:00', services: [X] }, { day: 2, time: '10:30', services: [X, F] }] },
   ],
   ari: [
     { id: 'pim', name: 'พท.ป. พิมพ์ชนก แสงดี', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 6, focus: ['ไหล่ติด', 'นิ้วล็อก'], free: [{ day: 1, time: '10:30', services: [R, RC] }, { day: 3, time: '13:00', services: [X] }, { day: 5, time: '13:00', services: [R] }] },

@@ -46,6 +46,19 @@ export const cloudOnline = () => online;
 /** แถวล่าสุดที่แอปเห็น — ใช้หาความเปลี่ยนแปลง และดูบิลตอนจ่าย */
 const rows = new Map<string, CloudRow>();
 
+/* ---------- เวลาว่างจริงของคลินิก (หลังบ้านประกาศไว้ใน tw_events id = -1) ---------- */
+let availRaw: string | null = null;
+export const cloudAvailabilityRaw = () => availRaw;
+export async function refreshAvailability() {
+  const { data } = await cloud.from('tw_events').select('payload').eq('id', -1).maybeSingle();
+  if (data?.payload) availRaw = JSON.stringify(data.payload);
+}
+/** สถานะปัจจุบันของนัดใน cloud (ใช้ตั้งต้นบัญชีตัวอย่างให้ตรงกับคลินิก) */
+export async function cloudRows(ids: string[]): Promise<CloudRow[]> {
+  const { data } = await cloud.from('tw_appointments').select('*').in('id', ids);
+  return (data ?? []) as CloudRow[];
+}
+
 async function logEvent(kind: string, apptId: string | null, patientName: string | undefined, summary: string, payload?: unknown) {
   await cloud.from('tw_events').insert({ source: 'app', kind, appointment_id: apptId, patient_name: patientName ?? null, summary, payload: payload ?? null });
 }
@@ -181,7 +194,13 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     .subscribe((s) => {
       if (s === 'SUBSCRIBED') online = true;
     });
-  const t = setInterval(() => void fetchAll(true), 6000);
+  let tick = 0;
+  void refreshAvailability().catch(() => undefined);
+  const t = setInterval(() => {
+    void fetchAll(true);
+    // เวลาว่างของคลินิก ทุก ~30 วินาที
+    if (++tick % 5 === 0) void refreshAvailability().catch(() => undefined);
+  }, 6000);
   return () => {
     stopped = true;
     clearInterval(t);

@@ -5,7 +5,7 @@ import { radius, space } from '../../design-system/tokens';
 import { useNavigation } from '@react-navigation/native';
 import { useNav } from '../../navigation/types';
 import { PlacesMap } from './places/PlacesMap';
-import { anyoneSlots } from '../../data/booking';
+import { BRIDGE_PLACE, anyoneSlots, dayLabel, liveTherapists } from '../../data/booking';
 
 /* ============================================================ สถานที่ให้บริการ
  * เลือกสถานที่ก่อนจอง: ระยะทาง · คิวว่างวันนี้ · ใช้สิทธิบัตรทองได้ไหม · ผู้ให้บริการระดับไหน
@@ -50,7 +50,12 @@ export const PLACES: Place[] = PLACE_LIST.map((p) =>
 );
 
 /** แนะนำที่ใกล้ที่สุด: นวดรักษา = มีแพทย์แผนไทย + บัตรทอง + มีคิว · พบแพทย์ = โรงพยาบาล */
-export const nearestClinic = () => PLACES.filter((p) => p.kind === 'clinic' && p.therapy && p.uc && p.slots.length).sort((a, b) => a.km - b.km)[0];
+// คลินิกที่เชื่อมหลังบ้าน (มีเวลาว่างจริงจากคลินิก) มาก่อน แม้วันนี้เต็มแล้ว — จองแล้วคลินิกเห็นทันที
+export const nearestClinic = () =>
+  (liveTherapists() && anyoneSlots(BRIDGE_PLACE).length ? PLACES.find((p) => p.id === BRIDGE_PLACE) : undefined) ??
+  PLACES.filter((p) => p.kind === 'clinic' && p.therapy && p.uc && p.slots.length).sort((a, b) => a.km - b.km)[0];
+/** คิวว่างถัดไปของสถานที่ เป็นป้าย ("13:00" วันนี้ · "พรุ่งนี้ 09:00") */
+export const nextSlotLabels = (placeId: string, n = 3) => anyoneSlots(placeId).slice(0, n).map((f) => (f.day === 0 ? f.time : `${dayLabel(f.day)} ${f.time}`));
 export const nearestHospital = () => PLACES.filter((p) => p.kind === 'hospital').sort((a, b) => a.km - b.km)[0];
 /** บริการเสริมที่แนวทางการรักษาใช้ (จากชื่อวิธีรักษา) */
 export const neededServices = (methods: string[]) => ['ประคบ', 'พอก', 'แช่', 'อบ'].filter((x) => methods.some((m) => m.includes(x)));
