@@ -452,7 +452,16 @@ export interface TreatmentCase {
   areas: FollowUpArea[];
   /** คะแนนปวดก่อน/หลังทุกครั้ง (เก่า → ใหม่) */
   /** painAfter = คะแนนที่คลินิกบันทึกตอนปิดการรักษา (ค่าหลัก) · selfPain = ผู้ใช้บอกเองในแอป (เสริม) */
-  visits: { date: string; painBefore: number; painAfter: number; selfPain?: number }[];
+  visits: {
+    date: string;
+    painBefore: number;
+    painAfter: number;
+    selfPain?: number;
+    /** บันทึกการรักษาจริงจากคลินิก (หลังบ้าน) — ไม่มี = ใช้ข้อมูลตัวอย่าง */
+    record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string };
+  }[];
+  /** แผนการรักษาที่แพทย์อนุมัติในหลังบ้าน */
+  clinicPlan?: { summary: string; sessions: number; frequency: string; homeCare: string[] };
   /** ครั้งที่ยังค้างติดตามผล (ล่าสุดก่อน) — ให้คะแนนแยกทีละบริเวณ */
   pending: PendingSession[];
   /** นัดครั้งถัดไปของใบนี้ (แต่ละโรคนัดคนละวัน) · today = วันนี้ → เช็กอินได้ */

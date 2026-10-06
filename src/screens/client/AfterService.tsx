@@ -295,7 +295,7 @@ function CaseResult({ tc }: { tc: TreatmentCase }) {
         </View>
         <Text variant="bodyMd">{r.note}</Text>
         <Text variant="bodyXs" tone="secondary">
-          {tc.therapist} · {r.duration} นาที
+          {r.therapist} · {r.duration} นาที
         </Text>
       </Panel>
 

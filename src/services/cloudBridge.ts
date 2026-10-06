@@ -46,6 +46,35 @@ export const cloudOnline = () => online;
 /** แถวล่าสุดที่แอปเห็น — ใช้หาความเปลี่ยนแปลง และดูบิลตอนจ่าย */
 const rows = new Map<string, CloudRow>();
 
+/* เว็บ: จำแถวที่เห็นล่าสุด → เปิดแอปใหม่ได้รับสิ่งที่คลินิกทำระหว่างปิดแอป (ไม่เล่นซ้ำของที่รับไปแล้ว) */
+const SEEN_KEY = 'thaiwell.cloud.seen';
+const webStore = (): Storage | null => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
+const loadSeen = () => {
+  try {
+    const raw = webStore()?.getItem(SEEN_KEY);
+    const list = raw ? (JSON.parse(raw) as CloudRow[]) : [];
+    for (const r of list) rows.set(r.id, r);
+    return list.length > 0;
+  } catch {
+    return false;
+  }
+};
+const saveSeen = () => {
+  try {
+    // เก็บเฉพาะที่ใช้หาความเปลี่ยนแปลง
+    const list = [...rows.values()].map(({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }));
+    webStore()?.setItem(SEEN_KEY, JSON.stringify(list.slice(-300)));
+  } catch {
+    /* ignore */
+  }
+};
+
 async function logEvent(kind: string, apptId: string | null, patientName: string | undefined, summary: string, payload?: unknown) {
   await cloud.from('tw_events').insert({ source: 'app', kind, appointment_id: apptId, patient_name: patientName ?? null, summary, payload: payload ?? null });
 }
@@ -159,6 +188,7 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
       if (emit) out.push(...diffRow(prev, r));
       rows.set(r.id, r);
     }
+    saveSeen();
     if (out.length) cb(out);
   };
   const fetchAll = async (emit: boolean) => {
@@ -170,8 +200,8 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
       online = false;
     }
   };
-  // แถวที่มีอยู่ก่อนเปิดแอป = จุดตั้งต้น (ไม่เล่นเหตุการณ์เก่าซ้ำ)
-  void fetchAll(false);
+  // แถวที่มีอยู่ก่อนเปิดแอป = จุดตั้งต้น (ไม่เล่นเหตุการณ์เก่าซ้ำ) · เคยเห็นแล้ว (เว็บ) → รับเฉพาะที่เปลี่ยนระหว่างปิดแอป
+  void fetchAll(loadSeen());
   const ch = cloud
     .channel('tw-app')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tw_appointments' }, (ev) => {

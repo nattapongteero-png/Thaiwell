@@ -75,6 +75,21 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
         </View>
       </Section>
 
+      {/* แผนการรักษาที่แพทย์อนุมัติในหลังบ้าน */}
+      {tc.clinicPlan ? (
+        <Section icon="file-text" tint="#2F6FA3" title="แผนจากแพทย์" right={<Chip text={`${tc.clinicPlan.sessions} ครั้ง · ${tc.clinicPlan.frequency}`} />}>
+          <Text variant="bodyMd">{tc.clinicPlan.summary}</Text>
+          {tc.clinicPlan.homeCare.map((h) => (
+            <View key={h} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: '#2F6FA3' }} />
+              <Text variant="bodySm" style={{ flex: 1 }}>
+                {h}
+              </Text>
+            </View>
+          ))}
+        </Section>
+      ) : null}
+
       {/* แนวโน้ม Pain Score */}
       <Section icon="activity" tint="#D9534F" title="แนวโน้ม Pain Score" right={first && latest !== undefined ? <Chip text={`${first.painBefore} → ${latest} · ดีขึ้น ${pct}%`} tone="good" /> : null}>
         <PainTrend values={tc.visits.map((v, i) => ({ label: v.date, v: afterOf(tc, i) }))} />
@@ -303,13 +318,27 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
   const compress = /ประคบ/.test(tc.plan) || i % 2 === 1;
   const techniques = /หน้า/.test(tc.plan) ? ['นวดหน้า', 'กดจุดศีรษะ', 'คลายบ่า-ไหล่'] : ['นวดราชสำนัก (กดจุด)', 'คลายกล้ามเนื้อบ่า-คอ', 'ยืดเหยียดหลังนวด'];
   const notes = ['กล้ามเนื้อบ่าตึงมาก เริ่มด้วยแรงเบา', 'จุดกดเจ็บลดลงจากครั้งก่อน', 'ผู้ป่วยนอนหลับได้ดีขึ้น เพิ่มเวลาคลายบ่า', 'ตึงน้อยลงชัดเจน ลดแรงกด', 'อาการคงที่ ติดตามต่อ'];
-  return {
+  const base = {
     duration: compress ? 90 : 60,
     pressure: i < 2 ? 'เบา' : 'ปานกลาง',
     techniques: compress ? [...techniques, 'ประคบสมุนไพร'] : techniques,
     herbs: compress ? ['ลูกประคบสมุนไพร (ไพล ขมิ้นชัน ตะไคร้)'] : [],
     note: notes[i % notes.length],
     advice: ['ดื่มน้ำอุ่นมาก ๆ', 'งดอาบน้ำเย็น 2 ชม.', 'ทำท่ายืดวันละ 2 รอบ'],
+    therapist: tc.therapist,
+    diagnoses: undefined as string[] | undefined,
+  };
+  // บันทึกจริงจากคลินิก (หลังบ้าน) → ใช้แทนข้อมูลตัวอย่าง
+  const rec = tc.visits[i]?.record;
+  if (!rec) return base;
+  return {
+    ...base,
+    techniques: rec.procedures?.length ? rec.procedures : base.techniques,
+    herbs: rec.procedures?.some((p) => /ประคบ/.test(p)) ? base.herbs : [],
+    note: rec.findings || base.note,
+    advice: rec.advice ? rec.advice.split(/\n|·/).map((x) => x.trim()).filter(Boolean) : base.advice,
+    therapist: rec.therapist || base.therapist,
+    diagnoses: rec.diagnoses?.length ? rec.diagnoses : undefined,
   };
 }
 
@@ -332,7 +361,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
         </Text>
         <Text style={{ fontFamily: fontFamily.bold, fontSize: 22, lineHeight: 32, color: colors.text.primary }}>{tc.plan}</Text>
         <Text variant="bodySm" tone="secondary">
-          {tc.therapist} · {r.duration} นาที
+          {r.therapist} · {r.duration} นาที
         </Text>
       </View>
 
@@ -359,7 +388,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
 
       {/* วินิจฉัย (แพทย์แผนไทยบันทึกในหลังบ้าน) + รหัส ICD-10 ชุดเดียวกับหลังบ้าน */}
       <Section icon="clipboard" tint="#2F6FA3" title="วินิจฉัย">
-        <Text variant="bodyMd">{tc.condition}</Text>
+        <Text variant="bodyMd">{r.diagnoses?.join(' · ') ?? tc.condition}</Text>
         {dx ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             <Chip text={`ICD-10 ${dx.code}`} />
@@ -393,7 +422,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
 
       <Section icon="edit-3" tint="#7C6CD4" title="บันทึกจากผู้ให้บริการ">
         <Text variant="bodyMd">{r.note}</Text>
-        <Text variant="bodyXs" tone="tertiary">{tc.therapist}</Text>
+        <Text variant="bodyXs" tone="tertiary">{r.therapist}</Text>
       </Section>
 
       <Section icon="check-circle" tint="#C2782B" title="คำแนะนำหลังนวด">

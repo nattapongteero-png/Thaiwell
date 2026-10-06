@@ -219,7 +219,9 @@ export function HomeScreen() {
   /** ใบการรักษาที่เลือกดู (แยกตามโรค) — mark บนหุ่น · ผลการรักษา · ติดตามอาการ ตามใบนี้ */
   const [caseIdx, setCaseIdx] = React.useState(0);
   /** คนไข้ใหม่ (สมัครเอง ยังไม่มีใบการรักษา) — หน้าแรกเปลี่ยนตามข้อมูลที่มี: ไม่มีอะไร = แชท · ประเมินแล้ว = ใบร่าง · รักษาแล้ว = ใบการรักษา */
-  const { newPatient, setNewPatient, account, careStage, setCareStage, setLastAssess, profile, setProfile, drafts, upsertDraft, setActiveDraftId, promoted, followUps, looseBookings, addLooseBooking, removeLooseBooking, log } = useJourney();
+  const { newPatient, setNewPatient, account, careStage, setCareStage, setLastAssess, profile, setProfile, drafts, upsertDraft, setActiveDraftId, promoted, followUps, looseBookings, addLooseBooking, removeLooseBooking, log, markEntered } = useJourney();
+  // ถึงหน้าแรกแล้ว → เริ่มจำข้อมูลข้ามการรีเฟรช
+  React.useEffect(() => markEntered(), [markEntered]);
   /** หัวข้อ "เรื่องเดิมหรืออาการใหม่" — ถามเฉพาะเมื่อมีใบอยู่แล้ว */
   /** ยังไม่มีข้อมูลอะไรเลย → หน้าแรกคือแชท (คำถามแนะนำ) · ไม่มีปุ่มออกจากแชท */
   // ยังไม่มีใบร่าง/ใบการรักษา
@@ -4038,7 +4040,7 @@ function HomeBento({
                     คิว
                   </Text>
                   <Text variant="titleXl" color={colors.brand.primary}>
-                    {ap.queue}
+                    {ap.queue ?? '–'}
                   </Text>
                 </View>
               ) : (

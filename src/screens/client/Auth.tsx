@@ -82,8 +82,13 @@ export function AuthScreen() {
   const nav = useNav();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { signOut, setConsents } = useJourney();
+  const { signOut, setConsents, resumed } = useJourney();
   const [loading, setLoading] = React.useState<AuthProvider | null>(null);
+  // เคยเข้าใช้งานแล้ว (มีข้อมูลที่จำไว้) → กลับไปหน้าแรกเลย
+  React.useEffect(() => {
+    if (resumed) nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signIn = (id: AuthProvider) => {
     setLoading(id);

@@ -243,6 +243,10 @@ interface JourneyState {
   /** นวดครั้งแรกเสร็จ → ใบร่างกลายเป็นใบการรักษา (ชื่อแท็บเดิม · ชื่อโรคจากผู้ให้บริการ — ส่งมาจริงได้ผ่าน cloud) */
   promoteDraft: (draftId: string, painAfter: number, diagnosis?: string) => void;
   /** ออกจากระบบ: ล้างบัญชีและข้อมูลของรอบนี้ทั้งหมด */
+  /** เปิดแอปแล้วมีข้อมูลที่บันทึกไว้ (เคยเข้าใช้งาน) → ข้ามหน้าเข้าสู่ระบบ */
+  resumed: boolean;
+  /** ถึงหน้าแรกแล้ว → เริ่มจำข้อมูลข้ามการเปิดแอปใหม่ */
+  markEntered: () => void;
   signOut: () => void;
   /**
    * ใบการรักษาที่ใช้แสดงทุกหน้า (หน้าแรก · ประวัติ · โปรไฟล์ · นัด · AI) — ตัวอย่าง + ใบจากใบร่าง
@@ -256,7 +260,7 @@ interface JourneyState {
    * ไม่ขึ้นกับว่าผู้ใช้กรอกแบบประเมินหลังนวดหรือไม่ · คืน id ใบการรักษา
    * ⚠️ ต้นแบบ: จำลองคะแนนของคลินิก + แจ้งเตือนติดตามผลวันถัดไป (มาหลังจากนี้ไม่กี่วินาที)
    */
-  clinicCloseVisit: (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number, opts?: { bill?: boolean; diagnosis?: string }) => string | undefined;
+  clinicCloseVisit: (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number, opts?: CloseOpts) => string | undefined;
   /** แจ้งหลังบ้านคลินิก (เมื่อเปิดอยู่ในเบราว์เซอร์เดียวกัน — ต้นแบบ) */
   notifyClinic: (title: string, body: string) => void;
   /** ความรู้สึกหลังนวดที่ผู้ใช้บอกเอง (ครั้งล่าสุด) — แสดงคู่กับคะแนนของคลินิก */
@@ -288,6 +292,8 @@ interface JourneyState {
 }
 
 /** คำขอจองที่ส่งไปหลังบ้าน → เรื่องไหนในแอป (+ ใบการรักษาที่เกิดหลังนวดเสร็จ สำหรับบิล/ใบเสร็จที่ตามมา) */
+/** ปิดการรักษาจากคลินิก: bill=false ไม่จำลองบิล · record = บันทึกการรักษาจริงจากหลังบ้าน */
+type CloseOpts = { bill?: boolean; diagnosis?: string; record?: TreatmentCase['visits'][number]['record'] };
 type BridgeRef = { draftId?: string; looseId?: string; label: string; patientId?: string; caseId?: string; title?: string };
 
 export interface Bill {
@@ -357,13 +363,35 @@ export interface CaseAppt {
 
 const Ctx = createContext<JourneyState | null>(null);
 
+/* ---------- จำข้อมูลแอปข้ามการเปิดใหม่ (เว็บ · ต้นแบบ) ----------
+ * เก็บบัญชี การจอง เรื่องที่รักษา นัด แจ้งเตือน บิล และคำขอที่ส่งไปหลังบ้าน → เปิดใหม่ยังรับข้อมูลจากคลินิกต่อได้
+ * ออกจากระบบ = ล้างทั้งหมด */
+const APP_STATE_KEY = 'thaiwell.app.v1';
+const appStore = (): Storage | null => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
+const SAVED: Record<string, unknown> | null = (() => {
+  try {
+    const raw = appStore()?.getItem(APP_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+})();
+/** ค่าที่บันทึกไว้ (ถ้าเคยเข้าใช้งานแล้ว) ไม่มี = ค่าเริ่มต้น */
+const saved = <T,>(key: string, fallback: T): T => (SAVED?.entered && SAVED[key] !== undefined ? (SAVED[key] as T) : fallback);
+
 const initialBefore: Assessment = { pain: 3, stiffness: 7, mobility: 2, stress: 4, sleep: 2 };
 const initialRecord: ServiceRecord = { regions: [], techniques: [], pressure: 'ปานกลาง', duration: 60, notes: '', provider: 'พท.ป. สมศรี ดีงาม' };
 
 export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [scenario, setScenarioState] = useState<Scenario>('caution');
-  const [profile, setProfile] = useState<HealthProfile>(baseProfile);
-  const [consents, setConsents] = useState<Consents>({ service: false, aiProcessing: false, followUp: true, research: false });
+  const [profile, setProfile] = useState<HealthProfile>(() => saved('profile', baseProfile));
+  const [consents, setConsents] = useState<Consents>(() => saved('consents', { service: false, aiProcessing: false, followUp: true, research: false }));
   const [symptoms, setSymptoms] = useState<Partial<Record<RegionId, number>>>({ shoulder_r: 6, neck: 4, upper_back: 3 });
   const [chiefComplaint, setChiefComplaint] = useState('ปวดตึงคอ–บ่าขวา หลังทำงานหน้าคอมพิวเตอร์');
   const [goal, setGoal] = useState('ลดปวด และคลายตึง');
@@ -371,9 +399,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [after, setAfter] = useState<Assessment | undefined>();
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [record, setRecord] = useState<ServiceRecord>(initialRecord);
-  const [elements, setElementsState] = useState<Record<ElementKey, number>>({ ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 });
+  const [elements, setElementsState] = useState<Record<ElementKey, number>>(() => saved('elements', { ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 }));
   /** ทำแบบประเมินธาตุแล้ว (คนใหม่ยังไม่ทำ = ใช้ธาตุเจ้าเรือนจากวันเกิด ไม่ใช้ค่าตัวอย่าง) */
-  const [elementsDone, setElementsDone] = useState(false);
+  const [elementsDone, setElementsDone] = useState(() => saved('elementsDone', false));
   const setElements = useCallback((e: Record<ElementKey, number>) => {
     setElementsState(e);
     setElementsDone(true);
@@ -382,11 +410,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     { at: '09:02', actor: 'ผู้รับบริการ', action: 'ลงทะเบียนผ่าน MyAtlas' },
   ]);
 
-  const [followUps, setFollowUps] = useState<FollowUpRecord[]>([]);
-  const [account, setAccount] = useState<Account | null>(null);
-  const [newPatient, setNewPatient] = useState(false);
-  const [careStage, setCareStage] = useState<CareStage>('new');
-  const [looseBookings, setLooseBookings] = useState<LooseBooking[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUpRecord[]>(() => saved('followUps', []));
+  const [account, setAccount] = useState<Account | null>(() => saved('account', null));
+  const [newPatient, setNewPatient] = useState(() => saved('newPatient', false));
+  const [careStage, setCareStage] = useState<CareStage>(() => saved('careStage', 'new'));
+  const [looseBookings, setLooseBookings] = useState<LooseBooking[]>(() => saved('looseBookings', []));
   const addLooseBooking = useCallback((b: Booking) => {
     const id = `nb${Date.now()}`;
     setLooseBookings((all) => [...all, { ...b, id }]);
@@ -394,37 +422,39 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const updateLooseBooking = useCallback((id: string, b: Booking) => setLooseBookings((all) => all.map((x) => (x.id === id ? { ...b, id } : x))), []);
   const removeLooseBooking = useCallback((id: string) => setLooseBookings((all) => all.filter((x) => x.id !== id)), []);
-  const [lastAssess, setLastAssess] = useState<AssessSummary | null>(null);
-  const [drafts, setDrafts] = useState<DraftCase[]>([]);
-  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
-  const [promoted, setPromoted] = useState<TreatmentCase[]>([]);
-  const [cancelledAppts, setCancelledAppts] = useState<string[]>([]);
+  const [lastAssess, setLastAssess] = useState<AssessSummary | null>(() => saved('lastAssess', null));
+  const [drafts, setDrafts] = useState<DraftCase[]>(() => saved('drafts', []));
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(() => saved('activeDraftId', null));
+  const [promoted, setPromoted] = useState<TreatmentCase[]>(() => saved('promoted', []));
+  const [cancelledAppts, setCancelledAppts] = useState<string[]>(() => saved('cancelledAppts', []));
   const cancelAppointment = useCallback((caseId: string) => setCancelledAppts((ids) => (ids.includes(caseId) ? ids : [...ids, caseId])), []);
-  const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>({});
+  const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>(() => saved('caseAppts', {}));
   // จองใหม่ → ไม่ถือว่ายกเลิกแล้ว
   const setCaseAppointment = useCallback((caseId: string, appt: CaseAppt) => {
     setCaseAppts((m) => ({ ...m, [caseId]: appt }));
     setCancelledAppts((ids) => ids.filter((x) => x !== caseId));
   }, []);
   /** ครั้งที่นวดเพิ่มของใบการรักษา (ต่อท้าย visits เดิม) */
-  const [caseVisits, setCaseVisits] = useState<Record<string, TreatmentCase['visits']>>({});
+  const [caseVisits, setCaseVisits] = useState<Record<string, TreatmentCase['visits']>>(() => saved('caseVisits', {}));
   /** คะแนนหลังนวดที่ผู้ใช้ประเมินเอง: ครั้งที่ n ของแต่ละเรื่อง */
-  const [selfPains, setSelfPains] = useState<Record<string, { n: number; v: number }>>({});
-  const queueNo = React.useRef(11);
+  const [selfPains, setSelfPains] = useState<Record<string, { n: number; v: number }>>(() => saved('selfPains', {}));
+  /** บันทึกการรักษาจริงจากคลินิก: "caseId:ลำดับครั้ง" */
+  const [visitRecords, setVisitRecords] = useState<Record<string, NonNullable<CloseOpts['record']>>>(() => saved('visitRecords', {}));
+  const queueNo = React.useRef(saved('queueNo', 11));
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
-  const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>({});
-  const [apptNotices, setApptNotices] = useState<ApptNotice[]>(SAMPLE_NOTICES);
+  const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>(() => saved('caseToday', {}));
+  const [apptNotices, setApptNotices] = useState<ApptNotice[]>(() => saved('apptNotices', SAMPLE_NOTICES));
   const dismissNotice = useCallback((id: string) => setApptNotices((all) => all.map((n) => (n.id === id ? { ...n, read: true } : n))), []);
   const markAllNoticesRead = useCallback(() => setApptNotices((all) => all.map((n) => ({ ...n, read: true }))), []);
-  const [bills, setBills] = useState<Bill[]>(SAMPLE_BILLS);
+  const [bills, setBills] = useState<Bill[]>(() => saved('bills', SAMPLE_BILLS));
   /* ---------- สะพานไปหลังบ้าน (ต้นแบบ) ---------- */
   const latest = React.useRef({ drafts, looseBookings, account, profile, bills });
   latest.current = { drafts, looseBookings, account, profile, bills };
   /** คำขอจองที่ส่งไปหลังบ้าน → เรื่องไหนในแอป */
-  const bridgeRefs = React.useRef<Record<string, BridgeRef>>({});
+  const bridgeRefs = React.useRef<Record<string, BridgeRef>>(saved('bridgeRefs', {}));
   /** ผู้ป่วยในหลังบ้าน → เรื่องที่รักษาในแอป (เกิดตอนนวดครั้งแรกเสร็จ) · แผนที่มาก่อนมีเรื่อง → เก็บไว้ใช้ทีหลัง */
-  const bridgedCase = React.useRef<Record<string, string>>({});
-  const pendingPlan = React.useRef<Record<string, Extract<ClinicEvent, { type: 'plan' }>>>({});
+  const bridgedCase = React.useRef<Record<string, string>>(saved('bridgedCase', {}));
+  const pendingPlan = React.useRef<Record<string, Extract<ClinicEvent, { type: 'plan' }>>>(saved('pendingPlan', {}));
   const patientOf = (): ClinicPatient => {
     const { account: acc, profile: pf } = latest.current;
     const name = acc ? acc.name : 'สมศักดิ์ รักดี';
@@ -553,6 +583,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setCaseAppts((m) => ({ ...m, [caseId]: { today: false, date: '-', time: '-', clinic: m[caseId]?.clinic ?? '', therapist: m[caseId]?.therapist ?? '' } }));
   }, []);
   const signOut = useCallback(() => {
+    // ล้างข้อมูลที่จำไว้ + คำขอที่ส่งไปหลังบ้าน
+    try {
+      appStore()?.removeItem(APP_STATE_KEY);
+    } catch {
+      /* ignore */
+    }
+    setEntered(false);
+    bridgeRefs.current = {};
+    bridgedCase.current = {};
+    pendingPlan.current = {};
+    setVisitRecords({});
     setAccount(null);
     setNewPatient(false);
     setCareStage('new');
@@ -625,7 +666,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const a = caseAppts[c.id];
         const cancelled = cancelledAppts.includes(c.id);
         const sp = selfPains[c.id];
-        const visits = [...c.visits, ...extra];
+        const visits = [...c.visits, ...extra].map((v, i) => (visitRecords[`${c.id}:${i}`] ? { ...v, record: visitRecords[`${c.id}:${i}`] } : v));
         return {
           ...c,
           // คะแนนหลังนวดที่ผู้ใช้ประเมินเอง → ครั้งล่าสุด
@@ -637,14 +678,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue } : c.appointment,
         };
       }),
-    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains],
+    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains, visitRecords],
   );
   const nowAt = () => {
     const d = new Date();
     return `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
   const clinicCloseVisit = useCallback(
-    (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number, opts?: { bill?: boolean; diagnosis?: string }) => {
+    (target: { caseId?: string; draftId?: string }, clinicPainAfter?: number, opts?: CloseOpts) => {
       const tc = cases.find((c) => c.id === target.caseId);
       const d = drafts.find((x) => x.id === target.draftId);
       if (!tc && !d) return undefined;
@@ -659,6 +700,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       else promoteDraft(d!.id, painAfter, opts?.diagnosis);
       // คะแนนจากหลังบ้าน = ผู้ป่วยเลือกเองที่คลินิก (ขั้นประเมินหลังนวด) → นับเป็นการประเมินหลังนวดของครั้งนี้ ไม่ต้องประเมินซ้ำในแอป
       if (clinicPainAfter !== undefined) setSelfPains((m) => ({ ...m, [caseId]: { n: no, v: clinicPainAfter } }));
+      // บันทึกการรักษาจริงจากคลินิก → แสดงในรายละเอียดครั้งนั้นแทนข้อมูลตัวอย่าง
+      if (opts?.record) setVisitRecords((m) => ({ ...m, [`${caseId}:${no - 1}`]: opts.record! }));
       // cloud: คลินิกเป็นคนออกบิลจริง (มาทีหลังเป็นเหตุการณ์ bill) → ไม่จำลองบิล
       if (opts?.bill !== false) {
         const service = tc ? tc.plan : d!.booking?.service ?? 'นวดไทยเพื่อการรักษา';
@@ -690,7 +733,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   /** แผนจากคลินิก → นัดครั้งถัดไปของเรื่องนั้น + จำนวนครั้งของคอร์ส */
   const applyPlan = (caseId: string, e: Extract<ClinicEvent, { type: 'plan' }>) => {
     const tc = cases.find((c) => c.id === caseId);
-    if (e.course) setPromoted((cs) => cs.map((c) => (c.id === caseId ? { ...c, course: { ...c.course, total: Math.max(e.course!.total, c.course.done) } } : c)));
+    // จำนวนครั้งของคอร์ส + แผนที่แพทย์อนุมัติ (แสดงในรายละเอียดเรื่องนั้น)
+    const clinicPlan = e.summary ? { summary: e.summary, sessions: e.course?.total ?? 0, frequency: e.frequency ?? '', homeCare: e.homeCare ?? [] } : undefined;
+    setPromoted((cs) =>
+      cs.map((c) => (c.id === caseId ? { ...c, course: e.course ? { ...c.course, total: Math.max(e.course.total, c.course.done) } : c.course, clinicPlan: clinicPlan ?? c.clinicPlan } : c)),
+    );
     // แผนจาก cloud: สรุปแผน + จำนวนครั้ง (นัดครั้งถัดไปคลินิกลงให้ทีหลัง)
     if (!e.next && e.summary) setApptNotices((all) => [{ id: `n-plan-${e.id}`, caseId, kind: 'confirmed', text: `คลินิกส่งแผนการรักษา: ${e.summary}${e.course ? ` · ${e.course.total} ครั้ง` : ''}${e.frequency ? ` (${e.frequency})` : ''}`, at: nowAtLabel() }, ...all.filter((n) => n.id !== `n-plan-${e.id}`)]);
     if (!e.next) return;
@@ -700,7 +747,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setApptNotices((all) => [{ id: `n-plan-${e.id}`, caseId, kind: 'confirmed', text: `คลินิกนัดครั้งที่ ${no} ตามแผนการรักษา ${date} ${e.next!.start}${e.next!.therapist ? ` · ${e.next!.therapist}` : ''}`, at: nowAtLabel() }, ...all]);
   };
   /** คลินิกปิดการรักษาของนัดที่ส่งจากแอป → ใบการรักษา · คืน case id (จำไว้ที่ ref ให้บิล/ใบเสร็จที่ตามมา) */
-  const closeFromClinic = (ref: string, t: BridgeRef, e: { painBefore: number; painAfter?: number } | undefined, opts?: { bill?: boolean; diagnosis?: string }) => {
+  const closeFromClinic = (ref: string, t: BridgeRef, e: { painBefore: number; painAfter?: number } | undefined, opts?: CloseOpts) => {
     let caseId: string | undefined;
     const title = t.draftId ? latest.current.drafts.find((d) => d.id === t.draftId)?.title : 'นวดเพื่อสุขภาพ';
     if (t.draftId) caseId = clinicCloseVisit({ draftId: t.draftId }, e?.painAfter, opts);
@@ -716,6 +763,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         setLooseBookings((all) => all.filter((b) => b.id !== t.looseId));
         caseId = `case-${d.id}`;
         if (e?.painAfter !== undefined) setSelfPains((m) => ({ ...m, [`case-${d.id}`]: { n: 1, v: e.painAfter! } }));
+        if (opts?.record) setVisitRecords((m) => ({ ...m, [`case-${d.id}:0`]: opts.record! }));
       }
       setApptNotices((all) => [{ id: `n-done-${ref}`, kind: 'confirmed', text: `คลินิกบันทึกการนวดแล้ว ${t.label}`, at: nowAtLabel() }, ...all]);
     }
@@ -784,7 +832,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         note('rejected', `คลินิกไม่สามารถรับนัด ${t.label}${e.reason ? ` · ${e.reason}` : ''}`);
       } else if (e.type === 'completed') {
         // นวดเสร็จ: ใบร่าง → ใบการรักษา (คะแนนหลังนวดของคลินิก + บิล) · นัดเรื่องใหม่ที่ยังไม่ประเมิน → ปิดนัด
-        const caseId = closeFromClinic(e.ref, t, e, e.cloud ? { bill: false, diagnosis: e.record?.diagnoses?.[0] } : undefined);
+        const caseId = closeFromClinic(e.ref, t, e, e.cloud ? { bill: false, diagnosis: e.record?.diagnoses?.[0], record: e.record } : undefined);
         // ผลการรักษาจากคลินิก (cloud): คำแนะนำหลังนวด → แจ้งเตือน
         if (e.cloud && e.record?.advice) note('followup', `คำแนะนำจากผู้ให้บริการ: ${e.record.advice}`);
         if (caseId && t.patientId) {
@@ -805,7 +853,32 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /** เข้าใช้งานแล้ว (ถึงหน้าแรก) → เปิดใหม่กลับมาที่เดิม */
+  const [entered, setEntered] = useState(() => !!SAVED?.entered);
+  const markEntered = useCallback(() => setEntered(true), []);
+  React.useEffect(() => {
+    const st = appStore();
+    if (!entered || !st) return;
+    const t = setTimeout(() => {
+      try {
+        st.setItem(
+          APP_STATE_KEY,
+          JSON.stringify({
+            entered, profile, consents, elements, elementsDone, followUps, account, newPatient, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted,
+            cancelledAppts, caseAppts, caseVisits, selfPains, visitRecords, caseToday, apptNotices, bills, queueNo: queueNo.current,
+            bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, pendingPlan: pendingPlan.current,
+          }),
+        );
+      } catch {
+        /* storage full / unavailable */
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  });
+
   const value: JourneyState = {
+    resumed: !!SAVED?.entered,
+    markEntered,
     client: account
       ? { name: `คุณ${account.name}`, initials: account.name.slice(0, 2), age: profile.age, occupation: '', hn: 'TW-NEW' }
       : { name: 'คุณสมศักดิ์ รักดี', initials: 'สศ', age: profile.age, occupation: 'พนักงานออฟฟิศ', hn: 'TW-000123' },
