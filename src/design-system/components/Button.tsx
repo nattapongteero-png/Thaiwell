@@ -89,11 +89,12 @@ export function Button({
         <ActivityIndicator color={c.fg} />
       ) : (
         <>
-          {iconLeft ? <Icon name={iconLeft} size="md" color={c.fg} /> : null}
+          {/* ไอคอนเล็กกว่าตัวอักษรเล็กน้อย (16) → ไม่แย่งความเด่นจากคำบนปุ่ม */}
+          {iconLeft ? <Icon name={iconLeft} size="sm" color={c.fg} /> : null}
           <Text variant={t.label[size]} color={c.fg} numberOfLines={1}>
             {label}
           </Text>
-          {iconRight ? <Icon name={iconRight} size="md" color={c.fg} /> : null}
+          {iconRight ? <Icon name={iconRight} size="sm" color={c.fg} /> : null}
         </>
       )}
     </Pressable>

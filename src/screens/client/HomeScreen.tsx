@@ -4933,8 +4933,9 @@ function HeaderAction({ icon, label, onPress, badge }: { icon: React.ComponentPr
       <Icon name={icon} size="sm" color={colors.text.primary} />
       {badge ? (
         // จำนวนใหม่: วงสีแดงของแอป (TINT.red) ขอบสีพื้น ตัวเลขหนา — ไม่ใช้แดงเข้มของระบบ
-        <View style={{ position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: TINT.red, borderWidth: 2, borderColor: colors.surface.canvas }}>
-          <Text color="#FFFFFF" style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 13 }}>
+        // วงกลมจริง 20×20 (ขอบ 2 → ด้านใน 16) · ตัวเลขสูงเท่าด้านในพอดี + จัดกลางทั้งแนวนอน/ตั้ง (ไม่มี padding ฟอนต์)
+        <View style={{ position: 'absolute', top: -4, right: -4, minWidth: 20, height: 20, paddingHorizontal: 3, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: TINT.red, borderWidth: 2, borderColor: colors.surface.canvas }}>
+          <Text color="#FFFFFF" align="center" style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 16, height: 16, includeFontPadding: false, textAlignVertical: 'center' }}>
             {badge > 9 ? '9+' : badge}
           </Text>
         </View>
