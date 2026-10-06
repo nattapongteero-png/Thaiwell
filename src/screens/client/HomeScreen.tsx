@@ -2712,7 +2712,7 @@ export function HomeScreen() {
             {/* แท็บเรื่องที่ดูแล — ตรึงใน header (เลื่อนดูช่องล่าง ๆ ก็ยังรู้ว่าดูเรื่องไหน และสลับได้ทันที) */}
             {/* แถวแท็บมีปุ่ม "ถาม AI" → แสดงเสมอเมื่อมีข้อมูล (จองไว้นัดเดียวก็แสดง) */}
             {!started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => `นัด ${b.date} ${b.time}`)} value={caseIdx} onChange={setCaseIdx} onNew={openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={openAI} />
             ) : null}
           </View>
           </View>
