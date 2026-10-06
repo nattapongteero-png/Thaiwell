@@ -1,4 +1,5 @@
 import React from 'react';
+import { callClinic } from '../PlacesScreen';
 import { Platform, Pressable, View } from 'react-native';
 import {
   Badge,
@@ -275,10 +276,23 @@ export function ThreadCardView({
           <Text variant="bodyXs" tone="secondary">
             {[card.place, card.therapist, card.waitMin ? `อีก ${card.waitMin} นาที` : ''].filter(Boolean).join(' · ')}
           </Text>
+          {card.service ? (
+            <HStack gap={1} align="center">
+              {card.warn ? <Icon name="alert-triangle" size="xs" color={colors.status.warning.fg} /> : null}
+              <Text variant="bodyXs" color={card.warn ? colors.status.warning.fg : colors.text.secondary}>
+                {card.service}
+              </Text>
+            </HStack>
+          ) : null}
           <HStack gap={2}>
             {/* เช็กอิน/เลื่อนนัดของเรื่องนี้ (ไม่ใช่นัดล่าสุดที่จอง) */}
             {!card.date || card.date === 'วันนี้' ? <PillButton label="เช็กอิน" icon="maximize" onPress={() => nav.navigate('CheckIn', { caseId: card.caseId, draftId: card.draftId })} /> : null}
-            <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('Booking', { caseId: card.caseId, draftId: card.draftId })} />
+            {/* นัดของการรักษา: เลื่อน/ยกเลิกผ่านคลินิก · นัดที่จองเองในแอป: เลื่อนเองได้ */}
+            {card.caseId ? (
+              <PillButton label="ติดต่อคลินิก" icon="phone" tone="light" onPress={() => callClinic(card.place)} />
+            ) : (
+              <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('Booking', { caseId: card.caseId, draftId: card.draftId })} />
+            )}
           </HStack>
         </GlassCard>
       );

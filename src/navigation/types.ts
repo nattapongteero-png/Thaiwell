@@ -21,15 +21,20 @@ export type RootStackParamList = {
   /** ประวัติการรักษาของเรื่องหนึ่ง (bento) */
   TreatmentHistory: { caseId: string };
   /** จองนวด — หน้า stack (ย้อนกลับไปหน้าที่มา · เปิดใหม่ทุกครั้งไม่ค้างค่าเดิม) */
-  Booking: { clinic?: string; /** เลือกมาแล้ว */ therapist?: string; day?: string; time?: string; /** royal / royal+compress / relax */ service?: 'royal' | 'royal+compress' | 'relax'; /** จองให้เรื่องไหน (ไม่ระบุ = ให้เลือกในหน้าจอง) */ caseId?: string; draftId?: string; /** เลื่อนนัดเรื่องใหม่นัดนี้ */ looseId?: string } | undefined;
+  Booking: { clinic?: string; /** เลือกมาแล้ว */ therapist?: string; day?: string; time?: string; /** royal / royal+compress / relax */ service?: 'royal' | 'royal+compress' | 'relax' | 'compress' | 'foot'; /** จองให้เรื่องไหน (ไม่ระบุ = ให้เลือกในหน้าจอง) */ caseId?: string; draftId?: string; /** เลื่อนนัดเรื่องใหม่นัดนี้ */ looseId?: string } | undefined;
   /** จองนวดสำเร็จ */
-  BookingDone: { date: string; time: string; service: string; therapist: string; clinic: string; queue?: string; topic?: string; caution?: string; moved?: boolean };
+  BookingDone: { date: string; time: string; service: string; therapist: string; clinic: string; queue?: string; topic?: string; caution?: string; moved?: boolean; /** คำขอจอง รอคลินิกยืนยัน */ pending?: boolean };
   /** รายละเอียดนัด (แตะการ์ดนัดบนหน้าแรก) — เช็กอิน / แก้ไขนัด / ยกเลิกนัด · caseId = นัดของใบการรักษา · draftId = นัดของใบร่าง */
   AppointmentDetail: { caseId?: string; draftId?: string; looseId?: string } | undefined;
   /** รายละเอียดสถานที่ (คิว · สิทธิ · ผู้ให้บริการ · บริการ) */
   PlaceDetail: { id: string };
   /** reason = เหตุที่ควรพบแพทย์ (จากแชท/ติดตามผล) */
   RedFlag: { reason?: string } | undefined;
+  /** การแจ้งเตือน (คลินิกเลื่อน/ยกเลิก/ยืนยันนัด) */
+  Notifications: undefined;
+  /** บิล/ใบเสร็จจากคลินิก */
+  Bills: undefined;
+  Bill: { id: string };
   // ผู้รับบริการ — หลังรับบริการ
   PostAssessment: { caseId?: string; draftId?: string; looseId?: string } | undefined;
   SessionResult: { caseId?: string } | undefined;

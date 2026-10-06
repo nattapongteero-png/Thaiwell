@@ -1,4 +1,5 @@
 import React from 'react';
+import { dxCode, procCode } from '../../../data/clinicalCodes';
 import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, Stop, Text as SvgText } from 'react-native-svg';
 import { Icon, StretchDemo, Text, fontFamily, painColor, useTheme } from '../../../design-system';
@@ -278,7 +279,7 @@ function PainTrend({ values }: { values: { label: string; v: number }[] }) {
  * ข้อมูลที่ผู้ให้บริการบันทึก (ServiceRecord): วิธีนวด · แรงนวด · เวลา · บริเวณ · สมุนไพร · บันทึกผู้ให้บริการ · คำแนะนำหลังนวด
  * ⚠️ ต้นแบบ: ข้อมูลรายครั้งสร้างจากแผนการรักษา (ยังไม่มีบันทึกจริงจากหลังบ้าน)
  */
-function sessionRecord(tc: TreatmentCase, i: number) {
+export function sessionRecord(tc: TreatmentCase, i: number) {
   const compress = /ประคบ/.test(tc.plan) || i % 2 === 1;
   const techniques = /หน้า/.test(tc.plan) ? ['นวดหน้า', 'กดจุดศีรษะ', 'คลายบ่า-ไหล่'] : ['นวดราชสำนัก (กดจุด)', 'คลายกล้ามเนื้อบ่า-คอ', 'ยืดเหยียดหลังนวด'];
   const notes = ['กล้ามเนื้อบ่าตึงมาก เริ่มด้วยแรงเบา', 'จุดกดเจ็บลดลงจากครั้งก่อน', 'ผู้ป่วยนอนหลับได้ดีขึ้น เพิ่มเวลาคลายบ่า', 'ตึงน้อยลงชัดเจน ลดแรงกด', 'อาการคงที่ ติดตามต่อ'];
@@ -298,6 +299,9 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
   const r = sessionRecord(tc, index);
   const d = v.painBefore - v.painAfter;
   const prev = index > 0 ? tc.visits[index - 1] : null;
+  const dx = dxCode(tc.condition);
+  // หัตถการที่ทำ → รหัส ICD-9-CM (ไม่ซ้ำ)
+  const procs = [...new Set(r.techniques.map((t) => procCode(t)?.code).filter(Boolean) as string[])];
   return (
     <View style={{ gap: space[3] }}>
       {/* หัวของครั้งนี้ */}
@@ -332,6 +336,17 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
         </Text>
       ) : null}
 
+      {/* วินิจฉัย (แพทย์แผนไทยบันทึกในหลังบ้าน) + รหัส ICD-10 ชุดเดียวกับหลังบ้าน */}
+      <Section icon="clipboard" tint="#2F6FA3" title="วินิจฉัย">
+        <Text variant="bodyMd">{tc.condition}</Text>
+        {dx ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <Chip text={`ICD-10 ${dx.code}`} />
+            <Chip text={dx.en} />
+          </View>
+        ) : null}
+      </Section>
+
       <Section icon="activity" tint={colors.brand.primary} title="การรักษาครั้งนี้">
         <Info k="แรงนวด" v={r.pressure} />
         <Info k="เวลา" v={`${r.duration} นาที`} />
@@ -352,6 +367,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
           </View>
         </View>
         {r.herbs.length ? <Info k="สมุนไพร" v={r.herbs.join(', ')} /> : null}
+        {procs.length ? <Info k="รหัสหัตถการ" v={procs.join(', ')} /> : null}
       </Section>
 
       <Section icon="edit-3" tint="#7C6CD4" title="บันทึกจากผู้ให้บริการ">

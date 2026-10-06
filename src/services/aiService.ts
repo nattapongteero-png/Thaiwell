@@ -49,15 +49,19 @@ export async function askAI(question: string, context: string, history: AIMessag
 }
 
 /** แปลงข้อความอิสระเป็นข้อมูลตาม JSON schema (temperature 0) */
-export async function extractAI<T>(instruction: string, text: string, schema: object, name = 'result'): Promise<T> {
+export async function extractAI<T>(instruction: string, text: string, schema: object, name = 'result', maxTokens = 200): Promise<T> {
   const out = await call({
     temperature: 0,
-    max_tokens: 200,
+    max_tokens: maxTokens,
     messages: [
       { role: 'system', content: instruction },
       { role: 'user', content: text },
     ],
     response_format: { type: 'json_schema', json_schema: { name, schema } },
   });
-  return JSON.parse(out) as T;
+  try {
+    return JSON.parse(out) as T;
+  } catch {
+    throw new Error(`AI JSON: ${out.slice(0, 400)}`);
+  }
 }

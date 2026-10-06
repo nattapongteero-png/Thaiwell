@@ -4,9 +4,9 @@ import { AppBar, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, T
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
-import { PLACES } from './PlacesScreen';
+import { PLACES, callClinic, clinicPhone } from './PlacesScreen';
 import { anyoneSlots, dayLabel, therapistsAt, type ServiceId } from '../../data/booking';
-import { caseClinic, useAllAppointments } from '../../state/appointments';
+import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 
 /* ============================================================ จองนวด
@@ -15,10 +15,16 @@ import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from
  * ระดับผู้ให้บริการ: นวดเพื่อบำบัดโรค = ผู้ประกอบวิชาชีพแพทย์แผนไทย (health profile 2568 หน้า 34)
  */
 
-export const SERVICES: { value: ServiceId; label: string; uc: boolean }[] = [
-  { value: 'royal', label: 'นวดไทยแบบราชสำนัก · 60 นาที', uc: true },
-  { value: 'royal+compress', label: 'นวดราชสำนัก + ประคบ · 90 นาที', uc: true },
-  { value: 'relax', label: 'นวดผ่อนคลาย · 90 นาที', uc: false },
+/**
+ * ชื่อ/เวลาตามหลังบ้าน ThaiWellAI (s2 · s5 · s3 · s1 · s4) · เพื่อการรักษาอยู่บน
+ * style = แนวการนวดจากคลังความรู้ (KH หน้า 3 · CPG หน้า 150–151: นวดรักษาใช้แบบราชสำนัก) และขอบเขตตามกฎหมาย (KH หน้า 5)
+ */
+export const SERVICES: { value: ServiceId; label: string; uc: boolean; style: string }[] = [
+  { value: 'royal', label: 'นวดไทยเพื่อการรักษา · 60 นาที', uc: true, style: 'นวดแบบราชสำนัก โดยแพทย์แผนไทย' },
+  { value: 'royal+compress', label: 'นวดไทยร่วมประคบสมุนไพร · 90 นาที', uc: true, style: 'นวดแบบราชสำนัก + ลูกประคบ โดยแพทย์แผนไทย' },
+  { value: 'compress', label: 'ประคบสมุนไพร · 60 นาที', uc: true, style: 'ลูกประคบสมุนไพรอุ่น' },
+  { value: 'relax', label: 'นวดไทยเพื่อสุขภาพ · 60 นาที', uc: false, style: 'บริการเวลเนส ไม่ใช่การรักษา' },
+  { value: 'foot', label: 'นวดเท้าเพื่อสุขภาพ · 60 นาที', uc: false, style: 'บริการเวลเนส ไม่ใช่การรักษา' },
 ];
 export const THERAPISTS = [
   { value: 'malee', label: 'พท.ป. มาลี ใจดี', description: 'แพทย์แผนไทย' },
@@ -35,7 +41,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const pre = route?.params;
   useHideTabs(true);
   const { colors } = useTheme();
-  const { log, newPatient, setCareStage, drafts, activeDraftId, upsertDraft, cases, looseBookings, addLooseBooking, updateLooseBooking, setCaseAppointment, issueQueue } = useJourney();
+  const { log, newPatient, setCareStage, drafts, activeDraftId, upsertDraft, cases, looseBookings, addLooseBooking, updateLooseBooking, setCaseAppointment, issueQueue, requestBooking } = useJourney();
   const allAppts = useAllAppointments();
   // สถานที่ที่เลือกมา (หน้าสถานที่) · เรื่องที่รักษาอยู่ใช้ที่เดิมเสมอ (ดูด้านล่าง)
   const pickedClinic = pre?.clinic ?? CLINIC;
@@ -45,12 +51,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const topics: Topic[] = [
     ...drafts.map((d) => ({ key: `d:${d.id}`, draftId: d.id, title: d.title, sub: d.booking ? `มีนัด ${d.booking.date} ${d.booking.time}` : 'ประเมินแล้ว' })),
     // เรื่องที่รักษาอยู่ → จองได้เฉพาะที่เดิม (บอกไว้ในตัวเลือก)
-    ...cases.map((c) => ({
-      key: `c:${c.id}`,
-      caseId: c.id,
-      title: `รักษา${c.short}`,
-      sub: [c.appointment.date !== '-' ? `มีนัด ${c.appointment.date} ${c.appointment.time}` : `ครั้งที่ ${Math.min(c.course.total, c.course.done + 1)}/${c.course.total}`, caseClinic(c) !== pickedClinic ? `ที่${caseClinic(c)}` : ''].filter(Boolean).join(' · '),
-    })),
+    // เรื่องที่รักษาอยู่ไม่อยู่ในรายการนี้: นัดครั้งถัดไปมาจากแผนของแพทย์ (คลินิกนัดให้) · จองเรื่องใหม่/นวดผ่อนคลายเพิ่มได้
     // นัดเรื่องใหม่ที่จองไว้แล้ว → เลือก = เลื่อนนัดนั้น
     ...looseBookings.map((b) => ({ key: `l:${b.id}`, looseId: b.id, title: `นัดเรื่องใหม่ ${b.date} ${b.time}`, sub: `เลื่อนนัดนี้ · ${b.clinic}` })),
     // เรื่องใหม่ (ยังไม่ได้เล่าอาการ) → นัดเพิ่มได้หลายนัด ไม่ทับนัดเดิม
@@ -121,18 +122,40 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     if (!who) return;
     const today = pick.day === 'วันนี้';
     const queue = today ? issueQueue() : undefined;
-    const bk = { date: pick.day, time: pick.time, service: svc.label, therapist: who.name, clinic, queue, visit: tc ? tc.course.done + 1 : 1 };
+    // จองจากแอป = คำขอจอง → รอเจ้าหน้าที่คลินิกยืนยัน (เลขคิวออกตอนยืนยัน)
+    const bk = { date: pick.day, time: pick.time, service: svc.label, therapist: who.name, clinic, queue: tc ? queue : undefined, visit: tc ? tc.course.done + 1 : 1, status: tc ? undefined : ('pending' as const) };
+    const label = `${pick.day} ${pick.time}`;
     if (tc) setCaseAppointment(tc.id, { today, date: pick.day, time: pick.time, queue, clinic, therapist: who.name });
-    else if (draft) upsertDraft({ ...draft, stage: 'booked', booking: bk });
-    else if (loose) updateLooseBooking(loose.id, bk);
-    else addLooseBooking(bk);
+    else if (draft) {
+      upsertDraft({ ...draft, stage: 'booked', booking: bk });
+      requestBooking({ draftId: draft.id }, label);
+    } else if (loose) {
+      updateLooseBooking(loose.id, bk);
+      requestBooking({ looseId: loose.id }, label);
+    } else requestBooking({ looseId: addLooseBooking(bk) }, label);
     if (newPatient && !tc) setCareStage('booked');
     const named = tc || draft;
     log('ผู้รับบริการ', `${current ? 'เลื่อนนัด' : 'จองนวด'} ${pick.day} ${pick.time} · ${svc.label} · ${who.name}${any ? ' (ไม่ระบุแพทย์)' : ''}${named ? ` · ${topic!.title}` : ''}`);
-    nav.replace('BookingDone', { ...bk, topic: named ? topic!.title : undefined, caution: caution || undefined, moved: !!current });
+    nav.replace('BookingDone', { ...bk, topic: named ? topic!.title : undefined, caution: caution || undefined, moved: !!current, pending: !tc });
   };
 
-  const title = current ? 'เลื่อนนัด' : tc ? `จองครั้งที่ ${Math.min(tc.course.total, tc.course.done + 1)}` : 'จองนวด';
+  // นัดของเรื่องที่รักษาอยู่ = แผนของแพทย์ (คลินิกนัด/เลื่อน/ยกเลิกให้) → ในแอปดูได้อย่างเดียว ติดต่อคลินิก
+  const lockedCase = pre?.caseId ? cases.find((c) => c.id === pre.caseId) : undefined;
+  if (lockedCase) {
+    const has = lockedCase.appointment.date !== '-';
+    return (
+      <Screen header={<AppBar onBack={() => nav.goBack()} title="นัดของการรักษา" />} footer={<Button label={`ติดต่อคลินิก ${clinicPhone(caseClinic(lockedCase))}`} iconLeft="phone" onPress={() => callClinic(caseClinic(lockedCase))} />}>
+        <Panel icon="calendar" tint={TINT.amber} title={has ? `มีนัด ${lockedCase.appointment.date} ${lockedCase.appointment.time}` : 'รอคลินิกนัดครั้งถัดไป'}>
+          <Text variant="bodySm" tone="secondary">
+            {has ? 'นัดของการรักษาเลื่อนหรือยกเลิกได้ที่คลินิก คลินิกจะแก้ไขให้และแจ้งเตือนในแอป' : 'แพทย์จะนัดครั้งถัดไปตามแผนการรักษา และแจ้งเตือนในแอป'}
+          </Text>
+        </Panel>
+      </Screen>
+    );
+  }
+  // นัดเดิมบริการไม่ตรงผลประเมิน → หน้านี้คือ "เปลี่ยนบริการ" (ไม่ใช่แค่เลื่อนเวลา)
+  const wrongService = !!draft?.booking && !draft.keepService && !!serviceMismatch(draft.booking.service, draft.caution);
+  const title = wrongService ? 'เปลี่ยนบริการ' : current ? 'เลื่อนนัด' : tc ? `จองครั้งที่ ${Math.min(tc.course.total, tc.course.done + 1)}` : 'จองนวด';
   return (
     <Screen
       header={<AppBar onBack={() => nav.goBack()} title={title} />}
@@ -197,8 +220,21 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
 
       {current && !red ? (
         <Panel flush>
-          <RowLink icon="calendar" tint={TINT.amber} title={`นัดเดิม ${current.date} ${current.time}`} sub="ยืนยันแล้วนัดใหม่จะแทนนัดนี้" last />
+          <RowLink icon="calendar" tint={TINT.amber} title={`นัดเดิม ${current.date} ${current.time}`} sub={wrongService ? `${draft?.booking?.service ?? ''} · ยืนยันแล้วนัดใหม่จะแทนนัดนี้` : 'ยืนยันแล้วนัดใหม่จะแทนนัดนี้'} last />
         </Panel>
+      ) : null}
+      {/* เปลี่ยนตามคำแนะนำ = ทางเลือก ไม่บังคับ → เปลี่ยนใจใช้แผนเดิมได้ตลอด (เลือกเวลา/แพทย์เองก่อนยืนยัน) */}
+      {wrongService && draft ? (
+        <Button
+          label="ใช้แผนเดิม ไม่เปลี่ยน"
+          variant="ghost"
+          size="md"
+          onPress={() => {
+            upsertDraft({ ...draft, keepService: true });
+            log('ผู้รับบริการ', `คงบริการที่จองไว้ (${draft.booking?.service ?? ''}) แม้ไม่ตรงผลประเมิน`);
+            nav.goBack();
+          }}
+        />
       ) : null}
 
       {red ? null : (
@@ -209,7 +245,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                 key={sv.value}
                 on={service === sv.value}
                 title={sv.label}
-                sub={[sv.value === recommended && (draft || tc) ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'ใช้สิทธิบัตรทองได้' : ''].filter(Boolean).join(' · ') || undefined}
+                sub={[sv.style, sv.value === recommended && (draft || tc) ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
                 onPress={() => pickService(sv.value)}
                 last={i === services.length - 1}
               />
@@ -248,7 +284,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
 }
 
 /** จองสำเร็จ — รายละเอียดนัด + เตรียมตัวก่อนมา (ข้อมูลมากับหน้า ไม่อ่านจากนัดกลาง) */
-export function BookingDoneScreen({ route }: { route: { params: { date: string; time: string; service: string; therapist: string; clinic: string; queue?: string; topic?: string; caution?: string; moved?: boolean } } }) {
+export function BookingDoneScreen({ route }: { route: { params: { date: string; time: string; service: string; therapist: string; clinic: string; queue?: string; topic?: string; caution?: string; moved?: boolean; pending?: boolean } } }) {
   const nav = useNav();
   const { colors } = useTheme();
   const b = route.params;
@@ -256,14 +292,20 @@ export function BookingDoneScreen({ route }: { route: { params: { date: string; 
   const prep = [...(b.caution?.includes('ความดัน') || b.caution?.includes('อบ') ? ['วัดความดันก่อนนวด'] : []), 'งดอาหารหนักก่อนนวด 30 นาที', 'ใส่เสื้อผ้าหลวมสบาย'];
   return (
     <Screen
-      header={<AppBar title={b.moved ? 'เลื่อนนัดแล้ว' : 'จองแล้ว'} />}
+      header={<AppBar title={b.pending ? 'ส่งคำขอแล้ว' : b.moved ? 'เลื่อนนัดแล้ว' : 'จองแล้ว'} />}
       footer={<Button label="กลับหน้าแรก" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />}
     >
       <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[3] }}>
         <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="check" size="lg" color={colors.brand.primary} />
         </View>
-        <Text variant="titleLg">{b.moved ? 'เลื่อนนัดเรียบร้อย' : 'จองเรียบร้อย'}</Text>
+        <Text variant="titleLg">{b.pending ? (b.moved ? 'ส่งคำขอเลื่อนนัดแล้ว' : 'ส่งคำขอจองแล้ว') : b.moved ? 'เลื่อนนัดเรียบร้อย' : 'จองเรียบร้อย'}</Text>
+        {/* คำขอจองจากแอป ต้องให้คลินิกยืนยันก่อน (อาจได้เวลาอื่นถ้าคิวเต็ม) */}
+        {b.pending ? (
+          <Text variant="bodySm" tone="secondary" align="center">
+            รอคลินิกยืนยัน จะแจ้งเตือนในแอปเมื่อยืนยันแล้ว
+          </Text>
+        ) : null}
       </View>
       <View style={{ flexDirection: 'row', gap: space[2] }}>
         <StatTile label="วัน" value={b.date} small />

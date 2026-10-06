@@ -26,6 +26,8 @@ export interface Place {
   kind: 'clinic' | 'hospital';
   /** บริการเสริมที่มี (ใช้จับคู่กับแนวทางการรักษา) */
   services: string[];
+  /** เบอร์โทรคลินิก (ตัวอย่าง) — เลื่อน/ยกเลิกนัดของการรักษาทำผ่านคลินิก */
+  phone?: string;
   /** พิกัด (ตัวอย่าง: ย่านจริงในกรุงเทพฯ) */
   lat: number;
   lng: number;
@@ -35,11 +37,11 @@ export interface Place {
 export const MY_LOCATION = { lat: 13.7305, lng: 100.5672 };
 
 const PLACE_LIST: Place[] = [
-  { id: 'skv', name: 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท', area: 'สุขุมวิท 39', km: 1.2, slots: ['13:00', '15:30'], uc: true, therapy: true, kind: 'clinic', services: ['นวด', 'ประคบ', 'อบ', 'พอก'], lat: 13.7337, lng: 100.5717 },
-  { id: 'ari', name: 'ศูนย์แพทย์แผนไทย อารีย์', area: 'พหลโยธิน 7', km: 3.4, slots: ['10:30', '17:00'], uc: true, therapy: true, kind: 'clinic', services: ['นวด', 'ประคบ', 'แช่'], lat: 13.7795, lng: 100.5446 },
-  { id: 'spa', name: 'บ้านนวดไทย ทองหล่อ', area: 'ทองหล่อ 10', km: 2.1, slots: ['14:00'], uc: false, therapy: false, kind: 'clinic', services: ['นวด'], lat: 13.7347, lng: 100.5826 },
-  { id: 'hsp1', name: 'โรงพยาบาลชุมชน สุขุมวิท', area: 'สุขุมวิท 42', km: 1.8, slots: [], uc: true, therapy: false, kind: 'hospital', services: [], lat: 13.7196, lng: 100.5853 },
-  { id: 'hsp2', name: 'ศูนย์บริการสาธารณสุข คลองเตย', area: 'พระราม 4', km: 2.6, slots: [], uc: true, therapy: false, kind: 'hospital', services: [], lat: 13.7213, lng: 100.5578 },
+  { id: 'skv', phone: '02-258-1234', name: 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท', area: 'สุขุมวิท 39', km: 1.2, slots: ['13:00', '15:30'], uc: true, therapy: true, kind: 'clinic', services: ['นวด', 'ประคบ', 'อบ', 'พอก'], lat: 13.7337, lng: 100.5717 },
+  { id: 'ari', phone: '02-279-5678', name: 'ศูนย์แพทย์แผนไทย อารีย์', area: 'พหลโยธิน 7', km: 3.4, slots: ['10:30', '17:00'], uc: true, therapy: true, kind: 'clinic', services: ['นวด', 'ประคบ', 'แช่'], lat: 13.7795, lng: 100.5446 },
+  { id: 'spa', phone: '02-381-9012', name: 'บ้านนวดไทย ทองหล่อ', area: 'ทองหล่อ 10', km: 2.1, slots: ['14:00'], uc: false, therapy: false, kind: 'clinic', services: ['นวด'], lat: 13.7347, lng: 100.5826 },
+  { id: 'hsp1', phone: '02-391-3456', name: 'โรงพยาบาลชุมชน สุขุมวิท', area: 'สุขุมวิท 42', km: 1.8, slots: [], uc: true, therapy: false, kind: 'hospital', services: [], lat: 13.7196, lng: 100.5853 },
+  { id: 'hsp2', phone: '02-249-7890', name: 'ศูนย์บริการสาธารณสุข คลองเตย', area: 'พระราม 4', km: 2.6, slots: [], uc: true, therapy: false, kind: 'hospital', services: [], lat: 13.7213, lng: 100.5578 },
 ];
 /** คิวว่างวันนี้ = จากตารางที่ผู้ให้บริการลงไว้จริง (ไม่ใช่ค่าตายตัว) → รายการ/แผนที่/หน้าจองตรงกัน */
 export const PLACES: Place[] = PLACE_LIST.map((p) => (p.kind === 'clinic' ? { ...p, slots: anyoneSlots(p.id).filter((f) => f.day === 0).map((f) => f.time) } : p));
@@ -66,6 +68,13 @@ export function rankPlaces(methods: string[], limit = 3): { place: Place; reason
     .slice(0, limit)
     .map(({ p, has }) => ({ place: p, reason: ['มีแพทย์แผนไทย', ...(has.length ? [`มีบริการ${has.join(' ')}`] : []), ...(p.uc ? ['ใช้บัตรทองได้'] : [])].join(' ') }));
 }
+
+/** โทรหาคลินิกตามชื่อ (ไม่พบ = คลินิกหลัก) */
+export const callClinic = (name?: string) => {
+  const p = PLACE_LIST.find((x) => x.name === name) ?? PLACE_LIST[0];
+  if (p.phone) Linking.openURL(`tel:${p.phone.replace(/-/g, '')}`).catch(() => {});
+};
+export const clinicPhone = (name?: string) => (PLACE_LIST.find((x) => x.name === name) ?? PLACE_LIST[0]).phone ?? '';
 
 /** นำทางด้วยแอปแผนที่ (ต้นแบบ: ค้นตามชื่อ) */
 export const openMap = (p: Place) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.area}`)}`);
@@ -205,7 +214,7 @@ export function PlacesSheet({ visible, onClose, onPick, recommendedId }: { visib
                     </View>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[1] }}>
-                    {p.therapy ? <Badge label="แพทย์แผนไทย" tone="brand" /> : <Badge label="นวดผ่อนคลาย" tone="neutral" />}
+                    {p.therapy ? <Badge label="แพทย์แผนไทย" tone="brand" /> : <Badge label="นวดเพื่อสุขภาพ" tone="neutral" />}
                     {p.uc ? <Badge label="บัตรทอง" tone="success" /> : null}
                   </View>
                   {p.slots.length ? (

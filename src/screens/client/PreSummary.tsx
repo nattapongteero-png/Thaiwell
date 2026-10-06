@@ -22,7 +22,7 @@ import {
   safetyMeta,
   useTheme,
   type RegionId,
- Panel, TINT, fontFamily, space } from '../../design-system';
+ Panel, TINT, Tag, fontFamily, space } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { useAppointment } from '../../state/appointments';
@@ -135,29 +135,49 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
   const target = route?.params ?? {};
   // นัดของเรื่องที่แตะมา (ไม่ใช่นัดล่าสุดที่จอง)
   const appt = useAppointment(target);
+  const { caseToday, clinicCloseVisit } = useJourney();
   if (!appt) return <NotFoundScreen title="เช็กอิน" message="ยังไม่มีนัดสำหรับเช็กอิน" />;
+  // ต้นแบบ: ข้ามช่วงนวด → คลินิกปิดการรักษาในหลังบ้าน (ครั้งใหม่ + คะแนนของคลินิก + บิล) → หน้าผลลัพธ์ของเรื่องนี้
+  // นัดเรื่องใหม่ที่ยังไม่ได้เล่าอาการ (ไม่มีใบ) → แบบประเมินหลังนวดแบบเดิม
+  const finish = () => {
+    const caseId = appt.target.looseId ? undefined : clinicCloseVisit(appt.target);
+    if (caseId) nav.navigate('SessionResult', { caseId });
+    else nav.navigate('PostAssessment', appt.target);
+  };
+  // เรื่องที่รักษาอยู่: ต้องประเมินอาการก่อนนวดครั้งนี้ (คะแนนวันนี้ + อาการหลังนวดครั้งก่อน + ข้อห้ามใหม่)
+  const pre = target.caseId ? caseToday[target.caseId] : undefined;
+  const needPre = appt.kind === 'case' && !pre;
+  const blocked = appt.red || !!pre?.red;
   return (
     <Screen
       header={<AppBar title="เช็กอิน" onBack={() => nav.goBack()} />}
       footer={
-        appt.today && !appt.red ? (
+        appt.today && !blocked && !appt.pending ? (
           <>
-            {/* ยังไม่ได้เล่าอาการ → แนะนำให้เล่าก่อน (ไม่บังคับ) */}
+            {/* ยังไม่ได้เล่าอาการ / ยังไม่ได้ประเมินก่อนนวดครั้งนี้ → ทำก่อน (ผู้ให้บริการเห็นก่อนถึงคิว) */}
             {appt.assessed ? null : <Button label="เล่าอาการก่อนเข้ารับบริการ" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />}
+            {needPre ? <Button label="ประเมินก่อนนวด" onPress={() => nav.popTo('ClientTabs', { screen: 'Home', params: { assessCase: target.caseId } })} /> : null}
             {/* ต้นแบบ: ข้ามช่วงที่ผู้ให้บริการนวด → ไปหลังรับบริการ (ของเรื่องนี้) */}
-            <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={() => nav.navigate('PostAssessment', appt.target)} />
+            <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={finish} />
           </>
         ) : (
           <Button label="กลับ" variant="secondary" onPress={() => nav.goBack()} />
         )
       }
     >
-      {appt.red ? (
+      {blocked ? (
         <Panel icon="alert-triangle" tint={TINT.red} title="ควรพบแพทย์ก่อนนวด">
           <Text variant="bodySm" tone="secondary">
             ผลประเมินมีสัญญาณที่ต้องให้แพทย์ตรวจก่อน แนะนำเลื่อนนัดนี้
           </Text>
           <Button label="ดูคำแนะนำ" variant="secondary" size="md" onPress={() => nav.navigate('RedFlag', { reason: appt.topic })} />
+        </Panel>
+      ) : appt.pending ? (
+        // คำขอจองยังไม่ได้รับการยืนยัน → ยังเช็กอินไม่ได้
+        <Panel icon="clock" tint={TINT.amber} title="รอคลินิกยืนยันนัด">
+          <Text variant="bodySm" tone="secondary">
+            {appt.date} {appt.time} · {appt.clinic} จะแจ้งเตือนในแอปเมื่อยืนยันแล้ว
+          </Text>
         </Panel>
       ) : !appt.today ? (
         // เช็กอินได้เฉพาะวันนัด
@@ -190,7 +210,9 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
             {(
               [
                 // ส่งข้อมูลแล้วจริงเฉพาะเมื่อเล่าอาการแล้ว
-                [appt.assessed ? 'ส่งข้อมูลอาการให้ผู้ให้บริการแล้ว' : 'เล่าอาการให้ผู้ให้บริการ', appt.assessed],
+                appt.kind === 'case'
+                  ? [pre ? `ประเมินก่อนนวดแล้ว · วันนี้ปวด ${pre.pain}/10` : 'ประเมินอาการก่อนนวด', !!pre]
+                  : [appt.assessed ? 'ส่งข้อมูลอาการให้ผู้ให้บริการแล้ว' : 'เล่าอาการให้ผู้ให้บริการ', appt.assessed],
                 ['วัดความดันและชีพจรก่อนนวด', false],
                 ['ตกลงแผนการนวดร่วมกัน', false],
               ] as [string, boolean][]
@@ -252,8 +274,7 @@ export function RedFlagScreen({ route }: { route?: { params?: { reason?: string 
       </View>
 
       {reasons.length || reds.length ? (
-        <Card>
-          <Text variant="titleSm">สิ่งที่ระบบพบ</Text>
+        <Panel title="สิ่งที่ระบบพบ">
           {reasons.map((r) => (
             <Text key={r} variant="bodyMd">
               {r}
@@ -263,17 +284,21 @@ export function RedFlagScreen({ route }: { route?: { params?: { reason?: string 
             <VStack key={h.ruleId} gap={1}>
               <HStack justify="space-between">
                 <Text variant="bodyMd">{h.title}</Text>
-                <Badge label={h.ruleId} tone="danger" />
+                <Tag text={h.ruleId} tone="bad" />
               </HStack>
               <Text variant="bodySm" tone="secondary">
                 ข้อมูล: {h.evidence}
               </Text>
             </VStack>
           ))}
-        </Card>
+        </Panel>
       ) : null}
 
-      <Banner tone="info" title="หากมีอาการต่อไปนี้ ให้โทร 1669 ทันที" message="ชาหรืออ่อนแรงครึ่งซีก พูดไม่ชัด เจ็บแน่นหน้าอก ปวดศีรษะรุนแรงเฉียบพลัน" />
+      <Panel icon="phone" tint={TINT.red} title="โทร 1669 ทันทีถ้ามีอาการเหล่านี้">
+        <Text variant="bodySm" tone="secondary">
+          ชาหรืออ่อนแรงครึ่งซีก พูดไม่ชัด เจ็บแน่นหน้าอก ปวดศีรษะรุนแรงเฉียบพลัน
+        </Text>
+      </Panel>
     </Screen>
   );
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, View } from 'react-native';
-import { AppBar, Button, Icon, Screen, Text, useTheme } from '../../../design-system';
+import { AppBar, Button, Icon, Panel, Screen, Tag, Text, useTheme } from '../../../design-system';
 import { radius, space } from '../../../design-system/tokens';
 import { useNav } from '../../../navigation/types';
 import { therapistsAt } from '../../../data/booking';
@@ -22,21 +22,9 @@ export function PlaceDetailScreen({ route }: { route: { params: { id: string } }
   const hospital = p.kind === 'hospital';
   const staff = therapistsAt(p.id);
 
-  const card = (title: string, children: React.ReactNode) => (
-    <View style={{ gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
-      <Text variant="bodyXs" tone="secondary">
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
-  const pill = (t: string, on = false) => (
-    <View key={t} style={{ height: 32, paddingHorizontal: space[3], justifyContent: 'center', borderRadius: radius.full, backgroundColor: on ? colors.brand.subtle : colors.surface.sunken }}>
-      <Text variant="labelSm" color={on ? colors.brand.primary : colors.text.primary}>
-        {t}
-      </Text>
-    </View>
-  );
+  // การ์ดชุดเดียวกับหน้าอื่น (Panel: หัวข้อหนา · ข้อมูลข้างใน)
+  const card = (title: string, children: React.ReactNode) => <Panel title={title}>{children}</Panel>;
+  const pill = (t: string) => <Tag key={t} text={t} tone="good" />;
   /** มี/ไม่มี: ชื่อซ้าย · สถานะขวา (มี = ✓ เขียว · ไม่มี = ✕ แดง) */
   const fact = (label: string, ok: boolean) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
@@ -102,7 +90,7 @@ export function PlaceDetailScreen({ route }: { route: { params: { id: string } }
         </View>
       ) : null}
 
-      {p.services.length ? card('บริการ', <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{p.services.map((s) => pill(s, true))}</View>) : null}
+      {p.services.length ? card('บริการ', <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{p.services.map((s) => pill(s))}</View>) : null}
     </Screen>
   );
 }

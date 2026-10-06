@@ -8,6 +8,8 @@ import type { ClientTabParamList, ProviderTabParamList, RootStackParamList } fro
 import { HomeScreen } from '../screens/client/HomeScreen';
 import { ConsentScreen } from '../screens/client/Onboarding';
 import { AuthScreen, SignupInfoScreen } from '../screens/client/Auth';
+import { NotificationsScreen } from '../screens/client/NotificationsScreen';
+import { BillScreen, BillsScreen } from '../screens/client/BillScreen';
 import { PlacesScreen } from '../screens/client/PlacesScreen';
 import { ProgressScreen, ProfileScreen, PrivacyScreen, TreatmentHistoryScreen } from '../screens/client/ClientTabs';
 import { BookingDoneScreen, BookingScreen } from '../screens/client/BookingScreen';
@@ -93,6 +95,9 @@ export function RootNavigator() {
         <Stack.Screen name="AppointmentDetail" component={AppointmentDetailScreen as never} />
         <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen as never} />
         <Stack.Screen name="TreatmentHistory" component={TreatmentHistoryScreen as never} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="Bills" component={BillsScreen} />
+        <Stack.Screen name="Bill" component={BillScreen as never} />
         <Stack.Screen name="RedFlag" component={RedFlagScreen} options={{ animation: 'fade_from_bottom' }} />
 
         <Stack.Screen name="PostAssessment" component={PostAssessmentScreen} />

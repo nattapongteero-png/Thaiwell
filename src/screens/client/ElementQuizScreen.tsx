@@ -15,6 +15,8 @@ import {
   radius,
   space,
   useTheme,
+  Panel,
+  ReplyChips,
 } from '../../design-system';
 import {
   ELEMENT_INFO,
@@ -44,7 +46,7 @@ export function ElementQuizScreen() {
 
   return (
     <Screen
-      header={<AppBar title="ธาตุเจ้าเรือนของคุณ" subtitle="ประเมินจากลักษณะร่างกายและนิสัย 14 ข้อ" onBack={() => nav.goBack()} />}
+      header={<AppBar title="ธาตุเจ้าเรือนของคุณ" onBack={() => nav.goBack()} />}
       footer={
         <Button
           label={done ? 'บันทึกผลธาตุเจ้าเรือน' : `ตอบแล้ว ${answered}/${ELEMENT_QUIZ.length} ข้อ`}
@@ -58,10 +60,7 @@ export function ElementQuizScreen() {
       }
     >
       {done || hasSaved ? (
-      <Card>
-        <Text variant="bodyXs" tone="secondary">
-          {done ? 'ผลประเมินล่าสุด' : 'ผลที่บันทึกไว้'} · ธาตุเจ้าเรือนปัจจุบัน
-        </Text>
+      <Panel title={done ? 'ผลประเมินล่าสุด' : 'ผลที่บันทึกไว้'}>
         <ElementSummary percent={pct[top]} name={info.label} advice={info.advice} />
         <VStack gap={2}>
           {ORDER.map((k) => (
@@ -80,29 +79,27 @@ export function ElementQuizScreen() {
         </VStack>
         <Text variant="bodySm">แนวโน้ม: {info.tendency}</Text>
         {info.foods ? <Text variant="bodySm">อาหารที่ช่วยปรับสมดุล: {info.foods}</Text> : null}
-      </Card>
+      </Panel>
       ) : null}
 
-      <SectionHeader title="เลือกข้อที่ตรงกับคุณที่สุด" subtitle="ข้อละ 1 คำตอบ" />
+      {/* 14 ข้อ ข้อละ 1 คำตอบ · ความคืบหน้าบอกที่ปุ่มด้านล่าง */}
       <ProgressBar value={answered / ELEMENT_QUIZ.length} />
       {ELEMENT_QUIZ.map((q, i) => {
         const labels = ORDER.map((k) => q.options[k]);
         const current = answers[i] ? q.options[answers[i]!] : undefined;
         return (
-          <Card key={q.topic} style={{ gap: space[2] }}>
-            <ChipSection
-              title={`${i + 1}. ${q.topic}`}
+          <Panel key={q.topic} title={`${i + 1}. ${q.topic}`}>
+            <ReplyChips
               options={labels}
-              value={current ? [current] : []}
-              onChange={(v) => {
-                const picked = v[v.length - 1];
+              selected={current}
+              onPick={(picked) => {
                 const key = ORDER.find((k) => q.options[k] === picked);
                 const next = [...answers];
                 next[i] = key;
                 setAnswers(next);
               }}
             />
-          </Card>
+          </Panel>
         );
       })}
     </Screen>

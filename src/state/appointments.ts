@@ -26,11 +26,25 @@ export interface ApptView {
   assessed: boolean;
   /** ผลประเมินให้พบแพทย์ก่อน */
   red: boolean;
+  /** คำขอจองจากแอป ยังรอคลินิกยืนยัน (ยังเช็กอินไม่ได้) */
+  pending: boolean;
 }
 
 export const CASE_CLINIC_DEFAULT = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 /** สถานที่ของเรื่องที่รักษาอยู่ — นัดครั้งถัดไปต้องที่เดิม (ประวัติ/แผนการรักษาอยู่ที่นั่น) */
 export const caseClinic = (c: Pick<TreatmentCase, 'clinic'>) => c.clinic || CASE_CLINIC_DEFAULT;
+
+/**
+ * บริการที่จองไว้ ไม่ตรงกับผลประเมิน (เช่น จองนวดเพื่อสุขภาพไว้ก่อนประเมิน แต่อาการต้องนวดเพื่อรักษา) → ข้อความเตือน · ตรง = null
+ * นวดเพื่อสุขภาพ = หมอนวด (ไม่ใช่การรักษา) · ผลประเมินให้งดประคบ/อบ แต่จองแบบมีประคบ
+ */
+export function serviceMismatch(service: string | undefined, caution?: string): string | null {
+  if (!service) return null;
+  // นวดเพื่อการรักษา = "เพื่อการรักษา" / "ร่วมประคบ" · นอกนั้น (เพื่อสุขภาพ · นวดเท้า · ประคบอย่างเดียว) ไม่ใช่การนวดรักษา
+  if (!/เพื่อการรักษา|ร่วมประคบ/.test(service)) return `จอง${service.split(' · ')[0]}ไว้ แต่อาการนี้ควรนวดเพื่อรักษากับแพทย์แผนไทย`;
+  if (service.includes('ประคบ') && /ประคบ|อบ/.test(caution ?? '')) return 'จองแบบมีประคบไว้ แต่ผลประเมินให้งดประคบ/อบร้อน';
+  return null;
+}
 
 /** นัดทุกนัดของผู้ใช้ (ใช้กันจองเวลาชนกัน) · key = เป้าหมายของนัดนั้น */
 export function useAllAppointments() {
@@ -65,6 +79,7 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
       prep: tc.prep,
       assessed: true,
       red: false,
+      pending: false,
     };
   }
   if (t?.draftId) {
@@ -86,6 +101,7 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
       prep: [...(d.caution?.includes('ความดัน') || d.caution?.includes('อบ') ? ['วัดความดันก่อนนวด'] : []), ...BASE_PREP],
       assessed: true,
       red: d.red,
+      pending: b.status === 'pending',
     };
   }
   // นัดเรื่องใหม่: ระบุ looseId · ไม่ระบุ = นัดแรก (มีนัดเดียว)
@@ -105,5 +121,6 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
     prep: BASE_PREP,
     assessed: false,
     red: false,
+    pending: booking.status === 'pending',
   };
 }

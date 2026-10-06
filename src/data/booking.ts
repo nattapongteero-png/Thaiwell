@@ -9,9 +9,11 @@
  * ⚠️ ต้นแบบ: ตารางผู้ให้บริการเป็นข้อมูลตัวอย่าง · เกณฑ์ความเร่งด่วนยังไม่ได้ให้แพทย์แผนไทยตรวจ
  */
 
-/** ประเภทบริการ (ตรงกับ SERVICES ในหน้าจอง) */
-export type ServiceId = 'royal' | 'royal+compress' | 'relax';
-export const SERVICE_SHORT: Record<ServiceId, string> = { royal: 'นวดราชสำนัก', 'royal+compress': 'นวด + ประคบ', relax: 'ผ่อนคลาย' };
+/** ประเภทบริการ — ชุดเดียวกับหลังบ้าน ThaiWellAI (s1–s5) · ตรงกับ SERVICES ในหน้าจอง */
+export type ServiceId = 'royal' | 'royal+compress' | 'relax' | 'compress' | 'foot';
+export const SERVICE_SHORT: Record<ServiceId, string> = { royal: 'นวดรักษา', 'royal+compress': 'นวด + ประคบ', relax: 'นวดสุขภาพ', compress: 'ประคบ', foot: 'นวดเท้า' };
+/** รหัสบริการของหลังบ้าน (Service.id) — ใช้ตอนส่งคำขอจอง/รับนัดจากคลินิก */
+export const SERVICE_CODE: Record<ServiceId, string> = { relax: 's1', royal: 's2', compress: 's3', foot: 's4', 'royal+compress': 's5' };
 
 /** ช่วงเวลาที่ผู้ให้บริการลงตารางไว้ + บริการที่รับในช่วงนั้น (แบบ shift.services ของหลังบ้าน ThaiWellAI) */
 export interface FreeSlot {
@@ -24,7 +26,7 @@ export interface FreeSlot {
 export interface Therapist {
   id: string;
   name: string;
-  /** แพทย์แผนไทย = นวดเพื่อรักษาได้ (health profile 2568 หน้า 34) · หมอนวด = ผ่อนคลาย/ดูแลทั่วไป */
+  /** แพทย์แผนไทย = นวดเพื่อรักษาได้ (health profile 2568 หน้า 34) · หมอนวด = นวดเพื่อสุขภาพ/ดูแลทั่วไป */
   role: 'แพทย์แผนไทย' | 'หมอนวด';
   /** ช่วงว่างที่ลงตารางไว้ (แต่ละช่วงรับบริการต่างกันได้) */
   free: FreeSlot[];
@@ -38,21 +40,23 @@ export interface Therapist {
 const R: ServiceId = 'royal';
 const RC: ServiceId = 'royal+compress';
 const X: ServiceId = 'relax';
+const C: ServiceId = 'compress';
+const F: ServiceId = 'foot';
 
 /** ตารางผู้ให้บริการแต่ละสถานที่ (id ตรงกับ PLACES) · แพทย์ลงเองว่าช่วงไหนรับบริการอะไร */
 export const THERAPIST_SCHEDULE: Record<string, Therapist[]> = {
   skv: [
-    { id: 'malee', name: 'พท.ป. มาลี ใจดี', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 8, focus: ['คอ บ่า ไหล่', 'ออฟฟิศซินโดรม'], free: [{ day: 0, time: '15:30', services: [R, RC] }, { day: 1, time: '13:00', services: [R] }, { day: 1, time: '15:00', services: [RC] }, { day: 3, time: '10:30', services: [R, X] }] },
+    { id: 'malee', name: 'พท.ป. มาลี ใจดี', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 8, focus: ['คอ บ่า ไหล่', 'ออฟฟิศซินโดรม'], free: [{ day: 0, time: '15:30', services: [R, RC] }, { day: 1, time: '13:00', services: [R, C] }, { day: 1, time: '15:00', services: [RC] }, { day: 3, time: '10:30', services: [R, X] }] },
     { id: 'anan', name: 'พท.ป. อนันต์ สุขใจ', role: 'แพทย์แผนไทย', sex: 'ชาย', years: 12, focus: ['ปวดหลัง', 'ข้อเข่า'], free: [{ day: 0, time: '17:00', services: [RC] }, { day: 2, time: '09:00', services: [R, RC] }, { day: 4, time: '14:00', services: [R] }] },
-    { id: 'somjai', name: 'คุณสมใจ รักษ์ไทย', role: 'หมอนวด', sex: 'หญิง', years: 5, focus: ['นวดผ่อนคลาย'], free: [{ day: 0, time: '13:00', services: [X] }, { day: 1, time: '17:00', services: [X] }, { day: 2, time: '10:30', services: [X] }] },
+    { id: 'somjai', name: 'คุณสมใจ รักษ์ไทย', role: 'หมอนวด', sex: 'หญิง', years: 5, focus: ['นวดเพื่อสุขภาพ'], free: [{ day: 0, time: '13:00', services: [X, F] }, { day: 1, time: '17:00', services: [X] }, { day: 2, time: '10:30', services: [X, F] }] },
   ],
   ari: [
     { id: 'pim', name: 'พท.ป. พิมพ์ชนก แสงดี', role: 'แพทย์แผนไทย', sex: 'หญิง', years: 6, focus: ['ไหล่ติด', 'นิ้วล็อก'], free: [{ day: 1, time: '10:30', services: [R, RC] }, { day: 3, time: '13:00', services: [X] }, { day: 5, time: '13:00', services: [R] }] },
-    { id: 'chai', name: 'คุณชัย มือเบา', role: 'หมอนวด', sex: 'ชาย', years: 4, focus: ['นวดผ่อนคลาย'], free: [{ day: 0, time: '17:00', services: [X] }, { day: 2, time: '15:00', services: [X] }] },
+    { id: 'chai', name: 'คุณชัย มือเบา', role: 'หมอนวด', sex: 'ชาย', years: 4, focus: ['นวดเพื่อสุขภาพ'], free: [{ day: 0, time: '17:00', services: [X, F] }, { day: 2, time: '15:00', services: [X] }] },
   ],
   // ร้านนวดทั่วไป: ไม่มีแพทย์แผนไทย → รับเฉพาะนวดผ่อนคลาย
   spa: [
-    { id: 'noi', name: 'คุณน้อย ใจเย็น', role: 'หมอนวด', sex: 'หญิง', years: 9, focus: ['นวดผ่อนคลาย', 'นวดเท้า'], free: [{ day: 0, time: '14:00', services: [X] }, { day: 1, time: '11:00', services: [X] }] },
+    { id: 'noi', name: 'คุณน้อย ใจเย็น', role: 'หมอนวด', sex: 'หญิง', years: 9, focus: ['นวดเพื่อสุขภาพ', 'นวดเท้า'], free: [{ day: 0, time: '14:00', services: [X, F] }, { day: 1, time: '11:00', services: [X, F] }] },
   ],
 };
 

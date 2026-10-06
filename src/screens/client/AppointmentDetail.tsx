@@ -2,11 +2,11 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { AppBar, Button, Icon, IconBox, InfoRow, Panel, Screen, TINT, Text, useHideTabs, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
-import { useAppointment } from '../../state/appointments';
+import { serviceMismatch, useAppointment } from '../../state/appointments';
 import { NotFoundScreen } from './NotFound';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
-import { PLACES, openMap } from './PlacesScreen';
+import { PLACES, callClinic, clinicPhone, openMap } from './PlacesScreen';
 
 /**
  * รายละเอียดนัด — เข้าจากการแตะการ์ดนัดบนหน้าแรก
@@ -27,6 +27,8 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   const appt = useAppointment(target);
   if (!appt) return <NotFoundScreen title="รายละเอียดนัด" message="นัดนี้ถูกยกเลิกหรือใช้ไปแล้ว" />;
   const place = PLACES.find((p) => p.name === appt.clinic);
+  const draftOf = drafts.find((d) => d.id === target.draftId);
+  const mismatch = appt.kind === 'draft' && !appt.red && !draftOf?.keepService ? serviceMismatch(appt.service, draftOf?.caution) : null;
 
   const cancel = () => {
     if (appt.kind === 'case' && target.caseId) cancelAppointment(target.caseId);
@@ -55,14 +57,21 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
           </View>
         ) : (
           <View style={{ gap: space[2] }}>
-            {appt.today && !appt.red ? <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', appt.target)} /> : null}
-            {/* เลื่อนนัดของเรื่องเดิม (ไม่ใช่จองเรื่องใหม่) */}
-            <Button label="เลื่อนนัด" iconLeft="edit-2" variant="secondary" onPress={() => nav.navigate('Booking', { clinic: appt.clinic, ...appt.target })} />
-            <Pressable accessibilityRole="button" onPress={() => setConfirming(true)} style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
-              <Text variant="labelLg" color={colors.status.danger.fg}>
-                ยกเลิกนัด
-              </Text>
-            </Pressable>
+            {appt.today && !appt.red && !appt.pending ? <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', appt.target)} /> : null}
+            {appt.kind === 'case' ? (
+              // นัดของการรักษา: เลื่อน/ยกเลิกทำที่คลินิกเท่านั้น (หลังบ้านโรงพยาบาลแก้แล้วแอปแจ้งเตือน)
+              <Button label={`ติดต่อคลินิก ${clinicPhone(appt.clinic)}`} iconLeft="phone" variant="secondary" onPress={() => callClinic(appt.clinic)} />
+            ) : (
+              <>
+                {/* นัดที่ยังไม่ได้รักษา (จองเองในแอป) → เลื่อน/ยกเลิกเองได้ */}
+                <Button label="เลื่อนนัด" iconLeft="edit-2" variant="secondary" onPress={() => nav.navigate('Booking', { clinic: appt.clinic, ...appt.target })} />
+                <Pressable accessibilityRole="button" onPress={() => setConfirming(true)} style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text variant="labelLg" color={colors.status.danger.fg}>
+                    ยกเลิกนัด
+                  </Text>
+                </Pressable>
+              </>
+            )}
           </View>
         )
       }
@@ -119,6 +128,39 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
           ) : null}
         </View>
       </View>
+
+      {/* จองไว้ก่อนประเมิน แล้วผลประเมินต้องการบริการอื่น → เปลี่ยนบริการในนัดนี้ */}
+      {mismatch ? (
+        <Panel icon="alert-triangle" tint={TINT.amber} title="บริการไม่ตรงผลประเมิน">
+          <Text variant="bodySm" tone="secondary">
+            {mismatch}
+          </Text>
+          {/* ไม่บังคับ: เปลี่ยนตามคำแนะนำ หรือใช้แผนเดิม */}
+          <Button label="เปลี่ยนตามคำแนะนำ" size="md" onPress={() => nav.navigate('Booking', { clinic: appt.clinic, ...appt.target })} />
+          <Button
+            label="ใช้แผนเดิม"
+            variant="secondary"
+            size="md"
+            onPress={() => {
+              if (draftOf) upsertDraft({ ...draftOf, keepService: true });
+              log('ผู้รับบริการ', `คงบริการที่จองไว้ (${appt.service}) แม้ไม่ตรงผลประเมิน`);
+            }}
+          />
+        </Panel>
+      ) : null}
+
+      {appt.pending ? (
+        <Panel icon="clock" tint={TINT.amber} title="รอคลินิกยืนยัน">
+          <Text variant="bodySm" tone="secondary">
+            ส่งคำขอจองแล้ว คลินิกจะยืนยันและแจ้งเตือนในแอป ถ้าคิวเต็มคลินิกอาจติดต่อเพื่อเลือกเวลาใหม่
+          </Text>
+        </Panel>
+      ) : null}
+      {appt.kind === 'case' ? (
+        <Text variant="bodySm" tone="secondary">
+          ต้องการเลื่อนหรือยกเลิกนัด ติดต่อคลินิก คลินิกจะแก้ไขให้และแจ้งเตือนในแอป
+        </Text>
+      ) : null}
 
       <Panel icon="clipboard" tint={TINT.green} title="ข้อมูลนัด">
         <InfoRow k="ผู้ให้บริการ" v={appt.therapist} />

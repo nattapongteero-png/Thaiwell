@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, ReplyChips, Text, componentTokens, radius, space, useTheme } from '../../../design-system';
-import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, PRESSURE_OPTIONS, RISK_OPTIONS, type AssessStep, type Assessment } from '../../../data/homeFeed';
+import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, PRESSURE_OPTIONS,
+  AVOID_OPTIONS, RISK_OPTIONS, type AssessStep, type Assessment } from '../../../data/homeFeed';
 import { PillButton } from './ThreadCards';
 
 /**
@@ -148,6 +149,8 @@ export function AssessWidget({
       return <ReplyChips options={RISK_OPTIONS} onPick={(o) => onNext(o === 'ไม่มี' ? 'ไม่มีข้อไหนตรง' : o, { risk: o })} />;
     case 'pressure':
       return <ReplyChips options={PRESSURE_OPTIONS} onPick={(o) => onNext(o === PRESSURE_OPTIONS[3] ? o : `แรงนวด${o}`, { pressure: o })} />;
+    case 'avoid':
+      return <ReplyChips options={AVOID_OPTIONS} onPick={(o) => onNext(o === 'ไม่มี' ? 'นวดได้ทุกส่วน' : `ไม่นวด${o}`, { avoid: o })} />;
   }
 }
 
@@ -188,6 +191,7 @@ export function AssessmentTracker({
     health: assess.health,
     risk: assess.risk,
     pressure: assess.pressure,
+    avoid: assess.avoid,
   };
   // หุ่นสูงเท่ารายการคำตอบ · กว้างตามสัดส่วนหุ่น (0.53) ไม่เกินราวครึ่งการ์ด
   const [listH, setListH] = React.useState(0);

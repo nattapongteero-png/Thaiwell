@@ -152,7 +152,7 @@ export function ProfileScreen() {
   const loading = useScreenData('profile');
   const nav = useNav();
   const { colors, textScale, setTextScale } = useTheme();
-  const { client, profile, setProfile, signOut, elements, newPatient, account, cases, drafts, looseBookings, log } = useJourney();
+  const { client, profile, setProfile, signOut, elements, newPatient, account, cases, drafts, looseBookings, log, bills } = useJourney();
   const { elementsDone } = useJourney();
   const element = newPatient && account && !elementsDone ? birthElement(account.birthDate) : dominantElement(elements);
   const visits = cases.reduce((n, c) => n + c.visits.length, 0);
@@ -207,6 +207,8 @@ export function ProfileScreen() {
       </Panel>
 
       <Panel title="การตั้งค่า" flush>
+        {/* บิลจากคลินิก (จ่ายในแอป) + ใบเสร็จ */}
+        <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
         <RowLink icon="type" tint={TINT.slate} title="ตัวอักษรขนาดใหญ่" sub="สำหรับผู้สูงอายุ" right={<Switch value={textScale > 1} onChange={(v) => setTextScale(v ? 1.2 : 1)} label="ตัวอักษรขนาดใหญ่" />} />
         <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" />

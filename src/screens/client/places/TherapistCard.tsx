@@ -28,7 +28,7 @@ export function TherapistCard({ t, selected, onPick, badge, compact }: { t: Ther
             {t.name}
           </Text>
           <Text variant="bodyXs" color={doctor ? colors.brand.primary : colors.text.secondary}>
-            {doctor ? 'แพทย์แผนไทย · นวดเพื่อรักษา' : 'หมอนวด · ผ่อนคลาย'}
+            {doctor ? 'แพทย์แผนไทย · นวดเพื่อรักษา' : 'หมอนวด · นวดเพื่อสุขภาพ'}
           </Text>
         </View>
       </View>

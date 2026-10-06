@@ -15,6 +15,8 @@ import {
   VStack,
   useTheme,
   type IconName,
+  Panel,
+  Tag,
 } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -51,11 +53,7 @@ export function ConsentScreen({ route }: { route?: { params?: { from?: 'signup' 
         เราใช้ข้อมูลของคุณเท่าที่จำเป็นเพื่อความปลอดภัยในการนวด เลือกได้ว่าจะอนุญาตเรื่องใดบ้าง
       </Text>
 
-      <Card>
-        <HStack justify="space-between">
-          <Text variant="titleSm">จำเป็นสำหรับการรับบริการ</Text>
-          <Badge label="จำเป็น" tone="neutral" />
-        </HStack>
+      <Panel title="จำเป็นสำหรับการรับบริการ" right={<Tag text="จำเป็น" />}>
         <Checkbox
           label="ใช้ข้อมูลสุขภาพเพื่อคัดกรองและให้บริการ"
           description="อาการ โรคประจำตัว ยา — ผู้ให้บริการที่ดูแลคุณเท่านั้นที่เห็น"
@@ -69,13 +67,9 @@ export function ConsentScreen({ route }: { route?: { params?: { from?: 'signup' 
           checked={consents.aiProcessing}
           onChange={(v) => setConsents({ ...consents, aiProcessing: v })}
         />
-      </Card>
+      </Panel>
 
-      <Card>
-        <HStack justify="space-between">
-          <Text variant="titleSm">เลือกได้ตามต้องการ</Text>
-          <Badge label="ไม่บังคับ" tone="neutral" />
-        </HStack>
+      <Panel title="เลือกได้ตามต้องการ" right={<Tag text="ไม่บังคับ" />}>
         <Checkbox
           label="ติดตามอาการหลังรับบริการ"
           description="แจ้งเตือนผ่าน MyAtlas หลังนวด 1, 3 และ 7 วัน"
@@ -89,7 +83,7 @@ export function ConsentScreen({ route }: { route?: { params?: { from?: 'signup' 
           checked={consents.research}
           onChange={(v) => setConsents({ ...consents, research: v })}
         />
-      </Card>
+      </Panel>
 
       <Button label="อ่านนโยบายฉบับเต็ม" variant="ghost" iconRight="external-link" fullWidth={false} />
 

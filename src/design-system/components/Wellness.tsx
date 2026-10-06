@@ -229,8 +229,19 @@ export function PainScoreCard({
   onPick,
   width,
   before,
+  subtitle,
+  title = 'Pain Score',
+  strongTitle,
+  padding,
 }: {
+  /** ระยะขอบในการ์ด (ค่าเริ่มต้นตาม token) — หน้าแรกส่งค่าเดียวกับการ์ดอื่นใน bento ให้หัวการ์ดตรงกัน */
+  padding?: number;
   value: number;
+  /** หัวการ์ด · strongTitle = ตัวหนาแบบหัวการ์ดอื่นในหน้าแรก (labelMd) */
+  title?: string;
+  strongTitle?: boolean;
+  /** ข้อความเล็กชิดขวาแถวหัวการ์ด เช่น "ครั้งที่ 5 · 30 ส.ค." (ผลของครั้งไหน) */
+  subtitle?: string;
   /** คะแนนก่อนรักษา → การ์ดเปรียบเทียบ: value = หลังรักษา (ตัวใหญ่) · แถวล่างบอกจากเท่าไหร่ ดีขึ้น/แย่ลงกี่ % */
   before?: number;
   onChange?: (v: number) => void;
@@ -284,7 +295,7 @@ export function PainScoreCard({
         width: width ?? t.width,
         borderRadius: t.radius,
         backgroundColor: colors.surface.raised,
-        paddingTop: t.padding,
+        paddingTop: padding ?? t.padding,
         // กราฟวางชิดล่างแบบ absolute → เว้นที่ใต้ตัวเลขเท่าความสูงกราฟส่วนที่ไม่ซ้อน (ทุกแพลตฟอร์มเหมือนกัน ไม่ขึ้นกับความสูงบรรทัดของฟอนต์)
         paddingBottom: chart ? chartBelow : space[4],
         gap: space[2],
@@ -292,10 +303,17 @@ export function PainScoreCard({
       }}
     >
       {/* ข้อความอยู่ชั้นบนกราฟ · box-none ให้ลากกราฟผ่านพื้นที่ว่างได้ */}
-      <View pointerEvents="box-none" style={{ paddingHorizontal: t.padding, gap: space[2], zIndex: 1 }}>
-        <Text variant="bodyXs" tone="secondary">
-          Pain Score
-        </Text>
+      <View pointerEvents="box-none" style={{ paddingHorizontal: padding ?? t.padding, gap: space[2], zIndex: 1 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space[2] }}>
+          <Text variant={strongTitle ? 'labelMd' : 'bodyXs'} tone={strongTitle ? undefined : 'secondary'}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text variant="bodyXs" tone="tertiary" numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
         {before !== undefined ? (
           // เทียบก่อน/หลังในการ์ดเดียว (ค่าเล็กลง วางคู่กัน)
           <View style={{ flexDirection: 'row', gap: space[2] }}>

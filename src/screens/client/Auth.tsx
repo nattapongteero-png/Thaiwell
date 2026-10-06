@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AppBar, Button, Card, Divider, Icon, Screen, SegmentedControl, Text, TextField, VStack, useTheme, type IconName } from '../../design-system';
+import { AppBar, Button, InfoRow, Panel, Tag, Icon, Screen, SegmentedControl, Text, TextField, VStack, useTheme, type IconName } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney, type AuthProvider } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -234,53 +234,15 @@ export function SignupInfoScreen({ route }: { route: { params: { provider: AuthP
 
   return (
     <Screen
-      header={<AppBar title={missing ? 'ข้อมูลเพิ่มเติม' : 'ตรวจสอบข้อมูล'} subtitle={`เข้าสู่ระบบด้วย ${d.label}`} onBack={() => nav.goBack()} />}
+      header={<AppBar title={missing ? 'ข้อมูลเพิ่มเติม' : 'ตรวจสอบข้อมูล'} onBack={() => nav.goBack()} />}
       footer={<Button label={ready ? 'ถัดไป: ความยินยอม' : 'กรอกข้อมูลให้ครบ'} disabled={!ready} onPress={next} />}
     >
-      {/* ได้มาแล้วจากช่องทางที่เข้าสู่ระบบ */}
-      <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-          <Icon name="check-circle" size="sm" color={colors.brand.primary} />
-          <Text variant="titleSm">ได้จาก {d.label} แล้ว</Text>
-          {d.verified ? (
-            <View style={{ marginLeft: 'auto', paddingHorizontal: space[2], height: 22, borderRadius: radius.full, backgroundColor: colors.brand.subtle, justifyContent: 'center' }}>
-              <Text variant="caption" color={colors.brand.primary}>
-                ยืนยันตัวตนแล้ว
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        <VStack gap={2}>
-          {d.got.map((g) => (
-            <View key={g.field} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
-              <Text variant="bodySm" tone="secondary">
-                {g.field}
-              </Text>
-              <Text variant="bodySm" style={{ flexShrink: 1, textAlign: 'right' }}>
-                {g.value}
-              </Text>
-            </View>
-          ))}
-        </VStack>
-        {d.health ? (
-          <>
-            <Divider />
-            <Text variant="labelMd">ประวัติสุขภาพจากโรงพยาบาล</Text>
-            <VStack gap={2}>
-              {d.health.map((g) => (
-                <View key={g.field} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
-                  <Text variant="bodySm" tone="secondary">
-                    {g.field}
-                  </Text>
-                  <Text variant="bodySm" style={{ flexShrink: 1, textAlign: 'right' }}>
-                    {g.value}
-                  </Text>
-                </View>
-              ))}
-            </VStack>
-          </>
-        ) : null}
-      </Card>
+      {/* ได้มาแล้วจากช่องทางที่เข้าสู่ระบบ (Panel ชุดเดียวกับหน้าอื่น) */}
+      <Panel title={`ได้จาก ${d.label} แล้ว`} right={d.verified ? <Tag text="ยืนยันตัวตนแล้ว" tone="good" /> : undefined}>
+        {d.got.map((g) => (
+          <InfoRow key={g.field} k={g.field} v={g.value} />
+        ))}
+      </Panel>
 
       {/* ถามเฉพาะที่ขาด */}
       {missing ? (

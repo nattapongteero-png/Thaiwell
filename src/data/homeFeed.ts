@@ -30,7 +30,7 @@ export type ThreadCard =
   | { type: 'safety'; level: 'green' | 'amber' | 'red'; items: { id: string; title: string; evidence: string; source: string }[] }
   | { type: 'element' }
   | { type: 'plan'; title: string; by: string; approved: boolean; adjustments: string[]; points: string[] }
-  | { type: 'appointment'; time: string; place: string; queue?: string; waitMin?: number; /** นัดที่จองไว้ (ไม่ใช่วันนี้) */ date?: string; therapist?: string; service?: string; /** นัดของเรื่องไหน (เช็กอิน/เลื่อนนัดของเรื่องนั้น) */ caseId?: string; draftId?: string }
+  | { type: 'appointment'; time: string; place: string; queue?: string; waitMin?: number; /** นัดที่จองไว้ (ไม่ใช่วันนี้) */ date?: string; therapist?: string; service?: string; /** นัดของเรื่องไหน (เช็กอิน/เลื่อนนัดของเรื่องนั้น) */ caseId?: string; draftId?: string; /** บริการที่จองไม่ตรงผลประเมิน → เตือน + ปุ่มเปลี่ยนบริการ */ warn?: string }
   | { type: 'selfcare'; name: string; dosage: string; streak: number }
   | { type: 'guideline'; condition?: string; methods: string[]; points: string[]; pins?: BodyPin[]; caution?: string; ref: string; /** จองไว้แล้ว → ไม่เสนอให้จองอีก */ booked?: boolean }
   /** ขั้นต่อไปหลังประเมิน: จองนวด (หรือพบแพทย์ถ้ามีสัญญาณอันตราย) */
@@ -43,13 +43,19 @@ export type ThreadCard =
   | { type: 'fuAsk'; sessionId: string; pin: string; label: string; before: number }
   /** ติดตามผล: อาการผิดปกติหลังนวด */
   | { type: 'fuAdverse' }
+  /** ก่อนนวดครั้งถัดไป: มีข้อห้ามใหม่ไหม */
+  | { type: 'fuRisk' }
+  /** บริการที่จองไม่ตรงผลประเมิน → ถามผู้ใช้ว่าจะเปลี่ยนตามคำแนะนำหรือใช้แผนเดิม (ไม่บังคับ) */
+  | { type: 'planChoice'; draftId: string; clinic: string }
   /** จองกับ AI ในแชท: สถานที่ที่แนะนำ → เวลาว่าง → ยืนยัน */
   | { type: 'placePick'; options: { id: string; name: string; km: number; reason: string; slot: string }[] }
-  | { type: 'therapistPick'; placeId: string; /** บริการที่จอง → แสดงเฉพาะคนที่ลงตารางรับบริการนี้ */ service?: 'royal' | 'royal+compress' | 'relax'; options: { id: string; name: string; role: string; next: string; recommended: boolean }[] }
+  | { type: 'therapistPick'; placeId: string; /** บริการที่จอง → แสดงเฉพาะคนที่ลงตารางรับบริการนี้ */ service?: 'royal' | 'royal+compress' | 'relax' | 'compress' | 'foot'; options: { id: string; name: string; role: string; next: string; recommended: boolean }[] }
   | { type: 'slotPick'; placeId: string; therapistId: string; options: string[] }
   | { type: 'bookConfirm'; placeId: string; therapistId: string; name: string; day: string; time: string; service: string; therapist: string; topic: string }
   /** อาการยังไม่ดีขึ้น → ถามว่าตรงไหนยังปวด (ให้ผู้ให้บริการเน้น) */
   | { type: 'fuWhere'; options: string[] }
+  /** ถามยืนยันก่อนทำต่อ (เช่น ร้องเรียน/อาการแย่ลง → แจ้งคลินิกไหม) · payload = ข้อความเดิมของผู้ใช้ */
+  | { type: 'choice'; kind: 'complaint'; options: string[]; payload: string }
   /** สรุปประวัติการรักษาของเรื่องหนึ่งแบบ bento ในแชท */
   | { type: 'history'; caseId: string }
   /** ปุ่มทำต่อในคำตอบของ AI */
@@ -62,20 +68,21 @@ export type ThreadCard =
       plan: { summary: string; cautions: string[]; style: string; minutes: string; phases: { title: string; minutes: string; steps: string[] }[]; aftercare: string[] };
       refs: { f: string; p: number; quote: string }[];
     }
-  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' };
+  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' | 'CallClinic' };
 
 /* ---------- การประเมินอาการในแชท ----------
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)
  * ครบทุกข้อแล้ว AI จึงสรุปและแสดง "แนวทางการรักษา & จุดกดบำบัด"
  */
-export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'risk' | 'pressure' | 'radiate' | 'done';
+export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'risk' | 'pressure' | 'avoid' | 'radiate' | 'done';
 /**
  * ลำดับคำถาม — ครบตามการประเมินแรกรับ (เกณฑ์มาตรฐานฯ หน้า 33):
  * อาการ → อาการร่วม (red flag) → ความปวด → ระยะเวลา → มูลเหตุ (มูลเหตุเกิดโรค 8 ประการ) → โรคประจำตัว/ยา (ข้อห้าม + ปฏิกิริยาสมุนไพร–ยา)
  */
 // + ข้อห้ามช่วงนี้ (ผ่าตัด บาดเจ็บ ไข้ ตั้งครรภ์ แผล: ตำราอ้างอิงฯ หน้า 391, CPG หน้า 139) → แรงนวดที่ชอบ (ใช้วางแผนการนวด)
 // อาการร้าว: ถามต่อจากอาการเฉพาะเมื่ออาการนั้นมีรูปแบบการร้าว (data/radiation.ts)
-export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure'];
+// + บริเวณที่ไม่ต้องการให้นวด (แบบประเมินก่อนรับบริการของหลังบ้าน: avoidAreas)
+export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid'];
 
 export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; text: string }> = {
   idle: { label: '', text: '' },
@@ -90,9 +97,13 @@ export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; te
   health: { label: 'โรคประจำตัว', text: 'มีโรคประจำตัวหรือยาที่ทานประจำไหมคะ?' },
   risk: { label: 'ข้อห้ามนวด', text: 'ช่วงนี้มีข้อไหนตรงกับคุณไหมคะ? ข้อเหล่านี้อาจทำให้ยังนวดไม่ได้ค่ะ' },
   pressure: { label: 'แรงนวด', text: 'ชอบแรงนวดแบบไหนคะ?' },
+  avoid: { label: 'ไม่ให้นวด', text: 'มีบริเวณไหนที่ไม่ต้องการให้นวดไหมคะ?' },
 };
+/** บริเวณที่ไม่ต้องการให้นวด (ส่งเป็น avoidAreas ในแบบประเมินก่อนรับบริการ) */
+export const AVOID_OPTIONS = ['ไม่มี', 'ศีรษะ/ใบหน้า', 'คอ', 'ท้อง', 'หลัง', 'ขา/เท้า'];
 /** ข้อห้าม/ข้อควรระวังช่วงนี้ → safetyEngine (ตำราอ้างอิงฯ หน้า 391 · CPG หน้า 139) */
-export const RISK_OPTIONS = ['ผ่าตัดภายใน 1 เดือน', 'บาดเจ็บภายใน 2 วัน', 'มีไข้', 'ตั้งครรภ์', 'มีแผลหรือผื่นตรงที่ปวด', 'ไม่มี'];
+// + ประจำเดือน (งดนวดท้อง) · โรคติดต่อ (เลื่อนนัด) — ตามแบบคัดกรองของหลังบ้าน ThaiWellAI
+export const RISK_OPTIONS = ['ผ่าตัดภายใน 1 เดือน', 'บาดเจ็บภายใน 2 วัน', 'มีไข้', 'ตั้งครรภ์', 'มีแผลหรือผื่นตรงที่ปวด', 'มีประจำเดือน', 'โรคติดต่อ', 'ไม่มี'];
 export const PRESSURE_OPTIONS = ['เบา', 'ปานกลาง', 'หนัก', 'ให้ผู้ให้บริการเลือก'];
 /** มูลเหตุเกิดโรค 8 ประการ (เกณฑ์มาตรฐานฯ หน้า 33) — ภาษาที่คนทั่วไปเข้าใจ */
 export const CAUSE_OPTIONS = ['นั่ง/ยืนนาน', 'ยกของหนัก ทำงานหนัก', 'อดนอน', 'เครียด', 'อากาศร้อน/เย็น', 'กินไม่ตรงเวลา', 'ไม่แน่ใจ'];
@@ -116,6 +127,8 @@ export interface Assessment {
   risk?: string;
   /** แรงนวดที่ชอบ */
   pressure?: string;
+  /** บริเวณที่ไม่ต้องการให้นวด */
+  avoid?: string;
   /** ถามก่อนเริ่มเมื่อมีใบอยู่แล้ว: ชื่อใบเดิม หรือ NEW_TOPIC */
   topic?: string;
   /** ประเมินซ้ำเรื่องเดิม: ใช้คำตอบโรคประจำตัวชุดเดิม (ข้ามข้อนี้) */
@@ -149,7 +162,7 @@ export interface ThreadItem {
 export const HOME_SNAPSHOT = {
   stage: 2,
   /** คำแนะนำเหนือช่องแชท */
-  suggestions: ['เล่าอาการใหม่', 'ผลก่อน–หลัง', 'ขอเลื่อนนัด', 'ท่ายืดวันนี้'],
+  suggestions: ['เล่าอาการใหม่', 'ผลก่อน–หลัง', 'นัดครั้งถัดไป', 'ท่ายืดวันนี้'],
 };
 
 const nowTime = () => {
@@ -321,8 +334,11 @@ export interface ChatSession {
 export const INTENTS = ['ปวดตรงไหน ประเมินอาการ', 'หาที่นวดใกล้ฉัน', 'ธาตุของฉันบอกอะไร', 'นวดไทยช่วยอะไรได้บ้าง'];
 /** อาการผิดปกติหลังนวด (ปวด บวม ชา มากขึ้นหลังรักษา = ส่งต่อ, CPG หน้า 139) */
 export const FU_ADVERSE = ['ไม่มี', 'ระบม/ช้ำ', 'ปวดมากขึ้น', 'ชา/อ่อนแรง'];
+/** ก่อนนวดครั้งถัดไป: ข้อห้ามใหม่ที่ต้องรู้ (ไข้/บาดเจ็บใหม่ = เลื่อนนัด · ยาใหม่ = แจ้งผู้ให้บริการ) */
+export const FU_RISK = ['ไม่มี', 'มีไข้', 'บาดเจ็บใหม่', 'เริ่มยาใหม่'];
 /** คำถามแนะนำในแชทของเรื่องที่รักษาอยู่ (ติดตามผลกับ AI) */
-export const CASE_INTENTS = ['อาการตอนนี้', 'ดูผลการรักษา', 'ขอเลื่อนนัด'];
+/** นัดของการรักษา: ผู้ใช้ดูนัด/จองครั้งถัดไปได้ · เลื่อน/ยกเลิกต้องผ่านคลินิก (หลังบ้านโรงพยาบาล) */
+export const CASE_INTENTS = ['อาการตอนนี้', 'ดูผลการรักษา', 'นัดครั้งถัดไป'];
 /** แชทของเรื่องที่รักษาอยู่ — AI ทักพร้อมสรุปสั้น ๆ */
 export const caseChatSession = (title: string, summary: string): ChatSession => ({
   id: `cc${Date.now()}`,
@@ -430,7 +446,8 @@ export interface TreatmentCase {
   /** บริเวณที่นวดในใบนี้ (mark บนหุ่น) */
   areas: FollowUpArea[];
   /** คะแนนปวดก่อน/หลังทุกครั้ง (เก่า → ใหม่) */
-  visits: { date: string; painBefore: number; painAfter: number }[];
+  /** painAfter = คะแนนที่คลินิกบันทึกตอนปิดการรักษา (ค่าหลัก) · selfPain = ผู้ใช้บอกเองในแอป (เสริม) */
+  visits: { date: string; painBefore: number; painAfter: number; selfPain?: number }[];
   /** ครั้งที่ยังค้างติดตามผล (ล่าสุดก่อน) — ให้คะแนนแยกทีละบริเวณ */
   pending: PendingSession[];
   /** นัดครั้งถัดไปของใบนี้ (แต่ละโรคนัดคนละวัน) · today = วันนี้ → เช็กอินได้ */

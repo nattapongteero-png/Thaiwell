@@ -80,6 +80,8 @@ export interface Booking {
   queue?: string;
   /** ครั้งที่เท่าไหร่ของคอร์ส */
   visit: number;
+  /** จองจากแอป = คำขอจอง รอเจ้าหน้าที่คลินิกยืนยัน (หลังบ้าน: คำขอจองคิว) · ไม่ระบุ = ยืนยันแล้ว */
+  status?: 'pending' | 'confirmed';
 }
 export type LooseBooking = Booking & { id: string };
 /** สรุปจากการประเมินกับ AI (ใช้ต่อในหน้าจอง / หน้าแรก / ผู้ให้บริการ) */
@@ -118,7 +120,11 @@ export interface DraftCase {
   /** ข้อห้ามนวด / แรงนวดที่ตอบไว้ (ประเมินซ้ำไม่ต้องถามใหม่) */
   risk?: string;
   pressure?: string;
+  /** บริเวณที่ไม่ต้องการให้นวด */
+  avoid?: string;
   radiate?: string;
+  /** ผู้ใช้เลือกคงบริการที่จองไว้ แม้ไม่ตรงผลประเมิน (ไม่บังคับเปลี่ยน · ไม่เตือนซ้ำ) */
+  keepService?: boolean;
 }
 
 /**
@@ -242,8 +248,85 @@ interface JourneyState {
   cases: TreatmentCase[];
   /** นวดครั้งนี้ของใบการรักษาเสร็จ → เพิ่มครั้งการรักษา · นับคอร์ส · นัดนี้ใช้ไปแล้ว */
   recordCaseVisit: (caseId: string, painBefore: number, painAfter: number) => void;
+  /**
+   * คลินิกปิดการรักษาครั้งนี้ในหลังบ้าน (เช็กเอาต์/ออกบิล) → แอปได้ครั้งใหม่ + คะแนนหลังนวดของคลินิก + บิล
+   * ไม่ขึ้นกับว่าผู้ใช้กรอกแบบประเมินหลังนวดหรือไม่ · คืน id ใบการรักษา
+   * ⚠️ ต้นแบบ: จำลองคะแนนของคลินิก + แจ้งเตือนติดตามผลวันถัดไป (มาหลังจากนี้ไม่กี่วินาที)
+   */
+  clinicCloseVisit: (target: { caseId?: string; draftId?: string }) => string | undefined;
+  /** ความรู้สึกหลังนวดที่ผู้ใช้บอกเอง (ครั้งล่าสุด) — แสดงคู่กับคะแนนของคลินิก */
+  setVisitSelfPain: (caseId: string, pain: number) => void;
   /** ออกเลขคิว (เฉพาะนัดวันนี้) */
   issueQueue: () => string;
+  /**
+   * อาการล่าสุดก่อนนวดครั้งถัดไปของแต่ละเรื่อง (ประเมินก่อนนวด / อัปเดตอาการ) — ผู้ให้บริการเห็นก่อนถึงคิว
+   * ใช้เป็นคะแนน "ก่อน" ของครั้งที่จะนวด · นวดเสร็จแล้วล้าง (รอบหน้าประเมินใหม่)
+   */
+  caseToday: Record<string, CaseToday>;
+  setCaseToday: (caseId: string, v: CaseToday) => void;
+  /** แจ้งเตือนจากคลินิก: เลื่อน/ยกเลิกนัดของการรักษา (ผู้ใช้เปลี่ยนเองไม่ได้ — หลังบ้านโรงพยาบาลแก้แล้วแจ้งมา) */
+  apptNotices: ApptNotice[];
+  /** อ่านแล้ว (ยังอยู่ในรายการ) */
+  dismissNotice: (id: string) => void;
+  markAllNoticesRead: () => void;
+  /** บิล/ใบเสร็จจากคลินิก (หลังบ้านส่งบิลมาให้จ่ายในแอป · จ่ายแล้วได้ใบเสร็จ) */
+  bills: Bill[];
+  payBill: (id: string) => void;
+  /** ส่งคำขอจองไปคลินิก (ต้นแบบ: จำลองว่าเจ้าหน้าที่ยืนยันหลังไม่กี่วินาที แล้วแจ้งเตือนในแอป) */
+  requestBooking: (target: { draftId?: string; looseId?: string }, label: string) => void;
+}
+
+export interface Bill {
+  id: string;
+  caseId?: string;
+  title: string;
+  /** วันที่รับบริการ */
+  date: string;
+  items: { name: string; amount: number }[];
+  total: number;
+  status: 'pending' | 'paid';
+  receiptNo?: string;
+  paidAt?: string;
+}
+const SAMPLE_BILLS: Bill[] = [
+  { id: 'b-lung-3', caseId: 'case-lung', title: 'รักษาภูมิแพ้ ครั้งที่ 3', date: '16 ส.ค.', items: [{ name: 'นวดหน้า ศีรษะ ไหล่', amount: 350 }, { name: 'ลูกประคบสมุนไพร', amount: 50 }], total: 400, status: 'pending' },
+  { id: 'b-office-5', caseId: 'case-office', title: 'รักษาออฟฟิศซินโดรม ครั้งที่ 5', date: '30 ส.ค.', items: [{ name: 'นวดไทยเพื่อการรักษา', amount: 450 }], total: 450, status: 'paid', receiptNo: 'RC2569-000123', paidAt: '30 ส.ค. 12:20' },
+];
+
+export interface ApptNotice {
+  id: string;
+  /** แจ้งเตือนของเรื่องไหน (ใบการรักษา / ใบร่าง / นัดเรื่องใหม่) */
+  caseId?: string;
+  draftId?: string;
+  looseId?: string;
+  /**
+   * จากหลังบ้านคลินิก: moved เลื่อนนัด · cancelled ยกเลิกนัด · confirmed ยืนยันนัด · rejected ปฏิเสธคำขอจอง · reminder เตือนก่อนถึงนัด
+   * noshow ไม่มาตามนัด · waitlist มีคิวว่าง · bill บิลรอชำระ · receipt ใบเสร็จ · followup ชวนอัปเดตอาการหลังนวด
+   */
+  kind: 'moved' | 'cancelled' | 'confirmed' | 'rejected' | 'reminder' | 'noshow' | 'waitlist' | 'bill' | 'receipt' | 'followup';
+  /** บิล/ใบเสร็จที่เกี่ยวข้อง */
+  billId?: string;
+  text: string;
+  /** เวลาที่คลินิกแจ้ง */
+  at: string;
+  read?: boolean;
+}
+/** ตัวอย่าง: คลินิกเลื่อนนัดรักษาภูมิแพ้ (ข้อมูลจริงมาจากหลังบ้าน ThaiWellAI เมื่อเจ้าหน้าที่ "ยืนยันนัดใหม่" / "ยกเลิกนัด") */
+const SAMPLE_NOTICES: ApptNotice[] = [{ id: 'n-lung-moved', caseId: 'case-lung', kind: 'moved', text: 'คลินิกเลื่อนนัดรักษาภูมิแพ้ จาก พ. 8 ต.ค. 13:00 เป็น พฤ. 9 ต.ค. 14:00', at: 'วันนี้ 08:15' },
+  { id: 'n-lung-bill', caseId: 'case-lung', kind: 'bill', billId: 'b-lung-3', text: 'บิลรักษาภูมิแพ้ ครั้งที่ 3 รอชำระ 400 บาท', at: 'วันนี้ 08:00' },
+  { id: 'n-office-reminder', caseId: 'case-office', kind: 'reminder', text: 'วันนี้ 10:30 มีนัดรักษาออฟฟิศซินโดรม อย่าลืมประเมินก่อนนวด', at: 'วันนี้ 07:00' },
+  { id: 'n-office-confirmed', caseId: 'case-office', kind: 'confirmed', text: 'คลินิกยืนยันนัดรักษาออฟฟิศซินโดรม วันนี้ 10:30', at: 'เมื่อวาน 17:40', read: true },
+  { id: 'n-office-receipt', caseId: 'case-office', kind: 'receipt', billId: 'b-office-5', text: 'ใบเสร็จรักษาออฟฟิศซินโดรม ครั้งที่ 5 · 450 บาท', at: '30 ส.ค. 12:20', read: true },
+];
+
+export interface CaseToday {
+  pain: number;
+  /** อาการหลังนวดครั้งก่อน (ไม่มี / ระบม / ปวดมากขึ้น / ชา-อ่อนแรง) */
+  adverse?: string;
+  /** ข้อห้ามใหม่ก่อนนวด (ไม่มี / มีไข้ / บาดเจ็บใหม่ / เริ่มยาใหม่) */
+  risk?: string;
+  /** ควรพบแพทย์ก่อนนวดครั้งถัดไป */
+  red?: boolean;
 }
 
 /** นัดของใบการรักษา (จองในแชท) */
@@ -311,7 +394,31 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [caseVisits, setCaseVisits] = useState<Record<string, TreatmentCase['visits']>>({});
   const queueNo = React.useRef(11);
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
+  const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>({});
+  const [apptNotices, setApptNotices] = useState<ApptNotice[]>(SAMPLE_NOTICES);
+  const dismissNotice = useCallback((id: string) => setApptNotices((all) => all.map((n) => (n.id === id ? { ...n, read: true } : n))), []);
+  const markAllNoticesRead = useCallback(() => setApptNotices((all) => all.map((n) => ({ ...n, read: true }))), []);
+  const [bills, setBills] = useState<Bill[]>(SAMPLE_BILLS);
+  const requestBooking = useCallback((target: { draftId?: string; looseId?: string }, label: string) => {
+    setTimeout(() => {
+      const confirm = (b: Booking): Booking => ({ ...b, status: 'confirmed', queue: b.date === 'วันนี้' ? `A${++queueNo.current}` : undefined });
+      if (target.draftId) setDrafts((all) => all.map((d) => (d.id === target.draftId && d.booking ? { ...d, booking: confirm(d.booking) } : d)));
+      if (target.looseId) setLooseBookings((all) => all.map((b) => (b.id === target.looseId ? { ...confirm(b), id: b.id } : b)));
+      const d = new Date();
+      setApptNotices((all) => [{ id: `n-ok-${Date.now()}`, ...target, kind: 'confirmed', text: `คลินิกยืนยันนัด ${label}`, at: `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }, ...all]);
+    }, 6000);
+  }, []);
+  const payBill = useCallback((id: string) => {
+    const d = new Date();
+    const at = `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    setBills((all) => all.map((b) => (b.id === id ? { ...b, status: 'paid', paidAt: at, receiptNo: `RC2569-${String(124 + all.indexOf(b)).padStart(6, '0')}` } : b)));
+    // บิลนี้จ่ายแล้ว → แจ้งเตือนบิลถือว่าอ่านแล้ว
+    setApptNotices((all) => all.map((n) => (n.billId === id ? { ...n, read: true } : n)));
+  }, []);
+  const setCaseToday = useCallback((caseId: string, v: CaseToday) => setCaseTodayState((m) => ({ ...m, [caseId]: v })), []);
   const recordCaseVisit = useCallback((caseId: string, painBefore: number, painAfter: number) => {
+    // นวดครั้งนี้แล้ว → ประเมินก่อนนวดรอบนี้ใช้ไปแล้ว
+    setCaseTodayState((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== caseId)));
     setCaseVisits((m) => ({ ...m, [caseId]: [...(m[caseId] ?? []), { date: 'วันนี้', painBefore, painAfter }] }));
     // นัดนี้ใช้แล้ว → ยังไม่มีนัดครั้งถัดไป
     setCaseAppts((m) => ({ ...m, [caseId]: { today: false, date: '-', time: '-', clinic: m[caseId]?.clinic ?? '', therapist: m[caseId]?.therapist ?? '' } }));
@@ -332,6 +439,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setConsents({ service: false, aiProcessing: false, followUp: true, research: false });
     // ไม่ให้ข้อมูลของบัญชีก่อนหน้าค้าง (บันทึกการเข้าถึง · ธาตุ · คะแนนก่อน/หลัง · ฯลฯ)
     setCaseVisits({});
+    setCaseTodayState({});
+    setApptNotices(SAMPLE_NOTICES);
+    setBills(SAMPLE_BILLS);
     setAudit([{ at: '09:02', actor: 'ผู้รับบริการ', action: 'ลงทะเบียนผ่าน MyAtlas' }]);
     setElementsState({ ไฟ: 45, ลม: 25, น้ำ: 20, ดิน: 10 });
     setElementsDone(false);
@@ -387,6 +497,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         return {
           ...c,
           visits: [...c.visits, ...extra],
+          // ครั้งที่นวดเพิ่ม → มีรอบติดตามผลของครั้งนั้น (ล่าสุดอยู่หน้า)
+          pending: [...extra.map((v, i) => ({ id: `sess-${c.id}-${c.visits.length + i + 1}`, date: v.date, plan: c.plan, areas: c.areas })).reverse(), ...c.pending],
           course: { ...c.course, done: Math.min(c.course.total, c.course.done + extra.length) },
           therapist: a?.therapist || c.therapist,
           appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue } : c.appointment,
@@ -394,6 +506,42 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       }),
     [newPatient, promoted, caseAppts, cancelledAppts, caseVisits],
   );
+  const nowAt = () => {
+    const d = new Date();
+    return `วันนี้ ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const clinicCloseVisit = useCallback(
+    (target: { caseId?: string; draftId?: string }) => {
+      const tc = cases.find((c) => c.id === target.caseId);
+      const d = drafts.find((x) => x.id === target.draftId);
+      if (!tc && !d) return undefined;
+      const caseId = tc?.id ?? `case-${d!.id}`;
+      const title = tc?.short ?? d!.title;
+      // ก่อนนวด = ประเมินก่อนนวดวันนี้ / หลังนวดครั้งก่อน · หลังนวด = คลินิกบันทึก (จำลอง)
+      const painBefore = tc ? caseToday[tc.id]?.pain ?? tc.visits[tc.visits.length - 1].painAfter : d!.pain;
+      const painAfter = Math.max(0, painBefore - 2);
+      const no = tc ? tc.visits.length + 1 : 1;
+      if (tc) recordCaseVisit(tc.id, painBefore, painAfter);
+      else promoteDraft(d!.id, painAfter);
+      const service = tc ? tc.plan : d!.booking?.service ?? 'นวดไทยเพื่อการรักษา';
+      const billId = `b-${caseId}-${no}`;
+      setBills((all) => [{ id: billId, caseId, title: `${title} ครั้งที่ ${no}`, date: 'วันนี้', items: [{ name: service, amount: 450 }], total: 450, status: 'pending' }, ...all.filter((b) => b.id !== billId)]);
+      setApptNotices((all) => [{ id: `n-bill-${billId}`, caseId, kind: 'bill', billId, text: `บิล${title} ครั้งที่ ${no} รอชำระ 450 บาท`, at: nowAt() }, ...all]);
+      // วันถัดไป: ถามอาการหลังนวด (ต้นแบบ: มาหลังจากนี้ 8 วินาที)
+      setTimeout(
+        () => setApptNotices((all) => [{ id: `n-fu-${caseId}-${no}`, caseId, kind: 'followup', text: `หลังนวด${title}เมื่อวาน อาการเป็นยังไงบ้าง`, at: 'จำลอง: วันถัดไป 09:00' }, ...all]),
+        8000,
+      );
+      return caseId;
+    },
+    [cases, drafts, caseToday, recordCaseVisit, promoteDraft],
+  );
+  const setVisitSelfPain = useCallback((caseId: string, pain: number) => {
+    const withSelf = (vs: TreatmentCase['visits']) => vs.map((v, i) => (i === vs.length - 1 ? { ...v, selfPain: pain } : v));
+    // ครั้งล่าสุดอยู่ในครั้งที่นวดเพิ่ม (ถ้ามี) ไม่เช่นนั้นเป็นครั้งแรกของใบที่มาจากใบร่าง
+    if (caseVisits[caseId]?.length) setCaseVisits((m) => ({ ...m, [caseId]: withSelf(m[caseId]) }));
+    else setPromoted((cs) => cs.map((c) => (c.id === caseId ? { ...c, visits: withSelf(c.visits) } : c)));
+  }, [caseVisits]);
 
   const sendFollowUp = useCallback(
     async (p: Omit<FollowUpPayload, 'hn' | 'channel'>) => {
@@ -463,7 +611,19 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     signOut,
     cases,
     recordCaseVisit,
+    clinicCloseVisit,
+    setVisitSelfPain,
     issueQueue,
+    caseToday,
+    setCaseToday,
+    // แจ้งเตือนเฉพาะเรื่องที่มีอยู่จริงของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
+    apptNotices: apptNotices.filter((n) => (n.caseId ? cases.some((c) => c.id === n.caseId) : n.draftId ? drafts.some((d) => d.id === n.draftId) : n.looseId ? looseBookings.some((b) => b.id === n.looseId) : true)),
+    dismissNotice,
+    markAllNoticesRead,
+    // บิลเฉพาะเรื่องของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
+    bills: bills.filter((b) => !b.caseId || cases.some((c) => c.id === b.caseId)),
+    payBill,
+    requestBooking,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
