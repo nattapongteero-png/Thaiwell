@@ -3,7 +3,7 @@ import { useIsFocused, useRoute } from '@react-navigation/native';
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
 import { Gesture, GestureDetector, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import {
   AIThreadMessage,
   Body3D,
@@ -4298,20 +4298,20 @@ function CourseTrend({ values, total }: { values: (number | undefined)[]; total:
 }
 
 /**
- * หน้าแรกผู้ใช้ใหม่ (ยังไม่มีข้อมูล): ลูกแก้ว AI + วงแสงกระเพื่อม · ข้อความชวน · ปุ่มดำ · สิ่งที่ AI ช่วยได้
+ * หน้าแรกผู้ใช้ใหม่ (ยังไม่มีข้อมูล): ลูกแก้ว AI + แสงออโรร่าหมุนรอบ · ข้อความชวน · ปุ่มดำ · สิ่งที่ AI ช่วยได้
  * แตะลูกแก้วหรือปุ่ม = เริ่มคุยกับ ThaiWell AI · ขนาดลูกแก้วปรับตามพื้นที่ (จอเล็กไม่ล้น)
  */
 function WelcomeHero({ height, onPress }: { height: number; onPress: () => void }) {
   const { colors } = useTheme();
   const orb = Math.round(Math.max(72, Math.min(120, height - 270)));
-  const rings = React.useRef([new Animated.Value(0), new Animated.Value(0)]).current;
+  // แสงออโรร่า 2 ชั้น หมุนสวนทางกันคนละความเร็ว → แสงฟุ้งเปลี่ยนรูปตลอด ไม่ซ้ำจังหวะ
+  const spin = React.useRef([new Animated.Value(0), new Animated.Value(0)]).current;
   React.useEffect(() => {
-    const loops = rings.map((v, i) =>
-      Animated.loop(Animated.sequence([Animated.delay(i * 1300), Animated.timing(v, { toValue: 1, duration: 2600, easing: Easing.out(Easing.quad), useNativeDriver: true }), Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: true })])),
-    );
+    const loops = spin.map((v, i) => Animated.loop(Animated.timing(v, { toValue: 1, duration: i === 0 ? 9000 : 14000, easing: Easing.linear, useNativeDriver: true })));
     loops.forEach((l) => l.start());
     return () => loops.forEach((l) => l.stop());
-  }, [rings]);
+  }, [spin]);
+  const halo = Math.round(orb * 2);
   const features: { icon: React.ComponentProps<typeof Icon>['name']; text: string }[] = [
     { icon: 'activity', text: 'ประเมินอาการ' },
     { icon: 'heart', text: 'ท่ายืดแนะนำ' },
@@ -4320,22 +4320,36 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
   return (
     <View style={{ alignItems: 'center', gap: space[4], paddingHorizontal: space[5] }}>
       <Pressable accessibilityRole="button" accessibilityLabel="ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ width: orb, height: orb, alignItems: 'center', justifyContent: 'center', marginBottom: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}>
-        {/* วงแสงกระเพื่อมออกจากลูกแก้ว (สลับจังหวะ 2 วง) */}
-        {rings.map((v, i) => (
+        {/* แสงออโรร่าหลังลูกแก้ว: ก้อนแสงสีชุด AI ขอบจาง (radial) วางเยื้องศูนย์ แล้วหมุนช้า ๆ */}
+        {spin.map((v, layer) => (
           <Animated.View
-            key={i}
+            key={layer}
             pointerEvents="none"
             style={{
               position: 'absolute',
-              width: orb,
-              height: orb,
-              borderRadius: orb / 2,
-              borderWidth: 2,
-              borderColor: AI_GRAD[i === 0 ? 2 : 1],
-              opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
-              transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] }) }],
+              width: halo,
+              height: halo,
+              opacity: layer === 0 ? 0.9 : 0.7,
+              transform: [{ rotate: v.interpolate({ inputRange: [0, 1], outputRange: layer === 0 ? ['0deg', '360deg'] : ['360deg', '0deg'] }) }],
             }}
-          />
+          >
+            <Svg width={halo} height={halo}>
+              <Defs>
+                {AI_GRAD.map((c, i) => (
+                  <RadialGradient key={c} id={`au${layer}${i}`} cx="50%" cy="50%" r="50%">
+                    <Stop offset="0" stopColor={c} stopOpacity={0.55} />
+                    <Stop offset="1" stopColor={c} stopOpacity={0} />
+                  </RadialGradient>
+                ))}
+              </Defs>
+              {AI_GRAD.map((c, i) => {
+                // ก้อนแสงรอบศูนย์กลาง ชั้นที่สองเหลื่อมมุม 45° · รัศมีพอให้ล้นขอบลูกแก้วเป็นแสงฟุ้ง
+                const a = ((i * 90 + layer * 45) * Math.PI) / 180;
+                const d = halo * 0.14;
+                return <Circle key={c} cx={halo / 2 + Math.cos(a) * d} cy={halo / 2 + Math.sin(a) * d} r={halo * 0.34} fill={`url(#au${layer}${i})`} />;
+              })}
+            </Svg>
+          </Animated.View>
         ))}
         <View style={{ borderRadius: orb / 2, shadowColor: '#8B6BFF', shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
           <AIBall size={orb} />
