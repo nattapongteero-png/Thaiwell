@@ -4311,7 +4311,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
     loops.forEach((l) => l.start());
     return () => loops.forEach((l) => l.stop());
   }, [spin]);
-  const halo = Math.round(orb * 2);
+  const halo = Math.round(orb * 1.5);
   const features: { icon: React.ComponentProps<typeof Icon>['name']; text: string }[] = [
     { icon: 'activity', text: 'ประเมินอาการ' },
     { icon: 'heart', text: 'ท่ายืดแนะนำ' },
