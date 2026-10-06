@@ -115,6 +115,7 @@ import { AssessWidget, AssessmentTracker } from './home/Assessment';
 import { BodyPicker, type BodySelection } from './home/BodyPicker';
 import { BookingEditSheet } from './home/BookingEditSheet';
 import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
+import { SafetySheet } from './home/SafetySheet';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
@@ -505,36 +506,13 @@ export function HomeScreen() {
   const onBodyTap = (pageX: number, pageY: number) => {
     if (!started) {
       // โหมด focus: แตะ mark = ข้ามไปจุดนั้น · หน้าแรก: แตะตรงที่ปวด = เริ่มประเมินโดยเลือกจุดนั้นไว้ให้
+      // เริ่มประเมินด้วยปุ่ม ThaiWell AI เท่านั้น (แตะหุ่นไม่เริ่มประเมินทุกหน้า) · โหมดติดตามอาการ: แตะ mark = ข้ามไปจุดนั้น
       if (focus) onFocusTap(pageX, pageY);
-      // ยังไม่มีข้อมูล → เริ่มด้วยปุ่ม ThaiWell AI กลางจอ (แตะหุ่นไม่เริ่มประเมิน)
-      else if (!chatHome) startFromBody(pageX, pageY);
       return;
     }
     // แชท: ไม่แตะเลือกบนหุ่นตรง ๆ แล้ว → ปุ่ม "ชี้จุดบนหุ่น" / แตะหุ่นเล็กในการ์ดประเมิน เปิดหน้าเลือกจุด (BodyPicker)
   };
 
-  /**
-   * หน้าแรก: แตะหุ่นตรงที่ปวด → แชทประเมินใหม่ที่ตอบข้อ "ปวดตรงไหน" ไว้แล้ว (จุดที่แตะ) → ถามอาการร้าว/อาการร่วมต่อ
-   * เลือกแท็บเรื่องที่รักษาอยู่ → หัวข้อ = เรื่องนั้น (บริเวณเดิม/ใหม่ แยกตามกฎเดิมตอนสรุปผล)
-   */
-  const startFromBody = (pageX: number, pageY: number) => {
-    const pick = bodyRef.current?.pickAt(pageX, pageY);
-    if (!pick?.region) return;
-    const label = labelOfRegion(pick.region);
-    const r = radiateFor([label]);
-    const next = r ? ('radiate' as const) : ('related' as const);
-    const base = newChatSession();
-    const time = nowTimeText();
-    const ss: ChatSession = {
-      ...base,
-      title: `ประเมิน${label}`,
-      items: [...base.items, { id: `u${Date.now()}`, day: 'today', from: 'user', text: label, time }, askItem(next, 'รับทราบค่ะ', r ? `${r.symptom}ร้าวไปที่อื่นไหมคะ?` : undefined)],
-      assess: { ...blankAssessment(), step: next, sel: { [label]: [pick.point] }, extra: HOME_CONTENT.symptoms.includes(label) ? [] : [label], topic: selCase ? tcase.short : undefined },
-    };
-    log('ผู้รับบริการ', `แตะหุ่นเริ่มประเมิน: ${label}`);
-    setSessions((all) => [ss, ...all]);
-    openChat(ss.id);
-  };
 
   /* ---------- จองกับ AI ในแชท: แนะนำสถานที่ตามแนวทาง → เลือกเวลา → ยืนยัน ----------
    * ทางไม่ใช้ AI ยังอยู่: แท็บสถานที่ / หน้าจอง (BookingScreen) · ผลคัดกรองให้พบแพทย์ = ไม่มีปุ่มจอง */
@@ -1424,6 +1402,13 @@ export function HomeScreen() {
         return aiReplyAsync(activeId, label, () => knowledgeReply('นวดไทยช่วยบรรเทาอาการอะไรได้บ้าง', { type: 'action', label: 'ประเมินอาการ', to: 'assess' }));
     }
   };
+  /** ผลตรวจความปลอดภัย / คำแนะนำเมื่อไม่ควรนวด → bottom sheet ในแชท */
+  const [safetyView, setSafetyView] = React.useState<{ card: Extract<ThreadCard, { type: 'safety' }> | null; reason?: string } | null>(null);
+  const lastSafetyCard = () => {
+    const c = [...thread].reverse().find((m) => m.card?.type === 'safety')?.card;
+    return c?.type === 'safety' ? c : null;
+  };
+  const openRedFlag = () => setSafetyView({ card: lastSafetyCard(), reason: (chatCase() && urgentCases[chatCase()!.id]) || `ผลประเมิน${bookingContext().topic}` });
   const runAction = (to: Extract<ThreadCard, { type: 'action' }>['to']) =>
     to === 'assess'
       ? startAssess('ประเมินอาการ')
@@ -1440,7 +1425,7 @@ export function HomeScreen() {
           : to === 'CallClinic'
           ? (log('ผู้รับบริการ', 'โทรหาคลินิกเรื่องนัด'), callClinic(chatCase() ? caseClinic(chatCase()!) : undefined))
           : to === 'RedFlag'
-          ? nav.navigate('RedFlag', { reason: (chatCase() && urgentCases[chatCase()!.id]) || `ผลประเมิน${bookingContext().topic}` })
+          ? openRedFlag()
           : to === 'SelfCare'
           ? setSheetStretch(chatCase()?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)))
           : nav.navigate('ElementQuiz');
@@ -2624,7 +2609,16 @@ export function HomeScreen() {
                   ) : m.card?.type === 'action' ? (
                     <PillButton label={m.card.label} icon="arrow-right" onPress={() => runAction((m.card as Extract<ThreadCard, { type: 'action' }>).to)} />
                   ) : m.card ? (
-                    <ThreadCardView card={m.card} onEditAssessment={editAssessment} onTalkMore={talkMore} onPlan={() => requestPlan()} onBook={() => startBooking()} />
+                    <ThreadCardView
+                      card={m.card}
+                      onEditAssessment={editAssessment}
+                      onTalkMore={talkMore}
+                      onPlan={() => requestPlan()}
+                      onBook={() => startBooking()}
+                      onSafety={(c) => setSafetyView({ card: c })}
+                      onRedFlag={() => openRedFlag()}
+                      onOutcome={chatCase() ? () => setSheetCaseId(chatCase()!.id) : undefined}
+                    />
                   ) : null}
                   {m.thinking === 'working' ? null : <SourceTag source={m.source} confirmedBy={m.confirmedBy} />}
                 </AIThreadMessage>
@@ -2793,6 +2787,20 @@ export function HomeScreen() {
       />
       <TreatmentSheet tc={cases.find((c) => c.id === sheetCaseId) ?? null} visible={!!sheetCaseId} onClose={() => setSheetCaseId(null)} />
       <StretchSheet groupId={sheetStretch} visible={!!sheetStretch} onClose={() => setSheetStretch(null)} />
+      <SafetySheet
+        card={safetyView?.card ?? null}
+        reason={safetyView?.reason}
+        visible={!!safetyView}
+        onClose={() => setSafetyView(null)}
+        onBook={() => {
+          setSafetyView(null);
+          startBooking();
+        }}
+        onHospital={() => {
+          setSafetyView(null);
+          nav.navigate('ClientTabs', { screen: 'Places', params: { mode: 'doctor' } } as never);
+        }}
+      />
       <BookingEditSheet
         visible={editing !== null}
         lockedService={chatCase() ? chatService() : undefined}
@@ -3778,18 +3786,44 @@ function DraftBento({
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
 
+  // จองแล้ว → โครงเดียวกับหลังรักษา (HomeBento): นัดเต็มแถว → แผนการรักษา | ผลประเมิน (สูงเท่ากัน) → ดูแลตัวเอง | ติดต่อคลินิก
+  if (booked && b) {
+    return (
+      <View style={{ gap: BENTO_GAP }}>
+        {tabs}
+        <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+          <PlanTile width={halfW} plan="นวดราชสำนัก" done={0} total={6} values={[]} note={d.caution} />
+          <View pointerEvents="none">
+            <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+          <View style={{ width: halfW }}>
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+          </View>
+          <Tile style={{ width: halfW, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
+            <TileTitle title="ติดต่อคลินิก" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+              <Icon name="phone" size="xs" color={colors.brand.primary} />
+              <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
+                {clinicPhone(b.clinic)}
+              </Text>
+            </View>
+          </Tile>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ gap: BENTO_GAP }}>
       {tabs}
 
-      {/* จองแล้ว → การ์ดนัดเต็มแถว แบบเดียวกับหลังรักษา (นัดครั้งที่ N) */}
-      {booked ? <FirstVisitCard booking={b!} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} /> : null}
-
-      {/* จองแล้ว → แผนการรักษาซ้าย · ผลประเมินขวา (ลำดับเดียวกับหลังนวด) */}
-      <View style={{ flexDirection: booked ? 'row-reverse' : 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <View style={{ width: halfW, gap: BENTO_GAP }}>
           {/* นัด */}
-          {booked ? null : d.red ? (
+          {d.red ? (
             <Tile style={{ gap: space[2] }} onPress={onRedFlag} accessibilityLabel="ควรพบแพทย์ก่อน">
               <TileTitle title="นัด" />
               <Text variant="titleSm" color={colors.status.danger.fg}>
@@ -3930,8 +3964,8 @@ function DraftBento({
             <>
               {/* ดูแลตัวเอง ระหว่างรอนัด */}
               <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
-              {/* ก่อนมานวด (จองแล้ว → อยู่ในการ์ดนัด) */}
-              {booked ? null : (
+              {/* ก่อนมานวด */}
+              {(
                 <Tile style={{ flex: 1, gap: space[2] }}>
                   <TileTitle title="ก่อนมานวด" />
                   {prep.map((it) => (

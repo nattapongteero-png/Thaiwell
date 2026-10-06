@@ -110,8 +110,15 @@ export function ThreadCardView({
   onTalkMore,
   onPlan,
   onBook,
+  onSafety,
+  onRedFlag,
+  onOutcome,
 }: {
   card: ThreadCard;
+  /** รายละเอียดผลตรวจความปลอดภัย / คำแนะนำเมื่อไม่ควรนวด / ผลการรักษา → bottom sheet ในแชท (ไม่ออกจากแชท) */
+  onSafety?: (card: Extract<ThreadCard, { type: 'safety' }>) => void;
+  onRedFlag?: () => void;
+  onOutcome?: () => void;
   /** แก้ผลประเมินในแชทนี้ */
   onEditAssessment?: () => void;
   /** คุยต่อกับ AI ในแชทนี้ */
@@ -130,7 +137,7 @@ export function ThreadCardView({
     case 'outcome': {
       const pct = (v: number) => `${(v / 10) * 100}%` as const;
       return (
-        <GlassCard onPress={() => nav.navigate('SessionResult')}>
+        <GlassCard onPress={onOutcome ?? (() => nav.navigate('SessionResult'))}>
           <HStack justify="space-between" align="flex-end">
             <BigNumber label="ก่อนนวด" value={card.before} suffix="/10" />
             {/* กล่องสูงเท่าบรรทัดตัวเลข → ลูกศรอยู่กึ่งกลางระดับเดียวกับ 6/10 และ 3/10 */}
@@ -215,7 +222,7 @@ export function ThreadCardView({
               ) : null}
             </View>
           ))}
-          <PillButton label="ดูรายละเอียด" tone="light" onPress={() => nav.navigate('PreSummary')} />
+          <PillButton label="ดูรายละเอียด" tone="light" onPress={onSafety ? () => onSafety(card) : () => nav.navigate('PreSummary')} />
         </GlassCard>
       );
     case 'element': {
@@ -349,7 +356,7 @@ export function ThreadCardView({
               ยังไม่ควรนวดจนกว่าแพทย์จะตรวจ
             </Text>
           </HStack>
-          <PillButton label="ดูคำแนะนำ" icon="arrow-right" onPress={() => nav.navigate('RedFlag')} />
+          <PillButton label="ดูคำแนะนำ" icon="arrow-right" onPress={onRedFlag ?? (() => nav.navigate('RedFlag'))} />
         </GlassCard>
       );
     case 'selfcare':
