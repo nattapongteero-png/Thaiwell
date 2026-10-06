@@ -17,6 +17,26 @@ npm run tokens     # export design tokens → design-tokens/tokens.json (สำ�
 
 Stack: Expo SDK 54 · React Native 0.81 · TypeScript · React Navigation 7 · react-native-svg · three.js + @react-three/fiber (expo-gl) · IBM Plex Sans Thai
 
+### ลงเครื่องจริง (iPhone / iPad)
+
+```bash
+cp .env.example .env     # ใส่ค่า Supabase ของหลังบ้าน (ดู ThaiWellAI/src/sync/cloud.ts) — ไม่มีไฟล์นี้ แอปจะจำลองการยืนยันเอง
+npm run ios:device       # pod install → xcodebuild Release (JS bundle ในตัว ไม่ต้องเปิด Metro) → ติดตั้งและเปิดบนเครื่องที่จับคู่ไว้
+```
+
+ต้องมี Xcode, เครื่องที่จับคู่แล้วและเปิด Developer Mode, และบัญชี Apple Development ของตัวเอง — สคริปต์ใช้ทีม/bundle id ของผู้บิวด์ (`TEAM=… BUNDLE_ID=… npm run ios:device`) กับสำเนาของ project file ชั่วคราว ไม่แก้ของใน repo · แอปที่เซ็นด้วยบัญชีฟรีใช้ได้ 7 วัน
+
+### เชื่อมหลังบ้านคลินิก (ThaiWellAI)
+
+| ที่ไหน | สะพาน | ไฟล์ |
+|---|---|---|
+| มือถือ (iOS/Android) | **cloud** — Supabase ตารางเดียวกับหลังบ้าน (`tw_patients` · `tw_appointments` · `tw_events`) ข้ามเครื่อง/ข้ามเครือข่ายได้ | `src/services/cloudBridge.ts` |
+| เว็บ (GitHub Pages) | localStorage ของเบราว์เซอร์เดียวกัน (เปิดแอปกับหลังบ้านคนละแท็บ) · ตั้ง `EXPO_PUBLIC_CLOUD=1` ตอน export ถ้าจะให้เว็บใช้ cloud ด้วย | `src/services/clinicBridge.ts` |
+
+ทั้งสองสะพานส่งเหตุการณ์ชุดเดียวกันเข้า `JourneyContext`: จอง → คลินิกยืนยัน/ปฏิเสธ → เช็กอิน (หน้า "เช็กอิน" ในวันนัด) → เลขคิว · เรียกคิว · เริ่มบริการ → ผลการรักษา (ชื่อโรค คะแนน คำแนะนำ) → บิล (จ่ายในแอปได้) / ใบเสร็จ → แผนการรักษา · ยกเลิกจากแอปแจ้งคลินิก
+
+> ⚠️ ต้นแบบ: key แบบ publishable เปิดอ่าน/เขียนทุกตาราง ใช้ข้อมูลสมมติเท่านั้น
+
 ## ใช้งานแอป
 
 แอปเปิดที่ **หน้าแรกแบบ AI Care Thread** (ดู [docs/HOME_AI_CONCEPT.md](docs/HOME_AI_CONCEPT.md)) และมี tab bar แคปซูลติดล่าง 4 เมนู: หน้าแรก · ประวัติ · จองบริการ · โปรไฟล์

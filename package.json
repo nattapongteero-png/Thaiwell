@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "tokens": "npx tsx scripts/export-tokens.ts",
     "uxlaws": "npx tsx scripts/export-uxlaws.ts",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "ios:device": "sh scripts/ios-device.sh"
   },
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans-thai": "^0.4.1",
@@ -22,6 +23,7 @@
     "@react-navigation/native": "^7.1.17",
     "@react-navigation/native-stack": "^7.3.21",
     "@react-three/fiber": "^9.8.1",
+    "@supabase/supabase-js": "^2.117.2",
     "expo": "~54.0.35",
     "expo-asset": "~12.0.13",
     "expo-file-system": "~19.0.24",
@@ -36,6 +38,7 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
+    "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "^0.21.0",
     "react-native-webview": "13.15.0",
     "three": "^0.170.0",

@@ -21,7 +21,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   const nav = useNav();
   const { colors } = useTheme();
   useHideTabs(true);
-  const { drafts, upsertDraft, cancelAppointment, newPatient, setCareStage, log, removeLooseBooking } = useJourney();
+  const { drafts, upsertDraft, cancelAppointment, newPatient, setCareStage, log, removeLooseBooking, cancelBooking } = useJourney();
   const [confirming, setConfirming] = React.useState(false);
   // นัดของเรื่องนี้ (ใบการรักษา / ใบร่าง / จองไว้ก่อนประเมิน)
   const appt = useAppointment(target);
@@ -31,6 +31,8 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   const mismatch = appt.kind === 'draft' && !appt.red && !draftOf?.keepService ? serviceMismatch(appt.service, draftOf?.caution) : null;
 
   const cancel = () => {
+    // นัดที่ส่งไปคลินิกแล้ว (cloud) → แจ้งหลังบ้านว่าผู้ป่วยยกเลิก
+    if (appt.kind !== 'case') cancelBooking(appt.target);
     if (appt.kind === 'case' && target.caseId) cancelAppointment(target.caseId);
     else if (appt.kind === 'draft') {
       const draft = drafts.find((d) => d.id === target.draftId);

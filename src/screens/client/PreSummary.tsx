@@ -135,7 +135,14 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
   const target = route?.params ?? {};
   // นัดของเรื่องที่แตะมา (ไม่ใช่นัดล่าสุดที่จอง)
   const appt = useAppointment(target);
-  const { caseToday, clinicCloseVisit } = useJourney();
+  const { caseToday, clinicCloseVisit, checkIn, cloudRefOf } = useJourney();
+  // นัดที่จองผ่าน cloud: เปิดหน้านี้ในวันนัด = เช็กอินที่คลินิก → คลินิกออกเลขคิวส่งกลับมาแสดงตรงนี้ (คลินิกเป็นคนปิดการรักษา ไม่ต้องจำลอง)
+  const linked = cloudRefOf(target) !== undefined;
+  const canCheckIn = !!appt && appt.today && !appt.red && !(target.caseId && caseToday[target.caseId]?.red) && !appt.pending;
+  React.useEffect(() => {
+    if (linked && canCheckIn && !appt?.queue) checkIn(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linked, canCheckIn, appt?.queue]);
   if (!appt) return <NotFoundScreen title="เช็กอิน" message="ยังไม่มีนัดสำหรับเช็กอิน" />;
   // ต้นแบบ: ข้ามช่วงนวด → คลินิกปิดการรักษาในหลังบ้าน (ครั้งใหม่ + คะแนนของคลินิก + บิล) → หน้าผลลัพธ์ของเรื่องนี้
   // นัดเรื่องใหม่ที่ยังไม่ได้เล่าอาการ (ไม่มีใบ) → แบบประเมินหลังนวดแบบเดิม
@@ -158,7 +165,7 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
             {appt.assessed ? null : <Button label="เล่าอาการก่อนเข้ารับบริการ" onPress={() => nav.popTo('ClientTabs', { screen: 'Home' })} />}
             {needPre ? <Button label="ประเมินก่อนนวด" onPress={() => nav.popTo('ClientTabs', { screen: 'Home', params: { assessCase: target.caseId } })} /> : null}
             {/* ต้นแบบ: ข้ามช่วงที่ผู้ให้บริการนวด → ไปหลังรับบริการ (ของเรื่องนี้) */}
-            <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={finish} />
+            {linked ? null : <Button label="จำลอง: นวดเสร็จแล้ว" variant="secondary" onPress={finish} />}
           </>
         ) : (
           <Button label="กลับ" variant="secondary" onPress={() => nav.goBack()} />
@@ -192,7 +199,7 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
           <Panel>
             <View style={{ alignItems: 'center', gap: 2 }}>
               <Text variant="bodyXs" tone="secondary">
-                {appt.queue ? 'คิวของคุณ' : 'นัดวันนี้'}
+                {appt.queue ? 'คิวของคุณ' : linked ? 'เช็กอินแล้ว · รอคลินิกออกเลขคิว' : 'นัดวันนี้'}
               </Text>
               <Text style={{ fontFamily: fontFamily.bold, fontSize: 56, lineHeight: 72, color: colors.brand.primary }}>{appt.queue ?? appt.time}</Text>
               <Text variant="bodySm" tone="secondary">

@@ -13,3 +13,7 @@ ios/Pods/
 ios/build/
 **/xcuserdata/
 *.xcuserstate
+
+# local env (Supabase cloud bridge etc.) and per-machine Xcode env
+.env
+ios/.xcode.env.local

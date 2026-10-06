@@ -9,7 +9,17 @@
  * หลังบ้านไม่ได้เปิด (ไม่มี heartbeat) → แอปจำลองการยืนยันเองเหมือนเดิม
  * รูปแบบข้อมูลตรงกับ ThaiWellAI/src/features/appBridge.ts (BookingRequest · Patient · Intake ของหลังบ้าน)
  * ⚠️ ต้นแบบ: ข้อมูลตัวอย่างเท่านั้น — ของจริงต้องผ่าน backend (ยืนยันตัวตน · เข้ารหัส · PDPA)
+ *
+ * บนมือถือ (iOS/Android) ไม่มี localStorage ร่วมกับหลังบ้าน → ใช้สะพาน cloud (Supabase) แทน ดู cloudBridge.ts
+ * เว็บยังใช้ localStorage ตามเดิม (ตั้ง EXPO_PUBLIC_CLOUD=1 ตอน build ถ้าต้องการให้เว็บใช้ cloud ด้วย)
  */
+import { Platform } from 'react-native';
+import { CLOUD_CONFIGURED, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud } from './cloudBridge';
+
+/** ใช้สะพาน cloud (ข้ามเครื่อง) แทน localStorage (เบราว์เซอร์เดียวกัน) — ต้องมีค่าใน .env ก่อน */
+export const CLOUD = CLOUD_CONFIGURED && (Platform.OS !== 'web' || process.env.EXPO_PUBLIC_CLOUD === '1');
+export const isCloud = () => CLOUD;
+
 export const BRIDGE_KEY = 'thaiwell.bridge';
 const CLINIC_ALIVE_KEY = 'thaiwell.bridge.clinicAlive';
 const SEEN_KEY = 'thaiwell.bridge.seenByApp';
@@ -58,17 +68,29 @@ export interface ClinicRequest {
   };
   note?: string;
   submittedAt: string;
+  /** ชื่อบริการที่ผู้ใช้เลือกในแอป (สะพาน cloud ส่งให้คลินิกเห็น) */
+  serviceLabel?: string;
 }
 
 export type ClinicEvent =
-  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string }
+  /** cloud = เลขคิวมาจากคลินิกตอนเช็กอิน (แอปไม่ออกเลขคิวเอง) */
+  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean }
   | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
-  | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number }
+  /** cloud = คลินิกเป็นคนออกบิล (แอปไม่จำลองบิล) · record = ผลการรักษาที่คลินิกบันทึก */
+  | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number; cloud?: boolean; record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string } }
   | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string }
+  /** เลขคิวจากคลินิก (หลังเช็กอิน) · called = ถึงคิวแล้ว */
+  | { id: string; at: string; type: 'queue'; ref: string; queue: string; called: boolean }
+  /** เริ่มรับบริการแล้ว */
+  | { id: string; at: string; type: 'started'; ref: string }
+  /** คลินิกส่งบิลมาเรียกเก็บในแอป */
+  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[] }
+  /** จ่ายที่คลินิกแล้ว → ใบเสร็จ */
+  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string }
   /** นวดครั้งต่อ ๆ ไปตามแผน (นัดที่คลินิกลงเอง) */
   | { id: string; at: string; type: 'visit'; patientId: string; apptId: string; date: string; painBefore: number; painAfter: number }
   /** แผนการรักษา: นัดถัดไปที่คลินิกลงไว้ + คอร์ส */
-  | { id: string; at: string; type: 'plan'; patientId: string; next: { date: string; start: string; therapist: string } | null; upcoming: number; course?: { name: string; total: number; used: number } };
+  | { id: string; at: string; type: 'plan'; patientId: string; next: { date: string; start: string; therapist: string } | null; upcoming: number; course?: { name: string; total: number; used: number }; summary?: string; frequency?: string; homeCare?: string[] };
 
 const store = (): Storage | null => {
   try {
@@ -99,7 +121,7 @@ const push = (event: Record<string, unknown>) => {
   write(BRIDGE_KEY, { ...b, toClinic: [...b.toClinic, { ...event, id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString() }].slice(-200) });
 };
 
-/** เวลาว่างจริงของคลินิก (หลังบ้านประกาศ) — days[YYYY-MM-DD][HH:mm][s1–s5] = id ผู้บำบัดที่ว่าง */
+/** เวลาว่างจริงของคลินิก (หลังบ้านประกาศ) — days[YYYY-MM-DD][HH:mm][s1–s5] = id ผู้บำบัดที่ว่าง · (สะพาน localStorage เท่านั้น — มือถือใช้ตารางตัวอย่างของแอป) */
 export interface Availability {
   at: string;
   clinicName: string;
@@ -122,11 +144,31 @@ export function clinicTherapistId(name: string, date: string, start: string, ser
   return a.therapists.find((t) => t.name === name)?.id ?? a.days[date]?.[start]?.[serviceId]?.[0];
 }
 
-/** หลังบ้านเปิดอยู่ในเบราว์เซอร์นี้ (heartbeat ไม่เกิน 8 วินาที) */
-export const clinicOnline = () => Date.now() - Number(store()?.getItem(CLINIC_ALIVE_KEY) ?? 0) < 8000;
+/** หลังบ้านเปิดอยู่ในเบราว์เซอร์นี้ (heartbeat ไม่เกิน 8 วินาที) · cloud: ต่อ Supabase ได้ */
+export const clinicOnline = () => (CLOUD ? cloudOnline() : Date.now() - Number(store()?.getItem(CLINIC_ALIVE_KEY) ?? 0) < 8000);
 
-export const sendBooking = (request: ClinicRequest, patient: ClinicPatient) => push({ type: 'booking', request, patient });
-export const sendNote = (title: string, body: string, patientId?: string) => clinicOnline() && push({ type: 'note', title, body, patientId });
+export const sendBooking = (request: ClinicRequest, patient: ClinicPatient) => {
+  if (CLOUD) void cloudSendBooking(request, patient).catch(() => undefined);
+  else push({ type: 'booking', request, patient });
+};
+export const sendNote = (title: string, body: string, patientId?: string, patientName?: string) => {
+  if (!clinicOnline()) return false;
+  if (CLOUD) void cloudNote(title, body, patientId, patientName).catch(() => undefined);
+  else push({ type: 'note', title, body, patientId });
+  return true;
+};
+/** เช็กอินที่คลินิก (เฉพาะสะพาน cloud — localStorage ไม่มีขั้นนี้) */
+export const sendCheckIn = (ref: string, who?: string) => {
+  if (CLOUD) void cloudCheckIn(ref, who).catch(() => undefined);
+};
+/** ยกเลิกนัดที่ส่งไปแล้ว */
+export const sendCancel = (ref: string, who?: string) => {
+  if (CLOUD) void cloudCancel(ref, who).catch(() => undefined);
+};
+/** จ่ายบิลในแอป → คลินิกเห็นว่าชำระแล้ว */
+export const sendPayment = (ref: string, who?: string) => {
+  if (CLOUD) void cloudPay(ref, who).catch(() => undefined);
+};
 
 /** เหตุการณ์จากหลังบ้านที่แอปยังไม่ได้รับ (แล้วจำว่ารับแล้ว) */
 export function takeClinicEvents(): ClinicEvent[] {
@@ -138,6 +180,7 @@ export function takeClinicEvents(): ClinicEvent[] {
 
 /** ฟังเหตุการณ์จากหลังบ้าน (เว็บเท่านั้น) · คืนฟังก์ชันเลิกฟัง */
 export function listenClinic(cb: (events: ClinicEvent[]) => void): () => void {
+  if (CLOUD) return listenCloud(cb);
   if (!store() || typeof window === 'undefined' || !window.addEventListener) return () => {};
   // เหตุการณ์เก่าก่อนเปิดแอป → ไม่นำมาใช้ซ้ำ (ข้อมูลแอปอยู่ในหน่วยความจำ เริ่มใหม่ทุกครั้งที่เปิด)
   takeClinicEvents();
