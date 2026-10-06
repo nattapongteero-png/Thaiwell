@@ -14,7 +14,7 @@
  * เว็บยังใช้ localStorage ตามเดิม (ตั้ง EXPO_PUBLIC_CLOUD=1 ตอน build ถ้าต้องการให้เว็บใช้ cloud ด้วย)
  */
 import { Platform } from 'react-native';
-import { CLOUD_CONFIGURED, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud } from './cloudBridge';
+import { CLOUD_CONFIGURED, cloudAvailabilityRaw, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud, cloudRows, type CloudRow } from './cloudBridge';
 
 /** ใช้สะพาน cloud (ข้ามเครื่อง) แทน localStorage (เบราว์เซอร์เดียวกัน) — ต้องมีค่าใน .env ก่อน */
 export const CLOUD = CLOUD_CONFIGURED && (Platform.OS !== 'web' || process.env.EXPO_PUBLIC_CLOUD === '1');
@@ -37,6 +37,12 @@ export interface ClinicPatient {
   painHistory: { date: string; score: number }[];
   registeredOn: string;
   birthDate?: string;
+  /** บัญชีจริง: user id + ข้อมูลตามบัตรประชาชน (ส่งไปลงทะเบียนที่คลินิก) */
+  userId?: string;
+  email?: string;
+  citizenId?: string;
+  title?: string;
+  address?: string;
 }
 export interface ClinicRequest {
   id: string;
@@ -130,13 +136,22 @@ export interface Availability {
 }
 const AVAILABILITY_KEY = 'thaiwell.bridge.availability';
 export const availabilityRaw = () => {
+  // มือถือ (cloud): หลังบ้านประกาศเวลาว่างไว้ใน cloud
+  if (CLOUD) return cloudAvailabilityRaw();
   try {
     return store()?.getItem(AVAILABILITY_KEY) ?? null;
   } catch {
     return null;
   }
 };
-export const readAvailability = () => read<Availability | null>(AVAILABILITY_KEY, null);
+export const readAvailability = (): Availability | null => {
+  try {
+    const raw = availabilityRaw();
+    return raw ? (JSON.parse(raw) as Availability) : null;
+  } catch {
+    return null;
+  }
+};
 /** ผู้บำบัดของหลังบ้านสำหรับคำขอจอง: ตามชื่อที่เลือก · ไม่ระบุ = คนแรกที่ว่างรอบนั้น */
 export function clinicTherapistId(name: string, date: string, start: string, serviceId: string): string | undefined {
   const a = readAvailability();
@@ -237,3 +252,7 @@ export function birthToISO(b?: string): string | undefined {
   const y = Number(m[3]) > 2400 ? Number(m[3]) - 543 : Number(m[3]);
   return `${y}-${m[2]}-${m[1]}`;
 }
+
+/** สถานะปัจจุบันของนัดใน cloud (ไม่ใช้ cloud → ว่าง) */
+export const fetchCloudRows = (ids: string[]): Promise<CloudRow[]> => (CLOUD ? cloudRows(ids).catch(() => []) : Promise.resolve([]));
+export type { CloudRow };

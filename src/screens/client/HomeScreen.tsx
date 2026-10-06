@@ -57,7 +57,7 @@ import {
   BottomSheet,
 } from '../../design-system';
 import { useJourney, type DraftCase } from '../../state/JourneyContext';
-import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nearestHospital, openMap, rankPlaces } from './PlacesScreen';
+import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
@@ -3594,9 +3594,9 @@ function WelcomeBento({
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
             <Text variant="bodyXs" tone="secondary">
-              ว่างวันนี้
+              {near.slots.length ? 'ว่างวันนี้' : 'คิวว่าง'}
             </Text>
-            {near.slots.slice(0, 3).map((t) => (
+            {(near.slots.length ? near.slots.slice(0, 3) : nextSlotLabels(near.id, 2)).map((t) => (
               <View key={t} style={{ paddingHorizontal: space[2], height: 24, justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
                 <Text variant="labelSm" color={colors.brand.primary} style={{ transform: [{ translateY: 1 }] }}>
                   {t}
@@ -3887,7 +3887,7 @@ function DraftBento({
                   {near.name}
                 </Text>
                 <Text variant="bodyXs" tone="tertiary">
-                  {near.km} กม. ว่าง {near.slots[0]}
+                  {near.km} กม.{near.slots[0] ? ` ว่าง ${near.slots[0]}` : ''}
                 </Text>
               </View>
               {/* ปุ่มหลัก (จองที่นี่) + ปุ่มรองวงกลม (ดูที่อื่น · ไอคอนแผนที่) แถวเดียวกัน */}

@@ -7,7 +7,7 @@ import type { ClientTabParamList, ProviderTabParamList, RootStackParamList } fro
 
 import { HomeScreen } from '../screens/client/HomeScreen';
 import { ConsentScreen } from '../screens/client/Onboarding';
-import { AuthScreen, SignupInfoScreen } from '../screens/client/Auth';
+import { AuthScreen, IdentityScreen } from '../screens/client/Auth';
 import { NotificationsScreen } from '../screens/client/NotificationsScreen';
 import { BillScreen, BillsScreen } from '../screens/client/BillScreen';
 import { PlacesScreen } from '../screens/client/PlacesScreen';
@@ -81,7 +81,7 @@ export function RootNavigator() {
     >
       <Stack.Navigator initialRouteName="Auth" screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
         <Stack.Screen name="Auth" component={AuthScreen} />
-        <Stack.Screen name="SignupInfo" component={SignupInfoScreen as never} />
+        <Stack.Screen name="Identity" component={IdentityScreen} options={{ gestureEnabled: false }} />
         <Stack.Screen name="ClientTabs" component={ClientTabs} />
         <Stack.Screen name="Consent" component={ConsentScreen} />
         <Stack.Screen name="ElementQuiz" component={ElementQuizScreen} />

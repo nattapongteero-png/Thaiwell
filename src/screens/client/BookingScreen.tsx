@@ -27,8 +27,8 @@ export const SERVICES: { value: ServiceId; label: string; uc: boolean; style: st
   { value: 'foot', label: 'นวดเท้าเพื่อสุขภาพ · 60 นาที', uc: false, style: 'บริการเวลเนส ไม่ใช่การรักษา' },
 ];
 export const THERAPISTS = [
-  { value: 'malee', label: 'พท.ป. มาลี ใจดี', description: 'แพทย์แผนไทย' },
-  { value: 'somjai', label: 'คุณสมใจ รักษ์ไทย', description: 'หมอนวดระดับ 2' },
+  { value: 't2', label: 'พท.ป. วิภาวดี ศรีสุข', description: 'แพทย์แผนไทย' },
+  { value: 't1', label: 'นศ.พท. สมชาย', description: 'นักศึกษาแพทย์แผนไทย' },
 ];
 const CLINIC = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 

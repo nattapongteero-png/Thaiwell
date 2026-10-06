@@ -20,13 +20,14 @@ import {
 } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
+import { saveConsents } from '../../services/auth';
 
 /* ============================================================ 02 CONSENT */
 
 export function ConsentScreen({ route }: { route?: { params?: { from?: 'signup' } } }) {
   const nav = useNav();
   const fromSignup = route?.params?.from === 'signup';
-  const { consents, setConsents, log } = useJourney();
+  const { consents, setConsents, log, account } = useJourney();
   const ready = consents.service && consents.aiProcessing;
   return (
     <Screen
@@ -38,6 +39,8 @@ export function ConsentScreen({ route }: { route?: { params?: { from?: 'signup' 
             disabled={!ready}
             onPress={() => {
               log('ผู้รับบริการ', 'ให้ความยินยอม (บริการ, AI' + (consents.followUp ? ', ติดตามผล' : '') + (consents.research ? ', วิจัย' : '') + ')');
+              // บัญชีจริง → เก็บความยินยอมกับบัญชี (เข้าเครื่องอื่นไม่ต้องถามซ้ำ)
+              if (account?.userId) void saveConsents(consents).catch(() => undefined);
               // มาจากการสมัคร → เข้าหน้าแรกแบบเริ่มต้นใช้งาน (ย้อนกลับไปหน้าสมัครไม่ได้)
               if (fromSignup) nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
               else nav.replace('Interview');

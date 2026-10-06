@@ -8,6 +8,8 @@
  * แอปแปลงความเปลี่ยนแปลงของแถวเป็น ClinicEvent ชุดเดียวกับสะพาน localStorage → JourneyContext ใช้ตัวจัดการเดิม
  * ⚠️ ต้นแบบ: key แบบ publishable เปิดอ่าน/เขียนทุกตาราง — ข้อมูลตัวอย่างเท่านั้น ของจริงต้องมี auth + RLS รายคน
  */
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { getItem, setItem } from './persist';
 import type { ClinicEvent, ClinicPatient, ClinicRequest } from './clinicBridge';
@@ -17,7 +19,10 @@ export const CLOUD_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 export const CLOUD_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '';
 /** ตั้งค่า cloud ไว้แล้ว (ไม่มี = แอปทำงานแบบเดิม: localStorage บนเว็บ / จำลองการยืนยันเองบนมือถือ) */
 export const CLOUD_CONFIGURED = !!CLOUD_URL && !!CLOUD_KEY;
-export const cloud = createClient(CLOUD_URL || 'https://cloud.invalid', CLOUD_KEY || 'none', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+// บัญชีผู้ใช้ (Supabase Auth): จำการเข้าสู่ระบบไว้ในเครื่อง — มือถือใช้ AsyncStorage · เว็บใช้ localStorage
+export const cloud = createClient(CLOUD_URL || 'https://cloud.invalid', CLOUD_KEY || 'none', {
+  auth: { storage: Platform.OS === 'web' ? undefined : AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
 
 /** แถวใน tw_appointments (เฉพาะที่แอปใช้) */
 export interface CloudRow {
@@ -68,6 +73,18 @@ const saveSeen = () => {
     /* ignore */
   }
 };
+/* ---------- เวลาว่างจริงของคลินิก (หลังบ้านประกาศไว้ใน tw_events id = -1) ---------- */
+let availRaw: string | null = null;
+export const cloudAvailabilityRaw = () => availRaw;
+export async function refreshAvailability() {
+  const { data } = await cloud.from('tw_events').select('payload').eq('id', -1).maybeSingle();
+  if (data?.payload) availRaw = JSON.stringify(data.payload);
+}
+/** สถานะปัจจุบันของนัดใน cloud (ใช้ตั้งต้นบัญชีตัวอย่างให้ตรงกับคลินิก) */
+export async function cloudRows(ids: string[]): Promise<CloudRow[]> {
+  const { data } = await cloud.from('tw_appointments').select('*').in('id', ids);
+  return (data ?? []) as CloudRow[];
+}
 
 async function logEvent(kind: string, apptId: string | null, patientName: string | undefined, summary: string, payload?: unknown) {
   await cloud.from('tw_events').insert({ source: 'app', kind, appointment_id: apptId, patient_name: patientName ?? null, summary, payload: payload ?? null });
@@ -78,7 +95,15 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
   const it = request.intake;
   const service = request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1;
   const complaint = it?.complaint ?? patient.complaint;
-  const { error: pe } = await cloud.from('tw_patients').upsert({ id: patient.id, name: patient.name, phone: patient.phone && patient.phone !== '-' ? patient.phone : null, gender: patient.gender, age: patient.age });
+  const { error: pe } = await cloud.from('tw_patients').upsert({
+    id: patient.id,
+    name: patient.name,
+    phone: patient.phone && patient.phone !== '-' ? patient.phone : null,
+    gender: patient.gender,
+    age: patient.age,
+    // บัญชีจริง: ผูกกับบัญชี + ข้อมูลตามบัตรประชาชน (คลินิกลงทะเบียนให้ตรงคน)
+    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null } : {}),
+  });
   if (pe) throw pe;
   const { error } = await cloud.from('tw_appointments').insert({
     id: request.id,
@@ -205,9 +230,24 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     .subscribe((s) => {
       if (s === 'SUBSCRIBED') online = true;
     });
-  const t = setInterval(() => void fetchAll(true), 6000);
+  let tick = 0;
+  void refreshAvailability().catch(() => undefined);
+  // เข้าสู่ระบบแล้ว (สิทธิ์อ่านเวลาว่าง/นัดของตัวเอง) → ดึงใหม่ทันที
+  const { data: authSub } = cloud.auth.onAuthStateChange((ev) => {
+    if (ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED' || ev === 'INITIAL_SESSION') {
+      void refreshAvailability().catch(() => undefined);
+      void fetchAll(false);
+    }
+  });
+  // สำรอง realtime ทุก 3 วินาที (แจ้งเตือนไม่ช้าแม้ realtime หลุด)
+  const t = setInterval(() => {
+    void fetchAll(true);
+    // เวลาว่างของคลินิก ทุก ~30 วินาที
+    if (++tick % 10 === 0) void refreshAvailability().catch(() => undefined);
+  }, 3000);
   return () => {
     stopped = true;
+    authSub.subscription.unsubscribe();
     clearInterval(t);
     void cloud.removeChannel(ch);
   };

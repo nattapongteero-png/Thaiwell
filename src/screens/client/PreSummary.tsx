@@ -205,6 +205,14 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
               <Text variant="bodySm" tone="secondary">
                 {[appt.queue ? appt.time : '', appt.therapist].filter(Boolean).join(' · ')}
               </Text>
+              {linked ? (
+                // สถานะคิวจากคลินิก (สด)
+                <View style={{ marginTop: space[2], paddingHorizontal: space[3], paddingVertical: 6, borderRadius: 999, backgroundColor: appt.stage === 'called' || appt.stage === 'in_service' ? colors.brand.primary : colors.surface.sunken }}>
+                  <Text variant="labelMd" color={appt.stage === 'called' || appt.stage === 'in_service' ? '#FFFFFF' : colors.text.secondary}>
+                    {appt.stage === 'called' ? 'ถึงคิวแล้ว เชิญเข้ารับบริการ' : appt.stage === 'in_service' ? 'กำลังรับบริการ' : appt.queue ? 'รอเรียกคิว…' : 'กำลังขอเลขคิวจากคลินิก…'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <View style={{ alignSelf: 'center', width: 190, height: 190, borderRadius: 20, backgroundColor: colors.surface.sunken, alignItems: 'center', justifyContent: 'center', gap: space[2] }}>
               <Icon name="maximize" size="xl" color={colors.text.secondary} />
