@@ -7,7 +7,7 @@ export type RootStackParamList = {
   /** เข้าสู่ระบบ (Health ID / Google / LINE) */
   Auth: undefined;
   /** หลังเข้าสู่ระบบ: ถามเฉพาะข้อมูลที่ช่องทางนั้นไม่ได้ส่งมา */
-  SignupInfo: { provider: 'healthid' | 'google' | 'line' };
+  Identity: undefined;
   /** from = signup → ยินยอมแล้วเข้าหน้าแรก (ไม่ใช่เข้าแบบสัมภาษณ์) */
   Consent: { from?: 'signup' } | undefined;
   ElementQuiz: undefined;

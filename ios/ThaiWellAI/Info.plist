@@ -50,6 +50,10 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSCameraUsageDescription</key>
+    <string>ถ่ายรูปบัตรประชาชนเพื่อยืนยันตัวตน (อ่านข้อมูลในเครื่อง ไม่ส่งรูปออกไป)</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>เลือกรูปบัตรประชาชนเพื่อยืนยันตัวตน (อ่านข้อมูลในเครื่อง ไม่ส่งรูปออกไป)</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UILaunchStoryboardName</key>

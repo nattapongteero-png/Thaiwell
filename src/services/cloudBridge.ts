@@ -8,6 +8,8 @@
  * แอปแปลงความเปลี่ยนแปลงของแถวเป็น ClinicEvent ชุดเดียวกับสะพาน localStorage → JourneyContext ใช้ตัวจัดการเดิม
  * ⚠️ ต้นแบบ: key แบบ publishable เปิดอ่าน/เขียนทุกตาราง — ข้อมูลตัวอย่างเท่านั้น ของจริงต้องมี auth + RLS รายคน
  */
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import type { ClinicEvent, ClinicPatient, ClinicRequest } from './clinicBridge';
 
@@ -16,7 +18,10 @@ export const CLOUD_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 export const CLOUD_KEY = process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '';
 /** ตั้งค่า cloud ไว้แล้ว (ไม่มี = แอปทำงานแบบเดิม: localStorage บนเว็บ / จำลองการยืนยันเองบนมือถือ) */
 export const CLOUD_CONFIGURED = !!CLOUD_URL && !!CLOUD_KEY;
-export const cloud = createClient(CLOUD_URL || 'https://cloud.invalid', CLOUD_KEY || 'none', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+// บัญชีผู้ใช้ (Supabase Auth): จำการเข้าสู่ระบบไว้ในเครื่อง — มือถือใช้ AsyncStorage · เว็บใช้ localStorage
+export const cloud = createClient(CLOUD_URL || 'https://cloud.invalid', CLOUD_KEY || 'none', {
+  auth: { storage: Platform.OS === 'web' ? undefined : AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
 
 /** แถวใน tw_appointments (เฉพาะที่แอปใช้) */
 export interface CloudRow {

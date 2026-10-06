@@ -13,6 +13,8 @@ import { evaluateSafety, type HealthProfile, type SafetyResult } from '../servic
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
 import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { fetchCloudRows } from '../services/clinicBridge';
+import type { IdCard } from '../services/idCard';
+import { signOutCloud } from '../services/auth';
 import { birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
@@ -169,15 +171,20 @@ function draftToCase(d: DraftCase, painAfter: number, diagnosis?: string): Treat
 }
 
 /** ช่องทางเข้าสู่ระบบ — แต่ละช่องทางได้ข้อมูลมาไม่เท่ากัน */
-export type AuthProvider = 'healthid' | 'google' | 'line';
+export type AuthProvider = 'healthid' | 'google' | 'line' | 'email';
 /** บัญชีที่สมัครในต้นแบบ (null = ใช้คนไข้ตัวอย่างที่มีประวัติการรักษาแล้ว) */
 export interface Account {
   provider: AuthProvider;
   name: string;
   birthDate: string;
   sex: string;
-  /** ยืนยันตัวตนแล้ว (Health ID) */
+  /** ยืนยันตัวตนแล้ว (บัตรประชาชน) */
   verified: boolean;
+  /** บัญชีจริง (Supabase Auth) */
+  userId?: string;
+  email?: string;
+  /** ข้อมูลตามบัตรประชาชน + เบอร์โทร */
+  idCard?: IdCard;
 }
 
 interface JourneyState {
@@ -246,7 +253,8 @@ interface JourneyState {
   /** นวดครั้งแรกเสร็จ → ใบร่างกลายเป็นใบการรักษา (ชื่อแท็บเดิม · ชื่อโรคจากผู้ให้บริการ — ส่งมาจริงได้ผ่าน cloud) */
   promoteDraft: (draftId: string, painAfter: number, diagnosis?: string) => void;
   /** ออกจากระบบ: ล้างบัญชีและข้อมูลของรอบนี้ทั้งหมด */
-  signOut: () => void;
+  /** ออกจากระบบ (ล้างข้อมูลในแอป) · localOnly = ล้างในแอปอย่างเดียว ไม่ออกจากบัญชี */
+  signOut: (localOnly?: boolean) => void;
   /**
    * ใบการรักษาที่ใช้แสดงทุกหน้า (หน้าแรก · ประวัติ · โปรไฟล์ · นัด · AI) — ตัวอย่าง + ใบจากใบร่าง
    * รวมนัดที่จอง/เลื่อน · นัดที่ยกเลิก (= ไม่มีนัด) · ครั้งที่นวดเพิ่ม → ทุกหน้าเห็นข้อมูลชุดเดียวกัน
@@ -436,10 +444,28 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const caseLinks = React.useRef<Record<string, { caseId: string; billId?: string; done?: boolean; title?: string }>>({});
   const patientOf = (): ClinicPatient => {
     const { account: acc, profile: pf } = latest.current;
+    // บัญชีจริง: id = user id ของบัญชี · ชื่อ/เพศ/เบอร์ ตามบัตรประชาชน
+    if (acc?.userId) {
+      const c = acc.idCard;
+      return {
+        id: acc.userId,
+        hn: `APP-${acc.userId.slice(0, 6).toUpperCase()}`,
+        name: c ? `${c.title}${c.firstName} ${c.lastName}` : `คุณ${acc.name}`,
+        gender: acc.sex === 'หญิง' ? 'หญิง' : 'ชาย',
+        age: pf.age,
+        phone: c?.phone || '-',
+        conditions: pf.conditions,
+        complaint: '',
+        painHistory: [],
+        registeredOn: todayISO(),
+        birthDate: birthToISO(acc.birthDate),
+      };
+    }
     const name = acc ? acc.name : 'สมศักดิ์ รักดี';
     const key = Array.from(name).reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36);
     return { id: `app-p-${key}`, hn: `APP-${key.slice(-4).toUpperCase()}`, name: acc ? `คุณ${acc.name}` : 'คุณสมศักดิ์ รักดี', gender: acc?.sex === 'หญิง' ? 'หญิง' : 'ชาย', age: pf.age, phone: '-', conditions: pf.conditions, complaint: '', painHistory: [], registeredOn: todayISO(), birthDate: birthToISO(acc?.birthDate) };
   };
+
   const notifyClinic = useCallback((title: string, body: string) => {
     sendNote(title, `${patientOf().name} · ${body}`, patientOf().id, patientOf().name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -565,7 +591,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // นัดนี้ใช้แล้ว → ยังไม่มีนัดครั้งถัดไป
     setCaseAppts((m) => ({ ...m, [caseId]: { today: false, date: '-', time: '-', clinic: m[caseId]?.clinic ?? '', therapist: m[caseId]?.therapist ?? '' } }));
   }, []);
-  const signOut = useCallback(() => {
+  const signOut = useCallback((localOnly?: boolean) => {
+    if (!localOnly) void signOutCloud();
     setSession((n) => n + 1);
     setAccount(null);
     setNewPatient(false);
