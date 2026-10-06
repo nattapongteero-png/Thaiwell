@@ -19,7 +19,9 @@ export interface MapPlace {
   slots: number;
 }
 
-export function placesMapHtml(places: MapPlace[], me: { lat: number; lng: number }, selected?: string) {
+export function placesMapHtml(allPlaces: MapPlace[], me: { lat: number; lng: number } | null | undefined, selected?: string) {
+  // สถานที่ที่ยังไม่ได้ปักพิกัดไม่แสดงบนแผนที่ · ไม่รู้ตำแหน่งผู้ใช้ → ไม่มีหมุดผู้ใช้ จัดกลางที่สถานที่แรก
+  const places = allPlaces.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -34,9 +36,9 @@ html,body,#m{margin:0;height:100%;background:#eef1ee;font-family:-apple-system,'
 .me{width:16px;height:16px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 6px rgba(37,99,235,.2)}
 .maplibregl-ctrl-attrib{font-size:9px}
 </style></head><body><div id="m"></div><script>
-const P=${JSON.stringify(places)},ME=${JSON.stringify(me)},SEL=${JSON.stringify(selected ?? null)};
+const P=${JSON.stringify(places)},ME=${JSON.stringify(me ?? null)},SEL=${JSON.stringify(selected ?? null)};
 const send=(o)=>{const s=JSON.stringify(o);if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(s);else parent.postMessage(s,'*');};
-const map=new maplibregl.Map({container:'m',style:'https://tiles.openfreemap.org/styles/liberty',center:[ME.lng,ME.lat],zoom:14.6,pitch:58,bearing:-18,attributionControl:{compact:true}});
+const map=new maplibregl.Map({container:'m',style:'https://tiles.openfreemap.org/styles/liberty',center:ME?[ME.lng,ME.lat]:P[0]?[P[0].lng,P[0].lat]:[100.5018,13.7563],zoom:14.6,pitch:58,bearing:-18,attributionControl:{compact:true}});
 map.addControl(new maplibregl.NavigationControl({visualizePitch:true,showZoom:false}),'bottom-right');
 // แท่งคิวว่าง: วงกลมเล็ก ๆ ยกขึ้นตามจำนวนคิว (โรงพยาบาล = แท่งแดงเตี้ย)
 const circle=(lng,lat,r)=>{const c=[];for(let i=0;i<=24;i++){const a=i/24*Math.PI*2;c.push([lng+Math.cos(a)*r/Math.cos(lat*Math.PI/180),lat+Math.sin(a)*r]);}return c;};
@@ -50,7 +52,7 @@ map.on('load',()=>{
     el.innerHTML='<div class="tag"><span class="short">'+short+'</span><span class="full">'+p.name+'</span><small>'+(p.kind==='hospital'?'โรงพยาบาล':p.slots?('ว่าง '+p.slots+' คิววันนี้'):'คิวเต็ม')+'</small></div><div class="dot" style="background:'+(p.kind==='hospital'?'#dc2626':'#15803d')+'"></div>';
     el.onclick=(e)=>{e.stopPropagation();document.querySelectorAll('.pin').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');map.easeTo({center:[p.lng,p.lat],zoom:15,duration:700});send({type:'pick',id:p.id});};
     new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([p.lng,p.lat]).addTo(map);}
-  const me=document.createElement('div');me.className='me';new maplibregl.Marker({element:me}).setLngLat([ME.lng,ME.lat]).addTo(map);
+  if(ME){const me=document.createElement('div');me.className='me';new maplibregl.Marker({element:me}).setLngLat([ME.lng,ME.lat]).addTo(map);}
   // หมุนกล้องช้า ๆ ครั้งแรก ให้เห็นว่าเป็น 3 มิติ
   // ย่านรอบตัวคุณ (เห็นตึก 3 มิติ) แล้วค่อย ๆ หมุนให้เห็นมิติ · ที่ไกลออกไปลาก/ซูมดูได้
   map.jumpTo({center:[ME.lng+0.004,ME.lat+0.001],zoom:14.3});
@@ -85,7 +87,7 @@ const hasNativeWebView =
     }
   })();
 
-export function PlacesMap({ places, me, selected, onPick, height = 260 }: { places: MapPlace[]; me: { lat: number; lng: number }; selected?: string; onPick?: (id: string) => void; height?: number }) {
+export function PlacesMap({ places, me, selected, onPick, height = 260 }: { places: MapPlace[]; me?: { lat: number; lng: number } | null; selected?: string; onPick?: (id: string) => void; height?: number }) {
   const { colors } = useTheme();
   // ไม่สร้างแผนที่ใหม่เมื่อเลือกสถานที่ (หมุดเปลี่ยนสีในแผนที่เอง)
   const html = React.useMemo(() => placesMapHtml(places, me, selected), [places, me]); // eslint-disable-line react-hooks/exhaustive-deps

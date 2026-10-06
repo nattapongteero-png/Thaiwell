@@ -37,6 +37,8 @@ export interface Therapist {
   years?: number;
   /** ดูแลเรื่องไหนเป็นพิเศษ */
   focus?: string[];
+  /** avatar ที่คลินิกเลือก ("avatar:t3") */
+  photo?: string;
 }
 
 const R: ServiceId = 'royal';
@@ -80,7 +82,7 @@ export function liveTherapists(): Therapist[] | null {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const byId = new Map<string, Therapist>(
-      a.therapists.map((t) => [t.id, { id: t.id, name: t.name, role: /นักศึกษา/.test(t.role) || !/แพทย์/.test(t.role) ? 'หมอนวด' : 'แพทย์แผนไทย', free: [] }]),
+      a.therapists.map((t) => [t.id, { id: t.id, name: t.name, role: /นักศึกษา/.test(t.role) || !/แพทย์/.test(t.role) ? 'หมอนวด' : 'แพทย์แผนไทย', photo: t.photo, free: [] }]),
     );
     for (const [date, times] of Object.entries(a.days)) {
       const [y, m, d] = date.split('-').map(Number);

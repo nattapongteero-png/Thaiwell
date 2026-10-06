@@ -131,7 +131,8 @@ const push = (event: Record<string, unknown>) => {
 export interface Availability {
   at: string;
   clinicName: string;
-  therapists: { id: string; name: string; role: string }[];
+  clinic?: { name: string; address?: string; phone?: string; lat?: number; lng?: number };
+  therapists: { id: string; name: string; role: string; photo?: string }[];
   days: Record<string, Record<string, Record<string, string[]>>>;
 }
 const AVAILABILITY_KEY = 'thaiwell.bridge.availability';

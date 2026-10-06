@@ -14,6 +14,8 @@ import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../se
 import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows } from '../services/clinicBridge';
+import { locate } from '../services/location';
+import { fetchMyHn, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { signOutCloud } from '../services/auth';
 import { birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
@@ -993,12 +995,66 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     }, 300);
     return () => clearTimeout(t);
   });
+  /* ---------- บัญชีจริง: ข้อมูลในแอปบันทึกกับบัญชี (tw_app_state) — ปิด/เปิดแอป เปลี่ยนเครื่อง ข้อมูลยังอยู่ ---------- */
+  const [clinicHn, setClinicHn] = useState<string | null>(null);
+  const restoredFor = React.useRef<string | null>(null);
+  const [restoredTick, setRestoredTick] = useState(0);
+  const persisted = { profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
+  const uid = account?.userId;
+  React.useEffect(() => {
+    restoredFor.current = null;
+    setClinicHn(null);
+    if (!uid || !isCloud()) {
+      // ไม่มีบัญชีจริง → ฟังนัดตามที่จำไว้ในเครื่อง
+      if (isCloud()) startLocalSync();
+      else stopAccountSync();
+      return;
+    }
+    let alive = true;
+    void loadAppState(uid).then((st) => {
+      if (!alive) return;
+      if (st) {
+        const set: Record<string, (v: never) => void> = { profile: setProfile, consents: setConsents, elements: setElementsState, elementsDone: setElementsDone, careStage: setCareStage, looseBookings: setLooseBookings, lastAssess: setLastAssess, drafts: setDrafts, activeDraftId: setActiveDraftId, promoted: setPromoted, cancelledAppts: setCancelledAppts, caseAppts: setCaseAppts, caseVisits: setCaseVisits, selfPains: setSelfPains, caseToday: setCaseTodayState, visitRecords: setVisitRecords, apptNotices: setApptNotices, bills: setBills, followUps: setFollowUps, audit: setAudit };
+        for (const [k, fn] of Object.entries(set)) if (k in st) fn(st[k] as never);
+        bridgeRefs.current = (st.bridgeRefs as typeof bridgeRefs.current) ?? {};
+        bridgedCase.current = (st.bridgedCase as typeof bridgedCase.current) ?? {};
+      } else {
+        // บัญชีใหม่: ไม่มีบิล/แจ้งเตือน/ประวัติตัวอย่าง
+        setBills([]);
+        setApptNotices([]);
+        setAudit([]);
+      }
+      restoredFor.current = uid;
+      setRestoredTick((n) => n + 1);
+      // เทียบนัดใน cloud กับที่เคยเห็น → ได้เหตุการณ์ระหว่างปิดแอป (ยืนยัน เรียกคิว บิล ฯลฯ)
+      startAccountSync((st?.seen as Record<string, CloudRow>) ?? {});
+    });
+    void fetchMyHn(uid).then((hn) => alive && setClinicHn(hn));
+    // ระยะทางจริงไปคลินิก (ขอสิทธิ์ตำแหน่งครั้งแรก)
+    void locate();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+  React.useEffect(() => {
+    if (!uid || restoredFor.current !== uid) return;
+    const t = setTimeout(() => {
+      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, seen: seenRows() }).catch(() => undefined);
+    }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, restoredTick, ...Object.values(persisted)]);
+  // คลินิกออก HN ให้ตอนรับคำขอจองครั้งแรก → ดึงมาแสดงในโปรไฟล์
+  React.useEffect(() => {
+    if (uid && !clinicHn && apptNotices.length) void fetchMyHn(uid).then((hn) => hn && setClinicHn(hn));
+  }, [uid, clinicHn, apptNotices.length]);
 
   const value: JourneyState = {
     resumed: !!savedState()?.entered,
     markEntered,
     client: account
-      ? { name: `คุณ${account.name}`, initials: account.name.slice(0, 2), age: profile.age, occupation: '', hn: 'TW-NEW' }
+      ? { name: `คุณ${account.name}`, initials: account.name.slice(0, 2), age: profile.age, occupation: '', hn: clinicHn ?? (account.userId ? 'รอคลินิกออก HN' : 'TW-NEW') }
       : { name: 'คุณสมศักดิ์ รักดี', initials: 'สศ', age: profile.age, occupation: 'พนักงานออฟฟิศ', hn: 'TW-000123' },
     scenario,
     setScenario,

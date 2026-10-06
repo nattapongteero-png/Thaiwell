@@ -201,9 +201,10 @@ export function ProfileScreen() {
       <Panel title="ข้อมูลสุขภาพ" flush>
         <RowLink icon="activity" tint={TINT.red} title="โรคประจำตัว" sub={none(profile.conditions)} onPress={() => setEditing('conditions')} />
         <RowLink icon="package" tint={TINT.amber} title="ยาที่ใช้ประจำ" sub={none(profile.medications)} onPress={() => setEditing('medications')} />
-        <RowLink icon="alert-circle" tint={TINT.violet} title="ประวัติแพ้" sub={none(profile.allergies)} onPress={() => setEditing('allergies')} />
+        <RowLink icon="alert-circle" tint={TINT.violet} title="ประวัติแพ้" sub={none(profile.allergies)} onPress={() => setEditing('allergies')} last={!!account?.userId} />
         {/* ยังไม่เปิดใช้ → บอกตรง ๆ (ไม่มีลูกศรหลอกให้กด) */}
-        <RowLink icon="link" tint={TINT.blue} title="เชื่อมข้อมูลจากโรงพยาบาล" sub={profile.phrSource ? `เชื่อมแล้ว · ${profile.phrSource}` : 'ดึงโรคประจำตัว ยา และประวัติแพ้'} onPress={() => setLinking(true)} last />
+        {/* ต้นแบบ (ยังไม่มีระบบโรงพยาบาลจริง) → ไม่แสดงกับบัญชีจริง */}
+        {account?.userId ? null : <RowLink icon="link" tint={TINT.blue} title="เชื่อมข้อมูลจากโรงพยาบาล" sub={profile.phrSource ? `เชื่อมแล้ว · ${profile.phrSource}` : 'ดึงโรคประจำตัว ยา และประวัติแพ้'} onPress={() => setLinking(true)} last />}
       </Panel>
 
       <Panel title="การตั้งค่า" flush>
@@ -211,8 +212,8 @@ export function ProfileScreen() {
         <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
         <RowLink icon="type" tint={TINT.slate} title="ตัวอักษรขนาดใหญ่" sub="สำหรับผู้สูงอายุ" right={<Switch value={textScale > 1} onChange={(v) => setTextScale(v ? 1.2 : 1)} label="ตัวอักษรขนาดใหญ่" />} />
-        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" />
-        <RowLink icon="briefcase" tint={TINT.slate} title="โหมดผู้ให้บริการ" onPress={() => nav.navigate('ProviderTabs')} last />
+        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" last={!!account?.userId} />
+        {account?.userId ? null : <RowLink icon="briefcase" tint={TINT.slate} title="โหมดผู้ให้บริการ" onPress={() => nav.navigate('ProviderTabs')} last />}
       </Panel>
 
       <Panel flush>

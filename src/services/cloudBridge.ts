@@ -76,9 +76,18 @@ const saveSeen = () => {
 /* ---------- เวลาว่างจริงของคลินิก (หลังบ้านประกาศไว้ใน tw_events id = -1) ---------- */
 let availRaw: string | null = null;
 export const cloudAvailabilityRaw = () => availRaw;
+const availListeners = new Set<() => void>();
+/** เวลาว่าง/ข้อมูลคลินิกเปลี่ยน → แจ้ง (เช่น รายการสถานที่) */
+export const onAvailability = (cb: () => void) => {
+  availListeners.add(cb);
+  return () => void availListeners.delete(cb);
+};
 export async function refreshAvailability() {
   const { data } = await cloud.from('tw_events').select('payload').eq('id', -1).maybeSingle();
-  if (data?.payload) availRaw = JSON.stringify(data.payload);
+  const next = data?.payload ? JSON.stringify(data.payload) : null;
+  if (next === availRaw) return;
+  availRaw = next;
+  availListeners.forEach((l) => l());
 }
 /** สถานะปัจจุบันของนัดใน cloud (ใช้ตั้งต้นบัญชีตัวอย่างให้ตรงกับคลินิก) */
 export async function cloudRows(ids: string[]): Promise<CloudRow[]> {
@@ -197,6 +206,43 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
 }
 
 /** ฟังความเปลี่ยนแปลงจากคลินิก: realtime + สำรองอ่านซ้ำทุก 6 วินาที · คืนฟังก์ชันเลิกฟัง */
+/* ---------- บัญชีจริง: ข้อมูลในแอปของแต่ละคน (tw_app_state) ---------- */
+/** สถานะนัดที่แอปเคยเห็นล่าสุด (เก็บกับข้อมูลแอป) → เปิดแอปใหม่ได้เหตุการณ์ที่เกิดระหว่างปิดแอปด้วย */
+export const seenRows = () => Object.fromEntries(rows);
+let gateOpen = false;
+let wake: (() => void) | null = null;
+/** ไม่มีบัญชีจริง (โหมดเดิม) → ใช้ที่เคยเห็นในเครื่องอย่างเดียว */
+export function startLocalSync() {
+  gateOpen = true;
+  wake?.();
+}
+/** เริ่มฟังนัดของบัญชีนี้ หลังดึงข้อมูลแอปกลับมาแล้ว (seen = จุดตั้งต้นที่บันทึกไว้) */
+export function startAccountSync(seen: Record<string, CloudRow>) {
+  // ที่บัญชีเคยเห็น (เครื่องไหนก็ได้) + ที่เครื่องนี้เคยเห็น — ใช้อันที่ใหม่กว่า
+  for (const [id, r] of Object.entries(seen)) {
+    const cur = rows.get(id);
+    if (!cur || (r.updated_at ?? '') > (cur.updated_at ?? '')) rows.set(id, r);
+  }
+  gateOpen = true;
+  wake?.();
+}
+export function stopAccountSync() {
+  gateOpen = false;
+  rows.clear();
+}
+/** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
+export async function fetchMyHn(userId: string): Promise<string | null> {
+  const { data } = await cloud.from('tw_patients').select('clinic_hn').eq('user_id', userId).maybeSingle();
+  return (data?.clinic_hn as string | null) ?? null;
+}
+export async function loadAppState(userId: string): Promise<Record<string, unknown> | null> {
+  const { data } = await cloud.from('tw_app_state').select('state').eq('user_id', userId).maybeSingle();
+  return (data?.state as Record<string, unknown>) ?? null;
+}
+export async function saveAppState(userId: string, state: Record<string, unknown>) {
+  await cloud.from('tw_app_state').upsert({ user_id: userId, state, updated_at: new Date().toISOString() });
+}
+
 export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   let stopped = false;
   const apply = (list: CloudRow[], emit: boolean) => {
@@ -211,6 +257,8 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     if (out.length) cb(out);
   };
   const fetchAll = async (emit: boolean) => {
+    // ยังไม่ได้ดึงข้อมูลแอปของบัญชีกลับมา → ยังไม่ตั้งจุดตั้งต้น (ไม่อย่างนั้นเหตุการณ์ระหว่างปิดแอปจะหาย)
+    if (!gateOpen) return;
     try {
       const { data, error } = await cloud.from('tw_appointments').select('*').neq('status', 'closed').order('created_at');
       online = !error;
@@ -219,8 +267,10 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
       online = false;
     }
   };
-  // แถวที่มีอยู่ก่อนเปิดแอป = จุดตั้งต้น (ไม่เล่นเหตุการณ์เก่าซ้ำ) · เคยเห็นแล้ว (เว็บ) → รับเฉพาะที่เปลี่ยนระหว่างปิดแอป
-  void fetchAll(loadSeen());
+  // ตั้งต้นจากที่เคยเห็นในเครื่อง (เปิดแอปเร็ว) · บัญชีจริง: เทียบกับที่เคยเห็นของบัญชี (startAccountSync) แล้วรับที่เปลี่ยนระหว่างปิดแอป
+  const hadLocal = loadSeen();
+  wake = () => void fetchAll(true);
+  if (gateOpen) void fetchAll(hadLocal);
   const ch = cloud
     .channel('tw-app')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tw_appointments' }, (ev) => {
@@ -236,7 +286,6 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   const { data: authSub } = cloud.auth.onAuthStateChange((ev) => {
     if (ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED' || ev === 'INITIAL_SESSION') {
       void refreshAvailability().catch(() => undefined);
-      void fetchAll(false);
     }
   });
   // สำรอง realtime ทุก 3 วินาที (แจ้งเตือนไม่ช้าแม้ realtime หลุด)

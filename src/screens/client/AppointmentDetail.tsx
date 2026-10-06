@@ -1,4 +1,5 @@
 import React from 'react';
+import { kmText } from '../../services/location';
 import { Pressable, View } from 'react-native';
 import { AppBar, Button, Icon, IconBox, InfoRow, Panel, Screen, TINT, Text, useHideTabs, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
@@ -90,7 +91,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
             <Text variant="titleSm">{appt.clinic}</Text>
             {place ? (
               <Text variant="bodyXs" tone="secondary">
-                {place.km} กม. {place.area}
+                {kmText(place)} {place.area}
               </Text>
             ) : null}
           </View>

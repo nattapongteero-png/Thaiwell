@@ -1,4 +1,5 @@
 import React from 'react';
+import { kmText } from '../../services/location';
 import { useIsFocused, useRoute } from '@react-navigation/native';
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
 import { Gesture, GestureDetector, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
@@ -57,7 +58,7 @@ import {
   BottomSheet,
 } from '../../design-system';
 import { useJourney, type DraftCase } from '../../state/JourneyContext';
-import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, rankPlaces } from './PlacesScreen';
+import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
@@ -633,7 +634,7 @@ export function HomeScreen() {
       const top = ranked[0];
       return [
         {
-          ...aiText(`นัดเรื่อง${topic}ค่ะ ${urgency.label}${urgency.reason ? ` (${urgency.reason})` : ''}\n\nแนะนำ${top.place.name} ${top.reason} ห่าง ${top.place.km} กม.`, {
+          ...aiText(`นัดเรื่อง${topic}ค่ะ ${urgency.label}${urgency.reason ? ` (${urgency.reason})` : ''}\n\nแนะนำ${top.place.name} ${top.reason} ${kmText(top.place) ? `ห่าง ${kmText(top.place)}` : ''}`, {
             type: 'placePick',
             options: ranked.map((r) => ({ id: r.place.id, name: r.place.name, km: r.place.km, reason: r.reason, slot: firstFree(r.place.id) })),
           }),
@@ -1388,7 +1389,7 @@ export function HomeScreen() {
           const near = nearestClinic();
           return reply(
             label,
-            near ? `ใกล้คุณมี${near.name} ${near.km} กม.${near.slots.length ? ` คิวว่างวันนี้ ${near.slots.join(' และ ')}` : ' วันนี้คิวเต็มแล้ว'}ค่ะ` : 'ยังไม่พบคลินิกใกล้คุณค่ะ',
+            near ? `ใกล้คุณมี${near.name} ${kmText(near)}${near.slots.length ? ` คิวว่างวันนี้ ${near.slots.join(' และ ')}` : ' วันนี้คิวเต็มแล้ว'}ค่ะ` : 'ยังไม่พบคลินิกใกล้คุณค่ะ',
             { type: 'action', label: 'ดูสถานที่ทั้งหมด', to: 'Places' },
           );
         }
@@ -3218,7 +3219,7 @@ function PlacePickCard({ options, active, onPick, onAll }: { options: Extract<Th
             {i === 0 ? <Badge label="แนะนำ" tone="brand" /> : null}
           </View>
           <Text variant="caption" tone="secondary">
-            {o.km} กม. ว่าง {o.slot}
+            {kmText(o)} ว่าง {o.slot}
           </Text>
           <Text variant="caption" tone="tertiary">
             {o.reason}
@@ -3312,7 +3313,7 @@ function BookConfirmCard({ card, active, onConfirm, onChange }: { card: Extract<
             </Text>
             {place ? (
               <Text variant="caption" tone="secondary">
-                {place.km} กม. {place.area}
+                {kmText(place)} {place.area}
               </Text>
             ) : null}
           </View>
@@ -3587,8 +3588,8 @@ function WelcomeBento({
     <View style={{ gap: BENTO_GAP }}>
       {/* 1) คลินิกใกล้คุณ */}
       {near ? (
-        <Tile style={{ gap: space[2] }} onPress={() => onPlace(near.id)} accessibilityLabel={`คลินิกใกล้คุณ ${near.name} ${near.km} กม.`}>
-          <TileTitle title="คลินิกใกล้คุณ" meta={`${near.km} กม.`} />
+        <Tile style={{ gap: space[2] }} onPress={() => onPlace(near.id)} accessibilityLabel={`คลินิกใกล้คุณ ${near.name} ${kmText(near)}`}>
+          <TileTitle title="คลินิกใกล้คุณ" meta={`${kmText(near)}`} />
           <Text variant="bodyMd" numberOfLines={1}>
             {near.name}
           </Text>
@@ -3887,7 +3888,7 @@ function DraftBento({
                   {near.name}
                 </Text>
                 <Text variant="bodyXs" tone="tertiary">
-                  {near.km} กม.{near.slots[0] ? ` ว่าง ${near.slots[0]}` : ''}
+                  {kmText(near)}{near.slots[0] ? ` ว่าง ${near.slots[0]}` : ''}
                 </Text>
               </View>
               {/* ปุ่มหลัก (จองที่นี่) + ปุ่มรองวงกลม (ดูที่อื่น · ไอคอนแผนที่) แถวเดียวกัน */}
@@ -3939,7 +3940,18 @@ function DraftBento({
             <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} note={d.caution} />
           )}
 
-          {d.red ? (
+          {d.red && !hospital ? (
+            // ใช้งานจริง: ไม่มีรายชื่อโรงพยาบาลในแอป → ค้นหาโรงพยาบาลใกล้ตัวใน Google Maps
+            <Tile style={{ flex: 1, gap: space[2] }} onPress={() => void searchHospitals()} accessibilityLabel="ค้นหาโรงพยาบาลใกล้คุณ">
+              <View style={{ gap: 2 }}>
+                <Text variant="labelMd">พบแพทย์ใกล้คุณ</Text>
+                <Text variant="bodySm" numberOfLines={2}>
+                  ค้นหาโรงพยาบาลใกล้ตัวในแผนที่
+                </Text>
+              </View>
+              <TilePill icon="navigation" label="ค้นหา" />
+            </Tile>
+          ) : d.red && hospital ? (
             // ควรพบแพทย์ก่อน → ทางไปต่อ: โรงพยาบาลใกล้คุณ (นำทาง) หรือดูทั้งหมด
             <Tile style={{ flex: 1, gap: space[2] }} onPress={() => onPlaces('doctor')} accessibilityLabel="พบแพทย์ใกล้คุณ">
               <View style={{ gap: 2 }}>
@@ -3953,7 +3965,7 @@ function DraftBento({
                   {hospital.name}
                 </Text>
                 <Text variant="bodyXs" tone="tertiary">
-                  {hospital.km} กม.
+                  {kmText(hospital)}
                 </Text>
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel={`นำทางไป ${hospital.name}`} onPress={() => openMap(hospital)}>

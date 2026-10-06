@@ -1,6 +1,9 @@
 import React from 'react';
+import { distanceKm, kmText, locate, myLocation, onLocation } from '../../services/location';
+import { isCloud, readAvailability } from '../../services/clinicBridge';
+import { onAvailability } from '../../services/cloudBridge';
 import { Linking, Pressable, View } from 'react-native';
-import { AppBar, Badge, BottomSheet, ChipSection, Icon, Screen, Text, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
+import { AppBar, Badge, Button, BottomSheet, ChipSection, Icon, Screen, Text, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useNavigation } from '@react-navigation/native';
 import { useNav } from '../../navigation/types';
@@ -49,6 +52,29 @@ export const PLACES: Place[] = PLACE_LIST.map((p) =>
   p.kind === 'clinic' ? Object.defineProperty({ ...p }, 'slots', { enumerable: true, get: () => anyoneSlots(p.id).filter((f) => f.day === 0).map((f) => f.time) }) : p,
 );
 
+/**
+ * ใช้งานจริง (cloud): รายการสถานที่ = คลินิกที่ใช้ระบบ ThaiWell เท่านั้น — ชื่อ ที่อยู่ เบอร์ พิกัด จากหน้าตั้งค่าของคลินิก
+ * ระยะทางคำนวณจากตำแหน่งจริงของผู้ใช้ · สถานที่ตัวอย่างอื่น (คลินิก/โรงพยาบาลสมมติ) ไม่แสดง
+ */
+export function syncLivePlaces() {
+  if (!isCloud()) return;
+  const a = readAvailability();
+  if (!a) {
+    PLACES.splice(0, PLACES.length);
+    return;
+  }
+  const c = a.clinic;
+  const base = PLACE_LIST.find((p) => p.id === BRIDGE_PLACE)!;
+  const live = { ...base, name: c?.name ?? a.clinicName ?? base.name, area: c?.address ?? '', phone: c?.phone, lat: c?.lat ?? NaN, lng: c?.lng ?? NaN } as Place;
+  Object.defineProperty(live, 'slots', { enumerable: true, get: () => anyoneSlots(BRIDGE_PLACE).filter((f) => f.day === 0).map((f) => f.time) });
+  Object.defineProperty(live, 'km', { enumerable: true, get: () => distanceKm(c?.lat, c?.lng) });
+  PLACES.splice(0, PLACES.length, live);
+}
+if (isCloud()) {
+  syncLivePlaces();
+  onAvailability(syncLivePlaces);
+}
+
 /** แนะนำที่ใกล้ที่สุด: นวดรักษา = มีแพทย์แผนไทย + บัตรทอง + มีคิว · พบแพทย์ = โรงพยาบาล */
 // คลินิกที่เชื่อมหลังบ้าน (มีเวลาว่างจริงจากคลินิก) มาก่อน แม้วันนี้เต็มแล้ว — จองแล้วคลินิกเห็นทันที
 export const nearestClinic = () =>
@@ -80,14 +106,23 @@ export function rankPlaces(methods: string[], limit = 3): { place: Place; reason
 }
 
 /** โทรหาคลินิกตามชื่อ (ไม่พบ = คลินิกหลัก) */
+// คลินิกที่ใช้ระบบ (ข้อมูลจริงจากคลินิก) ก่อน · ไม่พบ = คลินิกหลัก
+const placeByName = (name?: string) => PLACES.find((x) => x.name === name) ?? PLACE_LIST.find((x) => x.name === name) ?? PLACES.find((x) => x.id === BRIDGE_PLACE) ?? (isCloud() ? { ...PLACE_LIST[0], phone: '' } : PLACE_LIST[0]);
 export const callClinic = (name?: string) => {
-  const p = PLACE_LIST.find((x) => x.name === name) ?? PLACE_LIST[0];
+  const p = placeByName(name);
   if (p.phone) Linking.openURL(`tel:${p.phone.replace(/-/g, '')}`).catch(() => {});
 };
-export const clinicPhone = (name?: string) => (PLACE_LIST.find((x) => x.name === name) ?? PLACE_LIST[0]).phone ?? '';
+export const clinicPhone = (name?: string) => placeByName(name).phone ?? '';
 
 /** นำทางด้วยแอปแผนที่ (ต้นแบบ: ค้นตามชื่อ) */
-export const openMap = (p: Place) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.area}`)}`);
+// มีพิกัด → นำทางไปจุดนั้นตรง ๆ · ไม่มี → ค้นจากชื่อ + ที่อยู่
+export const openMap = (p: Place) =>
+  Linking.openURL(Number.isFinite(p.lat) && Number.isFinite(p.lng) ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.area}`)}`);
+/** หาโรงพยาบาลใกล้ตัวใน Google Maps (ใช้งานจริงไม่มีรายชื่อโรงพยาบาลในแอป) */
+export const searchHospitals = () => {
+  const me = myLocation();
+  return Linking.openURL(me ? `https://www.google.com/maps/search/%E0%B9%82%E0%B8%A3%E0%B8%87%E0%B8%9E%E0%B8%A2%E0%B8%B2%E0%B8%9A%E0%B8%B2%E0%B8%A5/@${me.lat},${me.lng},14z` : 'https://www.google.com/maps/search/?api=1&query=%E0%B9%82%E0%B8%A3%E0%B8%87%E0%B8%9E%E0%B8%A2%E0%B8%B2%E0%B8%9A%E0%B8%B2%E0%B8%A5%E0%B9%83%E0%B8%81%E0%B8%A5%E0%B9%89%E0%B8%89%E0%B8%B1%E0%B8%99');
+};
 
 const FILTERS = ['ว่างวันนี้', 'บัตรทอง', 'แพทย์แผนไทย'];
 
@@ -104,6 +139,17 @@ export function PlacesScreen({ route }: { route?: { params?: { mode?: 'doctor' }
     [tabNav],
   );
   const [filters, setFilters] = React.useState<string[]>([]);
+  // ตำแหน่งผู้ใช้ (ระยะทางจริง) + ข้อมูลคลินิกจากระบบ → วาดใหม่เมื่อได้มา
+  const [, refresh] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => {
+    void locate();
+    const a = onLocation(refresh);
+    const b = onAvailability(refresh);
+    return () => {
+      a();
+      b();
+    };
+  }, []);
   const [picked, setPicked] = React.useState<string | null>(null);
   const list = PLACES.filter((p) => (doctor ? p.kind === 'hospital' : p.kind === 'clinic'))
     .filter(
@@ -120,12 +166,19 @@ export function PlacesScreen({ route }: { route?: { params?: { mode?: 'doctor' }
       {/* แผนที่ 3 มิติ (MapLibre + OpenFreeMap · ฟรี) · แตะหมุด = เลื่อนไปการ์ดนั้น */}
       <PlacesMap
         places={list.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng, kind: p.kind, slots: p.slots.length }))}
-        me={MY_LOCATION}
+        me={isCloud() ? myLocation() : MY_LOCATION}
         selected={picked ?? undefined}
         onPick={setPicked}
       />
       {doctor ? null : <ChipSection options={FILTERS} value={filters} onChange={setFilters} />}
 
+      {/* ใช้งานจริง: โรงพยาบาลค้นใน Google Maps · ยังไม่มีคลินิกเปิดรับจอง → บอกตรง ๆ */}
+      {isCloud() && doctor ? <Button label="ค้นหาโรงพยาบาลใกล้ฉันใน Google Maps" iconLeft="navigation" onPress={() => void searchHospitals()} /> : null}
+      {isCloud() && !doctor && !list.length ? (
+        <Text variant="bodySm" tone="secondary" align="center">
+          ยังไม่มีคลินิกที่เปิดรับจองผ่านแอป
+        </Text>
+      ) : null}
       {/* การ์ดสถานที่: ชื่อ + ระยะทาง/ย่าน (รายละเอียด คิว สิทธิ ผู้ให้บริการ → หน้ารายละเอียด) */}
       {list.map((p) => {
         const on = picked === p.id;
@@ -134,7 +187,7 @@ export function PlacesScreen({ route }: { route?: { params?: { mode?: 'doctor' }
           <Pressable
             key={p.id}
             accessibilityRole="button"
-            accessibilityLabel={`${p.name} ${p.km} กม. ดูรายละเอียด`}
+            accessibilityLabel={`${p.name} ${kmText(p)} ดูรายละเอียด`}
             onPress={() => nav.navigate('PlaceDetail', { id: p.id })}
             style={({ pressed }) => ({
               flexDirection: 'row',
@@ -160,7 +213,7 @@ export function PlacesScreen({ route }: { route?: { params?: { mode?: 'doctor' }
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end', gap: 2 }}>
-              <Text variant="labelMd">{p.km} กม.</Text>
+              <Text variant="labelMd">{kmText(p)}</Text>
               <Icon name="chevron-right" size="sm" color={colors.text.tertiary} />
             </View>
           </Pressable>
@@ -219,7 +272,7 @@ export function PlacesSheet({ visible, onClose, onPick, recommendedId }: { visib
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
                       <Icon name="navigation" size="xs" color={colors.text.tertiary} />
                       <Text variant="caption" tone="secondary">
-                        {p.km} กม. {p.area}
+                        {kmText(p)} {p.area}
                       </Text>
                     </View>
                   </View>

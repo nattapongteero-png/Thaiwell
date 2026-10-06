@@ -52,6 +52,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>ถ่ายรูปบัตรประชาชนเพื่อยืนยันตัวตน (อ่านข้อมูลในเครื่อง ไม่ส่งรูปออกไป)</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>ใช้ตำแหน่งเพื่อบอกระยะทางไปคลินิก และค้นหาโรงพยาบาลใกล้คุณ</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>เลือกรูปบัตรประชาชนเพื่อยืนยันตัวตน (อ่านข้อมูลในเครื่อง ไม่ส่งรูปออกไป)</string>
     <key>RCTNewArchEnabled</key>

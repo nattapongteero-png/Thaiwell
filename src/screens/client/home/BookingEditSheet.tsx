@@ -1,4 +1,5 @@
 import React from 'react';
+import { kmText } from '../../../services/location';
 import { Pressable, View } from 'react-native';
 import { BottomSheet, Button, Icon, Text, useTheme } from '../../../design-system';
 import { radius, space } from '../../../design-system/tokens';
@@ -115,7 +116,7 @@ export function BookingEditSheet({
       <Section title="สถานที่">
         <View style={{ gap: space[2] }}>
           {places.map((p) => (
-            <Chip key={p.id} label={p.name} sub={`${p.km} กม. ${p.area}`} on={p.id === d.placeId} onPress={() => setPlace(p.id)} />
+            <Chip key={p.id} label={p.name} sub={`${kmText(p)} ${p.area}`} on={p.id === d.placeId} onPress={() => setPlace(p.id)} />
           ))}
         </View>
       </Section>
