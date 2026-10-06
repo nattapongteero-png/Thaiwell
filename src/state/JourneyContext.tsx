@@ -590,6 +590,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
+    // ลืมค่าที่โหลดไว้ตอนเปิดแอปด้วย ไม่อย่างนั้นหน้าเข้าสู่ระบบพากลับหน้าแรกทันที
+    SAVED = null;
     setEntered(false);
     bridgeRefs.current = {};
     bridgedCase.current = {};
