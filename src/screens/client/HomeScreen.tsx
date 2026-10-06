@@ -3451,67 +3451,92 @@ function CaseTabs({ cases, drafts, extras = [], value, onChange, onNew }: { case
 }
 
 /** จองไว้ก่อนประเมิน — แผ่นการ์ดแสดงเฉพาะข้อมูลนัดที่มี (นัด · ผู้ให้บริการ · บริการ) */
-function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; status?: 'pending' | 'confirmed' }; onCheckIn: () => void; onEdit: () => void }) {
-  const halfW = (width - BENTO_GAP) / 2;
+/**
+ * การ์ดนัดครั้งแรก (เต็มแถว) — รูปแบบเดียวกับ "นัดครั้งที่ N" หลังรักษาแล้ว (HomeBento)
+ * เวลา (ซ้าย) · คิว/วันที่ (ขวา) → ขั้นที่ต้องทำ → ปุ่ม
+ */
+function FirstVisitCard({
+  booking: b,
+  steps,
+  onCheckIn,
+  onOpen,
+}: {
+  booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed' };
+  /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
+  steps?: React.ReactNode;
+  onCheckIn: () => void;
+  onOpen: () => void;
+}) {
+  const { colors } = useTheme();
   const today = b.date === 'วันนี้';
+  const pending = b.status === 'pending';
+  return (
+    <Tile style={{ gap: space[3] }} onPress={onOpen} accessibilityLabel={`นัดครั้งที่ 1 ${b.date} ${b.time}${b.queue ? ` คิว ${b.queue}` : ''} ดูรายละเอียด`}>
+      <TileTitle title="นัดครั้งที่ 1" meta={b.clinic} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
+        <View>
+          <Text variant="bodyXs" tone="secondary">
+            {today ? 'วันนี้' : 'เวลา'}
+          </Text>
+          <Text variant="titleXl">{b.time}</Text>
+        </View>
+        {today ? (
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text variant="bodyXs" tone="secondary">
+              คิว
+            </Text>
+            <Text variant="titleXl" color={b.queue ? colors.brand.primary : colors.text.tertiary}>
+              {b.queue ?? '–'}
+            </Text>
+          </View>
+        ) : (
+          <DateBlock date={b.date} />
+        )}
+      </View>
+      <View style={{ gap: space[2] }}>
+        <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
+        <StepRow done={!!b.queue} text={b.queue ? `ได้คิว ${b.queue}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
+        {steps}
+      </View>
+      {pending ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen}>
+          <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
+        </Pressable>
+      ) : today ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          {/* เช็กอินแล้ว (ได้คิว) → ดูคิว */}
+          <Pressable accessibilityRole="button" accessibilityLabel={b.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={onCheckIn} style={{ flex: 1 }}>
+            <TilePill icon={b.queue ? 'eye' : 'maximize'} label={b.queue ? 'ดูคิว' : 'เช็กอิน'} />
+          </Pressable>
+          <NavIconButton clinic={b.clinic} />
+        </View>
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen}>
+          <TilePill icon="file-text" label="รายละเอียด" dark={false} />
+        </Pressable>
+      )}
+    </Tile>
+  );
+}
+
+function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed' }; onCheckIn: () => void; onEdit: () => void }) {
+  const halfW = (width - BENTO_GAP) / 2;
   const [svc, mins] = b.service.split(' · ');
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-      <View style={{ width: halfW }}>
-        <Tile style={{ gap: space[2], flex: 1 }} onPress={onEdit} accessibilityLabel={`นัด ${b.date} ${b.time} ดูรายละเอียด`}>
-          <View style={{ gap: space[2] }}>
-            <TileTitle title="นัดของคุณ" />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
-              <View>
-                <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                  {today ? 'วันนี้' : b.clinic}
-                </Text>
-                <Text variant="titleXl">{b.time}</Text>
-              </View>
-              {today ? null : <DateBlock date={b.date} />}
-            </View>
-          </View>
-          {/* รอคลินิกยืนยัน → ยังเช็กอินไม่ได้ · เช็กอินได้เฉพาะวันนัด · วันอื่น = จัดการนัด (เลื่อน/ยกเลิก) */}
-          {b.status === 'pending' ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="รอคลินิกยืนยัน" onPress={onEdit} style={{ marginTop: 'auto' }}>
-              <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
-            </Pressable>
-          ) : today ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2], marginTop: 'auto' }}>
-              <Pressable accessibilityRole="button" accessibilityLabel="เช็กอิน" onPress={onCheckIn} style={{ flex: 1 }}>
-                <TilePill icon="maximize" label="เช็กอิน" />
-              </Pressable>
-              <NavIconButton clinic={b.clinic} />
-            </View>
-          ) : (
-            <Pressable accessibilityRole="button" accessibilityLabel="จัดการนัด" onPress={onEdit} style={{ marginTop: 'auto' }}>
-              <TilePill icon="edit-2" label="จัดการนัด" dark={false} />
-            </Pressable>
-          )}
-        </Tile>
-      </View>
-      <View style={{ width: halfW, gap: BENTO_GAP }}>
-        <Tile style={{ gap: space[1] }}>
+    <View style={{ gap: BENTO_GAP }}>
+      <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} />
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+        <Tile style={{ width: halfW, gap: space[1] }}>
           <TileTitle title="ผู้ให้บริการ" />
           <Text variant="bodySm" numberOfLines={2}>
             {b.therapist}
           </Text>
-          {today ? (
-            <Text variant="bodyXs" tone="tertiary" numberOfLines={1}>
-              {b.clinic}
-            </Text>
-          ) : null}
         </Tile>
-        <Tile style={{ gap: space[1] }}>
-          <TileTitle title="บริการ" />
+        <Tile style={{ width: halfW, gap: space[1] }}>
+          <TileTitle title="บริการ" meta={mins} />
           <Text variant="bodySm" numberOfLines={2}>
             {svc}
           </Text>
-          {mins ? (
-            <Text variant="bodyXs" tone="tertiary">
-              {mins}
-            </Text>
-          ) : null}
         </Tile>
       </View>
     </View>
@@ -3752,15 +3777,19 @@ function DraftBento({
   const stepIdx = served ? 3 : d.stage === 'booked' ? 2 : 1;
   const near = nearestClinic();
   const hospital = nearestHospital();
+  const booked = !!b && !d.red && !served;
 
   return (
     <View style={{ gap: BENTO_GAP }}>
       {tabs}
 
+      {/* จองแล้ว → การ์ดนัดเต็มแถว แบบเดียวกับหลังรักษา (นัดครั้งที่ N) */}
+      {booked ? <FirstVisitCard booking={b!} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} /> : null}
+
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <View style={{ width: halfW, gap: BENTO_GAP }}>
           {/* นัด */}
-          {d.red ? (
+          {booked ? null : d.red ? (
             <Tile style={{ gap: space[2] }} onPress={onRedFlag} accessibilityLabel="ควรพบแพทย์ก่อน">
               <TileTitle title="นัด" />
               <Text variant="titleSm" color={colors.status.danger.fg}>
@@ -3909,18 +3938,20 @@ function DraftBento({
             <>
               {/* ดูแลตัวเอง ระหว่างรอนัด */}
               <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
-              {/* ก่อนมานวด */}
-              <Tile style={{ flex: 1, gap: space[2] }}>
-                <TileTitle title="ก่อนมานวด" />
-                {prep.map((it) => (
-                  <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-                    <Icon name="check-circle" size="xs" color={colors.brand.primary} />
-                    <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
-                      {it}
-                    </Text>
-                  </View>
-                ))}
-              </Tile>
+              {/* ก่อนมานวด (จองแล้ว → อยู่ในการ์ดนัด) */}
+              {booked ? null : (
+                <Tile style={{ flex: 1, gap: space[2] }}>
+                  <TileTitle title="ก่อนมานวด" />
+                  {prep.map((it) => (
+                    <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+                      <Icon name="check-circle" size="xs" color={colors.brand.primary} />
+                      <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
+                        {it}
+                      </Text>
+                    </View>
+                  ))}
+                </Tile>
+              )}
             </>
           )}
         </View>
