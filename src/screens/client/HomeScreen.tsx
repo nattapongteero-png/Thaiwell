@@ -56,7 +56,7 @@ import {
   TINT,
   BottomSheet,
 } from '../../design-system';
-import { useJourney, type DraftCase } from '../../state/JourneyContext';
+import { useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
@@ -4039,7 +4039,10 @@ function HomeBento({
   onBook: () => void;
 }) {
   const { colors } = useTheme();
-  const { followUps, cancelledAppts, caseAppts } = useJourney();
+  const { followUps, cancelledAppts, caseAppts, plannedVisits } = useJourney();
+  // นัดที่คลินิกลงไว้ล่วงหน้าตามแผน (ครั้งแรก = นัดในการ์ดนี้)
+  const planned = plannedVisits[tcase.id] ?? [];
+  const [planOpen, setPlanOpen] = React.useState(false);
   // ไม่มีนัด = ยกเลิกแล้ว หรือยังไม่ได้จองครั้งถัดไป (เช่น เพิ่งนวดครั้งแรก) → ปุ่มจองนัด
   const cancelled = cancelledAppts.includes(tcase.id) || tcase.appointment.date === '-';
   const clinic = caseClinic(tcase);
@@ -4127,6 +4130,23 @@ function HomeBento({
                 </Pressable>
               )}
             </View>
+            {/* คลินิกลงนัดครั้งต่อ ๆ ไปไว้แล้ว → ดูนัดทั้งคอร์ส */}
+            {planned.length > 1 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`นัดตามแผนอีก ${planned.length - 1} ครั้ง ดูทั้งหมด`}
+                onPress={() => setPlanOpen(true)}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[2], paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle, opacity: pressed ? 0.6 : 1 })}
+              >
+                <Icon name="calendar" size="xs" color={colors.brand.primary} />
+                <Text variant="bodySm" style={{ flex: 1 }}>
+                  นัดตามแผนอีก {planned.length - 1} ครั้ง
+                </Text>
+                <Text variant="labelSm" color={colors.brand.primary}>
+                  ดูทั้งหมด
+                </Text>
+              </Pressable>
+            ) : null}
           </>
         ) : (
           <>
@@ -4160,6 +4180,8 @@ function HomeBento({
           </View>
         </Pressable>
       </View>
+
+      <PlannedSheet visible={planOpen} onClose={() => setPlanOpen(false)} tc={tc} visits={planned} />
 
       {/* 4) ระหว่างรอครั้งถัดไป: ท่าดูแลตัวเอง · บิล/ใบเสร็จ · ติดต่อคลินิก */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
@@ -4267,6 +4289,35 @@ function PreVisitResult({ tc, focus }: { tc: TreatmentCase; focus?: string }) {
 }
 
 /** ค่าบนกราฟแนวโน้ม: ครั้งก่อน ๆ = หลังนวด · ครั้งล่าสุด = คะแนนที่ผู้ใช้ประเมินหลังนวด (ยังไม่ประเมิน = ยังไม่มีคะแนน) — ตรงกับการ์ด Pain Score */
+/** นัดตามแผนทั้งคอร์สที่คลินิกลงไว้ (bottom sheet) — ครั้งที่ · วัน เวลา · ผู้บำบัด · ครั้งแรก = นัดถัดไป */
+function PlannedSheet({ visible, onClose, tc, visits }: { visible: boolean; onClose: () => void; tc: TreatmentCase; visits: PlannedVisit[] }) {
+  const { colors } = useTheme();
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="นัดตามแผน" subtitle={`รักษา${tc.short} · ${visits.length} นัด`} heightRatio={0.7}>
+      {visits.map((v, i) => (
+        <View key={v.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[2] }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: i === 0 ? colors.brand.primary : colors.surface.sunken }}>
+            <Text variant="labelMd" color={i === 0 ? '#FFFFFF' : colors.text.secondary}>
+              {tc.visits.length + 1 + i}
+            </Text>
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="bodyMd" style={{ fontWeight: '600' }}>
+              {v.date} · {v.time}
+            </Text>
+            {v.therapist ? (
+              <Text variant="bodySm" tone="secondary" numberOfLines={1}>
+                {v.therapist}
+              </Text>
+            ) : null}
+          </View>
+          {i === 0 ? <Badge label="นัดถัดไป" tone="brand" /> : null}
+        </View>
+      ))}
+    </BottomSheet>
+  );
+}
+
 /**
  * การ์ดแผนการรักษา (ใช้ทั้งก่อนและหลังนวดครั้งแรก): จำนวนครั้ง/ทั้งคอร์ส + กราฟแนวโน้มความปวด · รูปแบบนวดขวาบน
  * note = ข้อควรระวังจากผลประเมิน (ถ้ามี)

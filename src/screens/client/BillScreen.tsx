@@ -1,13 +1,23 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { AppBar, Button, Icon, IconBox, InfoRow, Panel, Screen, StatTile, TINT, Tag, Text, useTheme } from '../../design-system';
-import { space } from '../../design-system/tokens';
+import { AppBar, Button, Icon, IconBox, Panel, Screen, TINT, Text, fontFamily, useTheme } from '../../design-system';
+import { radius, space } from '../../design-system/tokens';
 import { useJourney, type Bill } from '../../state/JourneyContext';
+import { CASE_CLINIC_DEFAULT } from '../../state/appointments';
 import { useNav } from '../../navigation/types';
 import { NotFoundScreen } from './NotFound';
 
+/** วิธีชำระ (ชุดเดียวกับหลังบ้าน) → ป้ายในแอป · จ่ายในแอป หรือจ่ายที่เคาน์เตอร์ */
+const METHOD: Record<NonNullable<Bill['method']>, { label: string; where: 'app' | 'counter' }> = {
+  app: { label: 'ชำระในแอป', where: 'app' },
+  cash: { label: 'เงินสด · เคาน์เตอร์', where: 'counter' },
+  promptpay: { label: 'QR พร้อมเพย์ · เคาน์เตอร์', where: 'counter' },
+  credit: { label: 'หักเครดิตคอร์ส', where: 'counter' },
+};
+const methodLabel = (b: Bill) => (b.method ? METHOD[b.method].label : 'ชำระแล้ว');
+
 /**
- * การชำระเงิน — บิลที่คลินิกส่งมาให้จ่ายในแอป (หลังบ้าน: ส่งบิลในแอป ThaiWell AI) · จ่ายแล้วได้ใบเสร็จ
+ * การชำระเงิน — รอชำระ (จ่ายในแอป หรือที่เคาน์เตอร์) · ชำระแล้ว (ใบเสร็จจากระบบคลินิก)
  * ⚠️ ต้นแบบ: ยังไม่ได้ต่อระบบชำระเงินจริง
  */
 export function BillsScreen() {
@@ -23,7 +33,7 @@ export function BillsScreen() {
         <View style={{ flex: 1 }}>
           <Text variant="labelMd">{b.title}</Text>
           <Text variant="bodyXs" tone="secondary">
-            {b.status === 'pending' ? `รับบริการ ${b.date}` : `ชำระแล้ว ${b.paidAt ?? ''}`}
+            {b.status === 'pending' ? `รับบริการ ${b.date}` : `${methodLabel(b)} · ${b.paidAt ?? ''}`}
           </Text>
         </View>
         <Text variant="labelLg">{b.total.toLocaleString()} ฿</Text>
@@ -41,7 +51,7 @@ export function BillsScreen() {
             </Panel>
           ) : null}
           {paid.length ? (
-            <Panel title="ใบเสร็จ" flush>
+            <Panel title="ชำระแล้ว" flush>
               {paid.map((b, i) => row(b, i === paid.length - 1))}
             </Panel>
           ) : null}
@@ -61,47 +71,155 @@ export function BillsScreen() {
 export function BillScreen({ route }: { route: { params: { id: string } } }) {
   const nav = useNav();
   const { colors } = useTheme();
-  const { bills, payBill, log } = useJourney();
+  const { bills, payBill, log, cases, client } = useJourney();
   const b = bills.find((x) => x.id === route.params.id);
   if (!b) return <NotFoundScreen title="บิล" />;
   const paid = b.status === 'paid';
+  const tc = cases.find((c) => c.id === b.caseId);
+  const clinic = tc?.clinic ?? CASE_CLINIC_DEFAULT;
+
+  // ชำระแล้ว → ใบเสร็จ (หน้าตาเดียวกับใบเสร็จของหลังบ้าน)
+  if (paid) {
+    const meta: [string, string][] = [
+      ['เลขที่', b.receiptNo ?? '-'],
+      ['วันที่ชำระ', b.paidAt ?? '-'],
+      ['ผู้รับบริการ', client.name],
+      ...(b.therapist || tc?.therapist ? ([['ผู้บำบัด', b.therapist || tc!.therapist]] as [string, string][]) : []),
+      ['รับบริการ', b.date],
+    ];
+    return (
+      <Screen header={<AppBar title="ใบเสร็จ" onBack={() => nav.goBack()} />}>
+        <View style={{ backgroundColor: colors.surface.default, borderRadius: 24, borderWidth: 1, borderColor: colors.border.subtle, padding: space[5], gap: space[4] }}>
+          {/* หัว: คลินิก + ชนิดเอกสาร · ตราชำระแล้ว */}
+          <View style={{ alignItems: 'center', gap: 2 }}>
+            <Text variant="titleSm" align="center">
+              {clinic}
+            </Text>
+            <Text variant="bodyXs" tone="tertiary">
+              ใบเสร็จรับเงิน · RECEIPT
+            </Text>
+          </View>
+          <View style={{ alignItems: 'center', gap: space[1] }}>
+            <Text variant="bodyXs" tone="secondary">
+              ยอดชำระ
+            </Text>
+            <Text style={{ fontFamily: fontFamily.bold, fontSize: 40, lineHeight: 52, color: colors.text.primary }}>
+              {b.total.toLocaleString()}
+              <Text variant="titleSm" tone="secondary">
+                {' '}
+                บาท
+              </Text>
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space[3], paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
+              <Icon name="check" size="xs" color={colors.brand.primary} />
+              <Text variant="labelSm" color={colors.brand.primary} style={{ transform: [{ translateY: 1 }] }}>
+                ชำระแล้ว · {methodLabel(b)}
+              </Text>
+            </View>
+          </View>
+          <Dash />
+          <View style={{ gap: space[2] }}>
+            {meta.map(([k, v]) => (
+              <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
+                <Text variant="bodySm" tone="secondary">
+                  {k}
+                </Text>
+                <Text variant="bodySm" style={{ flexShrink: 1, textAlign: 'right' }}>
+                  {v}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <Dash />
+          <View style={{ gap: space[2] }}>
+            {b.items.map((it) => (
+              <View key={it.name} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
+                <Text variant="bodyMd" style={{ flex: 1 }}>
+                  {it.name}
+                </Text>
+                <Text variant="bodyMd">{it.amount.toLocaleString()}</Text>
+              </View>
+            ))}
+          </View>
+          <Dash />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text variant="titleSm">รวมทั้งสิ้น</Text>
+            <Text variant="titleSm">{b.total.toLocaleString()} ฿</Text>
+          </View>
+          <Text variant="bodyXs" tone="tertiary" align="center">
+            ขอบคุณที่ใช้บริการ
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  // รอชำระ → เลือกจ่ายในแอป หรือจ่ายที่เคาน์เตอร์ (คลินิกบันทึกแล้วใบเสร็จเข้าแอปเอง)
   return (
     <Screen
-      header={<AppBar title={paid ? 'ใบเสร็จ' : 'ชำระเงิน'} onBack={() => nav.goBack()} />}
+      header={<AppBar title="ชำระเงิน" onBack={() => nav.goBack()} />}
       footer={
-        paid ? undefined : (
-          <Button
-            label={`ชำระ ${b.total.toLocaleString()} บาท`}
-            iconLeft="credit-card"
-            onPress={() => {
-              payBill(b.id);
-              log('ผู้รับบริการ', `ชำระบิล ${b.title} ${b.total} บาท ในแอป`);
-            }}
-          />
-        )
+        <Button
+          label={`ชำระในแอป ${b.total.toLocaleString()} บาท`}
+          iconLeft="credit-card"
+          onPress={() => {
+            payBill(b.id);
+            log('ผู้รับบริการ', `ชำระบิล ${b.title} ${b.total} บาท ในแอป`);
+          }}
+        />
       }
     >
-      <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[3] }}>
-        <View style={{ width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: paid ? colors.brand.subtle : colors.surface.sunken }}>
-          <Icon name={paid ? 'check' : 'credit-card'} size="lg" color={paid ? colors.brand.primary : colors.text.secondary} />
-        </View>
-        <Text variant="titleLg">{paid ? 'ชำระเรียบร้อย' : 'รอชำระ'}</Text>
+      <View style={{ alignItems: 'center', gap: space[1], paddingVertical: space[3] }}>
+        <Text variant="bodySm" tone="secondary">
+          ยอดที่ต้องชำระ
+        </Text>
+        <Text style={{ fontFamily: fontFamily.bold, fontSize: 40, lineHeight: 52, color: colors.text.primary }}>
+          {b.total.toLocaleString()}
+          <Text variant="titleSm" tone="secondary">
+            {' '}
+            บาท
+          </Text>
+        </Text>
+        <Text variant="bodySm" tone="secondary">
+          {b.title} · {b.date}
+        </Text>
       </View>
-      <View style={{ flexDirection: 'row', gap: space[2] }}>
-        <StatTile label="ยอดรวม" value={`${b.total.toLocaleString()}`} unit="บาท" color={paid ? colors.brand.primary : undefined} />
-        <StatTile label="รับบริการ" value={b.date} small />
-      </View>
-      <Panel title={b.title} right={<Tag text={paid ? 'ชำระแล้ว' : 'รอชำระ'} tone={paid ? 'good' : 'warn'} />}>
+      <Panel title="รายการ">
         {b.items.map((it) => (
-          <InfoRow key={it.name} k={it.name} v={`${it.amount.toLocaleString()} ฿`} />
+          <View key={it.name} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
+            <Text variant="bodyMd" style={{ flex: 1 }}>
+              {it.name}
+            </Text>
+            <Text variant="bodyMd">{it.amount.toLocaleString()} ฿</Text>
+          </View>
         ))}
       </Panel>
-      {paid ? (
-        <Panel title="ใบเสร็จ">
-          <InfoRow k="เลขที่" v={b.receiptNo ?? '-'} />
-          <InfoRow k="ชำระเมื่อ" v={b.paidAt ?? '-'} />
-        </Panel>
-      ) : null}
+      <Panel title="ชำระได้ 2 ทาง">
+        <View style={{ flexDirection: 'row', gap: space[3], alignItems: 'flex-start' }}>
+          <IconBox icon="smartphone" tint={TINT.green} size={36} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="labelMd">ชำระในแอป</Text>
+            <Text variant="bodySm" tone="secondary">
+              กดปุ่มด้านล่าง ใบเสร็จขึ้นในแอปทันที
+            </Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', gap: space[3], alignItems: 'flex-start' }}>
+          <IconBox icon="home" tint={TINT.amber} size={36} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="labelMd">ชำระที่เคาน์เตอร์</Text>
+            <Text variant="bodySm" tone="secondary">
+              เงินสดหรือ QR พร้อมเพย์ ใบเสร็จจะส่งเข้าแอปหลังชำระ
+            </Text>
+          </View>
+        </View>
+      </Panel>
     </Screen>
   );
+}
+
+/** เส้นประคั่นแบบใบเสร็จ */
+function Dash() {
+  const { colors } = useTheme();
+  return <View style={{ height: 0, borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.border.default }} />;
 }

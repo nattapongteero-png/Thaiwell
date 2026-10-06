@@ -14,7 +14,7 @@
  * เว็บยังใช้ localStorage ตามเดิม (ตั้ง EXPO_PUBLIC_CLOUD=1 ตอน build ถ้าต้องการให้เว็บใช้ cloud ด้วย)
  */
 import { Platform } from 'react-native';
-import { CLOUD_CONFIGURED, cloudAvailabilityRaw, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud, cloudRows, type CloudRow } from './cloudBridge';
+import { CLOUD_CONFIGURED, cloudAvailabilityRaw, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud, cloudRows, type CloudRow, cloudPatientRows } from './cloudBridge';
 
 /** ใช้สะพาน cloud (ข้ามเครื่อง) แทน localStorage (เบราว์เซอร์เดียวกัน) — ต้องมีค่าใน .env ก่อน */
 export const CLOUD = CLOUD_CONFIGURED && (Platform.OS !== 'web' || process.env.EXPO_PUBLIC_CLOUD === '1');
@@ -80,7 +80,8 @@ export interface ClinicRequest {
 
 export type ClinicEvent =
   /** cloud = เลขคิวมาจากคลินิกตอนเช็กอิน (แอปไม่ออกเลขคิวเอง) */
-  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean }
+  /** moved = คลินิกเปลี่ยนวัน/เวลา/ผู้บำบัดของนัดที่ยืนยันแล้ว */
+  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean; moved?: boolean }
   | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
   /** cloud = คลินิกเป็นคนออกบิล (แอปไม่จำลองบิล) · record = ผลการรักษาที่คลินิกบันทึก */
   | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number; cloud?: boolean; record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string } }
@@ -90,9 +91,10 @@ export type ClinicEvent =
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
-  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[] }
+  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; therapist?: string }
   /** จ่ายที่คลินิกแล้ว → ใบเสร็จ */
-  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string }
+  /** method = วิธีชำระของคลินิก (cash · promptpay · app · credit) · quiet = จ่ายในแอปเอง แค่เติมเลขใบเสร็จจริง (ไม่แจ้งเตือนซ้ำ) */
+  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string; method?: string; therapist?: string; quiet?: boolean }
   /** นวดครั้งต่อ ๆ ไปตามแผน (นัดที่คลินิกลงเอง) */
   | { id: string; at: string; type: 'visit'; patientId: string; apptId: string; date: string; painBefore: number; painAfter: number }
   /** แผนการรักษา: นัดถัดไปที่คลินิกลงไว้ + คอร์ส */
@@ -255,4 +257,6 @@ export function birthToISO(b?: string): string | undefined {
 
 /** สถานะปัจจุบันของนัดใน cloud (ไม่ใช้ cloud → ว่าง) */
 export const fetchCloudRows = (ids: string[]): Promise<CloudRow[]> => (CLOUD ? cloudRows(ids).catch(() => []) : Promise.resolve([]));
+/** นัดที่ยังไม่จบของผู้ป่วยคนนี้ใน cloud (รวมนัดที่คลินิกลงเองตามแผน) */
+export const fetchPatientRows = (patientId: string): Promise<CloudRow[] | null> => (CLOUD ? cloudPatientRows(patientId).catch(() => null) : Promise.resolve(null));
 export type { CloudRow };

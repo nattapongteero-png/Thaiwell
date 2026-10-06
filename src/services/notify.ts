@@ -48,6 +48,7 @@ export function noticeOf(e: ClinicEvent): [string, string] | null {
     case 'bill':
       return ['บิลรอชำระ', `${e.amount.toLocaleString()} บาท · ชำระในแอปได้เลย`];
     case 'receipt':
+      if (e.quiet) return null;
       return ['ใบเสร็จรับเงิน', `${e.amount.toLocaleString()} บาท${e.receiptNo ? ` · ${e.receiptNo}` : ''}`];
     case 'plan':
       return e.summary ? ['แผนการรักษาจากคลินิก', `${e.course?.total ?? ''} ครั้ง${e.frequency ? ` (${e.frequency})` : ''} · ${e.summary}`] : e.next ? ['นัดครั้งถัดไปตามแผน', `${e.next.date} ${e.next.start} น.`] : null;

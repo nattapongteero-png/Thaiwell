@@ -67,7 +67,7 @@ const loadSeen = () => {
 const saveSeen = () => {
   try {
     // เก็บเฉพาะที่ใช้หาความเปลี่ยนแปลง
-    const list = [...rows.values()].map(({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }));
+    const list = [...rows.values()].map(({ id, patient_id, status, date, start, therapist, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, date, start, therapist, queue_no, bill, plan, created_at, updated_at }));
     setItem(SEEN_KEY, JSON.stringify(list.slice(-300)));
   } catch {
     /* ignore */
@@ -81,6 +81,13 @@ export async function refreshAvailability() {
   if (data?.payload) availRaw = JSON.stringify(data.payload);
 }
 /** สถานะปัจจุบันของนัดใน cloud (ใช้ตั้งต้นบัญชีตัวอย่างให้ตรงกับคลินิก) */
+/** นัดที่ยังไม่จบของผู้ป่วยคนนี้ (นัดที่จองจากแอป + นัดที่คลินิกลงเองตามแผน) */
+export async function cloudPatientRows(patientId: string): Promise<CloudRow[]> {
+  const { data, error } = await cloud.from('tw_appointments').select('*').eq('patient_id', patientId).in('status', ['confirmed', 'checked_in', 'called', 'in_service']);
+  // อ่านไม่ได้ (ออฟไลน์ ฯลฯ) → แจ้งผิดพลาด ไม่ใช่ "ไม่มีนัด" (กันรายการนัดตามแผนในแอปหาย)
+  if (error) throw error;
+  return (data ?? []) as CloudRow[];
+}
 export async function cloudRows(ids: string[]): Promise<CloudRow[]> {
   const { data } = await cloud.from('tw_appointments').select('*').in('id', ids);
   return (data ?? []) as CloudRow[];
@@ -180,15 +187,20 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
     else if (s === 'recorded') out.push({ id: id('done'), at, type: 'completed', ref: row.id, painBefore: row.record?.painBefore ?? 0, painAfter: row.record?.painAfter, cloud: true, record: row.record ?? undefined });
     else if (s === 'cancelled') out.push({ id: id('cancel'), at, type: 'cancelled', ref: row.id });
     else if (s === 'no_show') out.push({ id: id('absent'), at, type: 'absent', ref: row.id });
+  } else if (prev && s === 'confirmed' && (row.date !== prev.date || row.start !== prev.start || row.therapist !== prev.therapist)) {
+    // คลินิกเลื่อนนัดที่ยืนยันแล้ว (วัน/เวลา/ผู้บำบัด)
+    out.push({ id: id('move'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true, moved: true });
   }
   // เลขคิว: คลินิกออกให้หลังเช็กอิน (มาอีกรอบหลังสถานะ)
   if (s === 'checked_in' && row.queue_no && row.queue_no !== prev?.queue_no) out.push({ id: id('queue'), at, type: 'queue', ref: row.id, queue: row.queue_no, called: false });
   const b = row.bill;
   const pb = prev?.bill;
   if (b && JSON.stringify(b) !== JSON.stringify(pb ?? null)) {
-    if (b.status === 'pending' && pb?.status !== 'pending') out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [] });
+    if (b.status === 'pending' && pb?.status !== 'pending') out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], therapist: row.therapist ?? undefined });
     // จ่ายที่คลินิก → ใบเสร็จ (จ่ายในแอปเองไม่ต้องแจ้งซ้ำ)
-    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at });
+    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: b.method, therapist: row.therapist ?? undefined });
+    // จ่ายในแอป → คลินิกออกเลขใบเสร็จจริงตามมา (เติมลงใบเสร็จในแอปเงียบ ๆ)
+    else if (b.status === 'paid' && b.via === 'app' && b.receipt_no && b.receipt_no !== pb?.receipt_no) out.push({ id: id('rcno'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: 'app', therapist: row.therapist ?? undefined, quiet: true });
   }
   if (row.plan && JSON.stringify(row.plan) !== JSON.stringify(prev?.plan ?? null)) {
     out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: { name: row.plan.summary, total: row.plan.sessions, used: 1 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });
