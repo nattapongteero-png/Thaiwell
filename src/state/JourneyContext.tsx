@@ -459,6 +459,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         painHistory: [],
         registeredOn: todayISO(),
         birthDate: birthToISO(acc.birthDate),
+        userId: acc.userId,
+        email: acc.email,
+        citizenId: c?.citizenId,
+        title: c?.title,
+        address: c?.address,
       };
     }
     const name = acc ? acc.name : 'สมศักดิ์ รักดี';

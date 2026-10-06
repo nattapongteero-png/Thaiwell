@@ -73,7 +73,15 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
   const it = request.intake;
   const service = request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1;
   const complaint = it?.complaint ?? patient.complaint;
-  const { error: pe } = await cloud.from('tw_patients').upsert({ id: patient.id, name: patient.name, phone: patient.phone && patient.phone !== '-' ? patient.phone : null, gender: patient.gender, age: patient.age });
+  const { error: pe } = await cloud.from('tw_patients').upsert({
+    id: patient.id,
+    name: patient.name,
+    phone: patient.phone && patient.phone !== '-' ? patient.phone : null,
+    gender: patient.gender,
+    age: patient.age,
+    // บัญชีจริง: ผูกกับบัญชี + ข้อมูลตามบัตรประชาชน (คลินิกลงทะเบียนให้ตรงคน)
+    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null } : {}),
+  });
   if (pe) throw pe;
   const { error } = await cloud.from('tw_appointments').insert({
     id: request.id,
@@ -201,6 +209,13 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     });
   let tick = 0;
   void refreshAvailability().catch(() => undefined);
+  // เข้าสู่ระบบแล้ว (สิทธิ์อ่านเวลาว่าง/นัดของตัวเอง) → ดึงใหม่ทันที
+  const { data: authSub } = cloud.auth.onAuthStateChange((ev) => {
+    if (ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED' || ev === 'INITIAL_SESSION') {
+      void refreshAvailability().catch(() => undefined);
+      void fetchAll(false);
+    }
+  });
   // สำรอง realtime ทุก 3 วินาที (แจ้งเตือนไม่ช้าแม้ realtime หลุด)
   const t = setInterval(() => {
     void fetchAll(true);
@@ -209,6 +224,7 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   }, 3000);
   return () => {
     stopped = true;
+    authSub.subscription.unsubscribe();
     clearInterval(t);
     void cloud.removeChannel(ch);
   };

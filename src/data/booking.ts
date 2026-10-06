@@ -9,7 +9,7 @@
  * ⚠️ ต้นแบบ: ตารางผู้ให้บริการเป็นข้อมูลตัวอย่าง · เกณฑ์ความเร่งด่วนยังไม่ได้ให้แพทย์แผนไทยตรวจ
  */
 
-import { availabilityRaw, clinicOnline, type Availability } from '../services/clinicBridge';
+import { availabilityRaw, clinicOnline, isCloud, type Availability } from '../services/clinicBridge';
 
 /** ประเภทบริการ — ชุดเดียวกับหลังบ้าน ThaiWellAI (s1–s5) · ตรงกับ SERVICES ในหน้าจอง */
 export type ServiceId = 'royal' | 'royal+compress' | 'relax' | 'compress' | 'foot';
@@ -141,6 +141,10 @@ export function urgencyOf(a: { pain: number; duration?: string; radiate?: string
 export function therapistsAt(placeId: string, service?: ServiceId | null) {
   // คลินิกที่เชื่อมหลังบ้าน (และหลังบ้านเปิดอยู่) → ตารางจริง
   const live = placeId === BRIDGE_PLACE ? liveTherapists() : null;
+  // ใช้งานจริง (cloud): คลินิกที่เชื่อมระบบแสดงเฉพาะเวลาว่างจริงของคลินิก — ยังไม่มี = ยังไม่เปิดรับจองในแอป (ไม่ใช้ตารางสมมติ)
+  if (placeId === BRIDGE_PLACE && !live && isCloud()) return [];
+  // สถานที่อื่นยังไม่ได้เชื่อมระบบ → ยังจองผ่านแอปไม่ได้ (แสดงในแผนที่/นำทางได้)
+  if (placeId !== BRIDGE_PLACE && isCloud()) return [];
   return (live ?? THERAPIST_SCHEDULE[placeId] ?? [])
     .map((t) => ({ ...t, free: freeFor(t, service) }))
     .filter((t) => !service || t.free.length)

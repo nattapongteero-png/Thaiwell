@@ -37,6 +37,12 @@ export interface ClinicPatient {
   painHistory: { date: string; score: number }[];
   registeredOn: string;
   birthDate?: string;
+  /** บัญชีจริง: user id + ข้อมูลตามบัตรประชาชน (ส่งไปลงทะเบียนที่คลินิก) */
+  userId?: string;
+  email?: string;
+  citizenId?: string;
+  title?: string;
+  address?: string;
 }
 export interface ClinicRequest {
   id: string;
