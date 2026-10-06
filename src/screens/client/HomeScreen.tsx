@@ -2215,8 +2215,9 @@ export function HomeScreen() {
       intro.interpolate({ inputRange: [0, 1], outputRange: [base, chat] }),
     );
   const homeShift = Math.max(0, headerBottom - introTop);
+  // ยังไม่มีข้อมูล: หุ่นเยื้องไปขวา (ซ้ายเป็นเนื้อหา ThaiWell AI)
   const bodyTransform = [
-    { translateX: mix(0, 0, dx) },
+    { translateX: mix(chatHome ? Math.round(winW * 0.3) : 0, 0, dx) },
     { translateY: mix(homeShift, FOCUS_SHIFT, dy) },
     { scale: mix(1, FOCUS_SCALE, k) },
   ];
@@ -2296,10 +2297,9 @@ export function HomeScreen() {
       >
       <Animated.View
         pointerEvents="none"
-        // ยังไม่มีข้อมูล → ซ่อนหุ่น (หน้าแรกมีแค่ปุ่ม AI) · คงไว้ในหน้า ไม่ต้องโหลดใหม่ตอนเข้าแชท
-        style={{ position: 'absolute', top: introTop, left: (winW - introW) / 2, width: introW, height: introH, transform: bodyTransform, opacity: chatHome && !started ? 0 : 1 }}
+        style={{ position: 'absolute', top: introTop, left: (winW - introW) / 2, width: introW, height: introH, transform: bodyTransform }}
       >
-        <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : 0} />
+        <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : chatHome ? WELCOME_ANGLE : 0} />
       </Animated.View>
       </Animated.View>
 
@@ -4303,7 +4303,9 @@ function CourseTrend({ values, total }: { values: (number | undefined)[]; total:
  */
 function WelcomeHero({ height, onPress }: { height: number; onPress: () => void }) {
   const { colors } = useTheme();
-  const orb = Math.round(Math.max(72, Math.min(120, height - 270)));
+  // พื้นที่น้อย (จอเล็ก) → ลูกแก้วเล็กลง และซ่อนรายการสิ่งที่ AI ช่วยได้
+  const compact = height < 370;
+  const orb = compact ? 64 : Math.round(Math.min(96, height - 280));
   // แสงออโรร่า 2 ชั้น หมุนสวนทางกันคนละความเร็ว → แสงฟุ้งเปลี่ยนรูปตลอด ไม่ซ้ำจังหวะ
   const spin = React.useRef([new Animated.Value(0), new Animated.Value(0)]).current;
   React.useEffect(() => {
@@ -4318,7 +4320,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
     { icon: 'map-pin', text: 'คลินิกใกล้คุณ' },
   ];
   return (
-    <View style={{ alignItems: 'center', gap: space[4], paddingHorizontal: space[5] }}>
+    <View style={{ alignSelf: 'stretch', alignItems: 'flex-start', gap: space[4], paddingHorizontal: space[5], paddingRight: '38%' }}>
       <Pressable accessibilityRole="button" accessibilityLabel="ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ width: orb, height: orb, alignItems: 'center', justifyContent: 'center', marginBottom: space[3], transform: [{ scale: pressed ? 0.96 : 1 }] })}>
         {/* แสงออโรร่าหลังลูกแก้ว: ก้อนแสงสีชุด AI ขอบจาง (radial) วางเยื้องศูนย์ แล้วหมุนช้า ๆ */}
         {spin.map((v, layer) => (
@@ -4355,11 +4357,9 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
           <AIBall size={orb} />
         </View>
       </Pressable>
-      <View style={{ alignItems: 'center', gap: space[1] }}>
-        <Text variant="headlineSm" align="center">
-          ปวดเมื่อยตรงไหน ให้ AI ช่วยดู
-        </Text>
-        <Text variant="bodyBase" tone="secondary" align="center">
+      <View style={{ gap: space[1] }}>
+        <Text variant="headlineSm">{'ปวดเมื่อยตรงไหน\nให้ AI ช่วยดู'}</Text>
+        <Text variant="bodyBase" tone="secondary">
           ตอบไม่กี่ข้อ รู้ว่าควรนวดแบบไหน
         </Text>
       </View>
@@ -4372,7 +4372,8 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
         </View>
       </Pressable>
       {/* สิ่งที่ AI ช่วยได้ */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[4] }}>
+      {compact ? null : (
+      <View style={{ gap: space[2] }}>
         {features.map((f) => (
           <View key={f.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Icon name={f.icon} size="xs" color={colors.brand.primary} />
@@ -4382,6 +4383,7 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
           </View>
         ))}
       </View>
+      )}
     </View>
   );
 }
@@ -4390,6 +4392,8 @@ function WelcomeHero({ height, onPress }: { height: number; onPress: () => void 
  * ปุ่ม ThaiWell AI — พื้นพาสเทลอ่อน + ขอบบางไล่สีชุดเดียวกับลูกแก้ว AI · ตัวอักษรเข้ม · เงาม่วงจาง
  * แสงวิ่งผ่านเบา ๆ ทุก 4 วินาที · สูง 38 เท่าแท็บที่เลือก
  */
+/** หน้าแรกผู้ใช้ใหม่: หุ่นหันข้างเยื้องไปทางซ้าย (หาเนื้อหา AI) */
+const WELCOME_ANGLE = -0.7;
 const AI_GRAD = ['#2FD39A', '#3AA8FF', '#8B6BFF', '#E45BD1'];
 const AI_PASTEL = ['#E6FAF2', '#E8F3FF', '#EFEAFF', '#FBEAF7'];
 function AIButton({ label, onPress }: { label: string; onPress?: () => void }) {
