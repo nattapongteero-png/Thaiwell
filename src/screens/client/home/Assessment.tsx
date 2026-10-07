@@ -79,12 +79,14 @@ export function AssessWidget({
     case 'symptoms': {
       const common = symptoms.filter((x) => HOME_CONTENT.symptoms.includes(x));
       const others = symptoms.filter((x) => !HOME_CONTENT.symptoms.includes(x));
+      // ปวดหลายที่พร้อมกันได้ → แตะเลือก/ยกเลิกได้หลายข้อ แล้วกดถัดไป (ไม่ส่งทันทีที่แตะข้อแรก)
+      const picked = selectedIn(symptoms);
       return (
         <View style={{ gap: space[3] }}>
           {/* ตำแหน่งที่พบบ่อย (ตัวเลือกด่วน) · ที่เลือกจากรายการทั้งร่างกาย/แตะหุ่นแยกไว้ด้านล่าง ไม่ปนกับ "ที่พบได้บ่อย" */}
           {onPickBody ? <PillButton label="ชี้จุดบนร่างกาย" icon="target" tone="light" onPress={onPickBody} /> : null}
-          <ChoiceSection title="ที่พบได้บ่อย" options={common} value={selectedIn(common)} onChange={pickFrom(common)} />
-          {others.length ? <ChoiceSection options={others} value={selectedIn(others)} onChange={pickFrom(others)} /> : null}
+          <ChoiceSection title="ที่พบได้บ่อย" options={common} value={selectedIn(common)} onChange={onChips(common)} />
+          {others.length ? <ChoiceSection options={others} value={selectedIn(others)} onChange={onChips(others)} /> : null}
           {/* ไม่มีใน chip ด่วน → เปิด/ปิดรายการทั้งร่างกาย (ตามส่วนของร่างกาย) · ปุ่มอยู่ตลอดเพื่อย่อกลับได้ */}
           {onOther ? (
             <Pressable
@@ -110,6 +112,7 @@ export function AssessWidget({
                 />
               ))
             : null}
+          {picked.length ? <PillButton label={picked.length > 1 ? `ถัดไป · ${picked.length} บริเวณ` : 'ถัดไป'} icon="arrow-right" onPress={() => onNext(picked.join(' · '))} /> : null}
         </View>
       );
     }

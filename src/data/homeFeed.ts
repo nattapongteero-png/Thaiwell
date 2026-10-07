@@ -90,7 +90,7 @@ export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; te
   idle: { label: '', text: '' },
   review: { label: '', text: '' },
   topic: { label: 'เรื่อง', text: 'เป็นเรื่องเดิม หรืออาการใหม่คะ?' },
-  symptoms: { label: 'อาการ', text: 'เลือกอาการที่เป็นอยู่ หรือแตะบนหุ่นตรงที่ปวดได้เลยค่ะ' },
+  symptoms: { label: 'อาการ', text: 'ปวดตรงไหนบ้างคะ เลือกได้หลายที่ หรือแตะบนหุ่นตรงที่ปวดได้เลยค่ะ' },
   radiate: { label: 'อาการร้าว', text: 'ร้าวไปที่อื่นไหมคะ?' },
   related: { label: 'อาการร่วม', text: 'มีอาการผิดปกติเหล่านี้ร่วมด้วยไหมคะ?' },
   pain: { label: 'ความปวด', text: 'ตอนนี้ปวดระดับไหนคะ? 0 = ไม่ปวดเลย · 10 = ปวดมากที่สุด' },

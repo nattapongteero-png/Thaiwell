@@ -2753,8 +2753,8 @@ export function HomeScreen() {
                       radiate={radiateFor(Object.keys(assess.sel))?.options}
                       onPickBody={openPicker}
                       onOther={(l) => {
+                        // เพิ่มเป็นตัวเลือกที่เลือกไว้ (เลือกหลายบริเวณต่อได้ แล้วกดถัดไป)
                         pickSymptoms([l]);
-                        answerStep(l);
                       }}
                     />
                   ) : null}
