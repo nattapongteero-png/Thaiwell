@@ -581,10 +581,10 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts.length]);
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
-  const modelTag = ((): { items: string[]; note?: string; color: string } | null => {
+  const modelTag = ((): { items: string[]; note?: string; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean } | null => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บริเวณที่ปวด (บริเวณหลักก่อน) · ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ
-    if (selDraft) return { items: draftRegions(selDraft), note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    if (selDraft) return { items: draftRegions(selDraft), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     // จองแล้วแต่ยังไม่เคยประเมิน → ยังไม่รู้จุดที่ปวด
     if (selLoose) return { items: [], note: 'ยังไม่ได้บอกจุดที่ปวด', color: colors.border.default };
     if (selCase && cases.length) {
@@ -2587,7 +2587,7 @@ export function HomeScreen() {
           {modelTag.items.map((it, i) => (
             <React.Fragment key={it}>
               {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) · ป้ายหน้าตาเดียวกันทั้งหมด */}
-              {modelTag.items.length > 1 && i < 2 ? (
+              {modelTag.ranked && i < 2 ? (
                 <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
                   {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
                 </Text>
@@ -2598,14 +2598,17 @@ export function HomeScreen() {
               </View>
             </React.Fragment>
           ))}
-          {modelTag.note ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
-              {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
-              <Text variant="labelSm" tone="secondary">
-                {modelTag.note}
-              </Text>
-            </View>
-          ) : null}
+        </View>
+      ) : null}
+      {/* ข้อมูลอื่น (ระดับปวด · ครั้งที่) ชิดขวา แถวเดียวกับป้ายจุดแรก — ป้ายจุดที่ปวดอยู่ซ้าย */}
+      {modelTag?.note ? (
+        <View style={{ position: 'absolute', top: headerBottom + space[3] + (modelTag.ranked ? 18 : 0), right: space[4] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
+            {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
+            <Text variant="labelSm" tone="secondary">
+              {modelTag.note}
+            </Text>
+          </View>
         </View>
       ) : null}
       </Animated.View>
