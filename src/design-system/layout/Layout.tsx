@@ -74,6 +74,8 @@ interface ScreenProps {
   padded?: boolean;
   background?: 'canvas' | 'default';
   contentStyle?: StyleProp<ViewStyle>;
+  /** เลื่อนหน้าจากภายนอก (เช่น เลือกแล้วเลื่อนให้เห็นขั้นถัดไป) */
+  scrollRef?: React.RefObject<ScrollView | null>;
 }
 
 /**
@@ -82,7 +84,7 @@ interface ScreenProps {
  * - จำกัด max content width (อ่านง่ายบน tablet/kiosk)
  * - footer ติดล่าง + safe area (CTA อยู่ในระยะนิ้วโป้ง: Fitts's Law)
  */
-export function Screen({ children, scroll = true, footer, header, padded = true, background = 'canvas', contentStyle }: ScreenProps) {
+export function Screen({ children, scroll = true, footer, header, padded = true, background = 'canvas', contentStyle, scrollRef }: ScreenProps) {
   const { colors } = useTheme();
   const g = useGrid();
   const insets = useSafeAreaInsets();
@@ -112,7 +114,7 @@ export function Screen({ children, scroll = true, footer, header, padded = true,
       {scroll ? (
         // เนื้อหาจางที่ขอบบน (ใต้ header) / ขอบล่าง (เหนือปุ่ม) ตอนเลื่อนผ่าน — แบบเดียวกับหน้าแรก
         <EdgeFade top={header ? 20 : 0} bottom={footer ? 28 : 0}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+          <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
             {inner}
           </ScrollView>
         </EdgeFade>

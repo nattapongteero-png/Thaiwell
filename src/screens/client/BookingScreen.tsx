@@ -134,9 +134,11 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     // เปลี่ยนวัน = เลือกเวลาใหม่เสมอ (ไม่พาเวลาเดิมข้ามวันโดยไม่รู้ตัว)
     if (d !== day) setTime(null);
     setDay(d);
+    revealNext();
   };
   const pickTime = (t: string) => {
     setTime(t);
+    revealNext();
     const free = freeAt(day, t);
     // คนที่เลือกไว้ไม่ว่างเวลานี้ → คนที่ดูแลอยู่ (ถ้าว่าง) → ไม่ระบุ
     if (who !== ANY_THERAPIST && !free.some((x) => x.id === who)) setWho(preferred && free.some((x) => x.id === preferred) ? preferred : ANY_THERAPIST);
@@ -146,6 +148,9 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const timesOf = (d: number) => [...new Set(anySlots.filter((f) => f.day === d).map((f) => f.time))].sort();
   // เลือกผู้ให้บริการ → เลื่อนการ์ดที่เลือกมาชิดซ้าย (แบบแถบเลือกเรื่อง) · เลือกให้อัตโนมัติก็เลื่อนตาม
   const whoRef = React.useRef<ScrollView>(null);
+  // เลือกวัน/เวลา → เลื่อนหน้าลงให้เห็นขั้นถัดไป (เวลา · ผู้ให้บริการ อยู่ท้ายหน้า) ไม่ต้องเลื่อนเอง
+  const pageRef = React.useRef<ScrollView>(null);
+  const revealNext = () => setTimeout(() => pageRef.current?.scrollToEnd({ animated: true }), 80);
   React.useEffect(() => {
     if (day === null || !time) return;
     const i = who === ANY_THERAPIST ? 0 : freeAt(day, time).findIndex((x) => x.id === who) + 1;
@@ -219,6 +224,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const title = wrongService ? 'เปลี่ยนบริการ' : current ? 'เลื่อนนัด' : tc ? `จองครั้งที่ ${Math.min(tc.course.total, tc.course.done + 1)}` : 'จองนวด';
   return (
     <Screen
+      scrollRef={pageRef}
       header={<AppBar onBack={() => nav.goBack()} title={title} />}
       footer={<Button label={red ? 'ควรพบแพทย์ก่อนนวด' : clash ? `เวลานี้มีนัด${clash.topic}แล้ว` : ready ? `ยืนยัน ${pick!.day} ${pick!.time}` : 'เลือกผู้ให้บริการและเวลา'} disabled={!ready} onPress={confirm} />}
     >
