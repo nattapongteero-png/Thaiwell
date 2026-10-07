@@ -4723,25 +4723,33 @@ function PreVisitResult({ tc, focus }: { tc: TreatmentCase; focus?: string }) {
  */
 function GuideTile({ width, guide, symptoms, onPress }: { width: number; guide?: DraftCase['guide']; symptoms: string[]; /** เปิดแนวทางเต็ม (bottom sheet) */ onPress?: () => void }) {
   const { colors } = useTheme();
-  // 2 ข้อแรก (สูงเท่าการ์ดผลประเมินข้าง ๆ) · รายละเอียดเต็มอยู่ในแชท
-  const methods = (guide?.methods ?? []).slice(0, 2).map((m) => m.replace(/\s*\d+(?:[–-]\d+)?\s*(?:นาที|วินาที).*$/, '')); // ตัดเวลา (ดูเต็มในแชท)
+  // สิ่งที่จะได้รับ = เนื้อหาหลัก (ชื่อสั้น ไม่มีเวลา/คำขยาย) · ชื่อโรคเป็นบรรทัดรอง · รายละเอียดเต็มอยู่ใน sheet
+  const methods = (guide?.methods ?? [])
+    .map((m) => m.replace(/\s*\d+(?:[–-]\d+)?\s*(?:นาที|วินาที).*$/, '').replace(/^นวดไทยแบบ/, 'นวด').replace(/หลังนวด$/, '').replace(/\s*ตามแนวเส้น.*$/, '').trim())
+    .filter((m, i, arr) => m && arr.indexOf(m) === i)
+    .slice(0, 3);
   return (
-    <Tile style={{ width, gap: space[2] }} onPress={guide ? onPress : undefined} accessibilityLabel="แนวทางที่แนะนำ ดูรายละเอียด">
-      <TileTitle title="แนวทางที่แนะนำ" />
-      <Text variant="titleSm" numberOfLines={2}>
-        {guide?.condition ?? (symptoms.join(' ') || 'ตามผลประเมิน')}
-      </Text>
-      {methods.map((m) => (
-        <View key={m} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
-          <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: 8, backgroundColor: colors.brand.primary }} />
-          <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={1}>
-            {m}
-          </Text>
-        </View>
-      ))}
-      <Text variant="caption" tone="tertiary" style={{ marginTop: 'auto' }} numberOfLines={2}>
-        {(guide?.areas?.length ?? 0) > 1 ? `รวม ${guide!.areas!.length} บริเวณ: ${guide!.areas!.map((a) => a.region ?? a.symptom.replace(/^ปวด/, '')).join(' · ')}` : 'แพทย์วางแผนจำนวนครั้งหลังตรวจ'}
-      </Text>
+    <Tile style={{ width, gap: space[3] }} onPress={guide ? onPress : undefined} accessibilityLabel="แนวทางที่แนะนำ ดูรายละเอียด">
+      <View>
+        <Text variant="labelMd" numberOfLines={1}>
+          แนวทางที่แนะนำ
+        </Text>
+        <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+          {guide?.condition ?? (symptoms.join(' ') || 'ตามผลประเมิน')}
+        </Text>
+      </View>
+      <View style={{ gap: space[2] }}>
+        {methods.map((m) => (
+          <View key={m} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand.subtle }}>
+              <Icon name="check" size="xs" color={colors.brand.primary} />
+            </View>
+            <Text variant="labelSm" style={{ flex: 1 }} numberOfLines={2}>
+              {m}
+            </Text>
+          </View>
+        ))}
+      </View>
     </Tile>
   );
 }
