@@ -314,6 +314,17 @@ export function ThreadCardView({
               </Text>
             ) : null}
           </View>
+          {/* หลายบริเวณ: บริเวณหลักก่อน แล้วบริเวณรอง (ชื่อโรคของแต่ละบริเวณ) */}
+          {card.areas && card.areas.length > 1 ? (
+            <VStack gap={1}>
+              {card.areas.map((a, i) => (
+                <Text key={a.symptom} variant="bodyXs" tone={i ? 'secondary' : 'primary'}>
+                  {i ? '' : 'หลัก · '}
+                  {a.symptom} — {a.condition}
+                </Text>
+              ))}
+            </VStack>
+          ) : null}
           <VStack gap={1}>
             {card.methods.map((m) => (
               <HStack key={m} gap={2} align="flex-start">

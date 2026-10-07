@@ -221,7 +221,16 @@ export function guideFor(
   symptoms: string[],
   /** อาการร้าว (data/radiation.ts) — ร้าวเป็นอาการเดียวกับจุดที่ปวด จึงใช้แนวทางของรูปแบบการร้าวแทน */
   radiate?: string,
-): { condition: string; methods: string[]; points: string[]; pins: BodyPin[]; caution?: string; ref: string } {
+): {
+  condition: string;
+  methods: string[];
+  points: string[];
+  pins: BodyPin[];
+  caution?: string;
+  ref: string;
+  /** หลายบริเวณ: แต่ละบริเวณ (อาการแรก = บริเวณหลัก) · ชื่อโรค + จุดกดของบริเวณนั้น */
+  areas: { symptom: string; condition: string; points: string[] }[];
+} {
   const rk = radiateOption(radiate)?.guideKey;
   const rg = rk ? GUIDES.find((g) => g.key === rk) : undefined;
   const found = symptoms
@@ -233,10 +242,17 @@ export function guideFor(
     g.points.forEach((p) => pts.set(p.label, [...new Set([...(pts.get(p.label) ?? []), ...pinsOf(p, sideOf(s))])])),
   );
   const points = [...pts.keys()].slice(0, 3);
+  // บริเวณละแนวทาง (กลุ่มเดียวกัน = รวม) · วิธีรักษา: ของบริเวณหลักก่อน แล้วเพิ่มวิธีเฉพาะของบริเวณอื่น (นวด/ประคบซ้ำ = รายการเดียว)
+  const seen = new Set<string>();
+  const areas = found
+    .filter(({ g }) => (seen.has(g.key) ? false : (seen.add(g.key), true)))
+    .map(({ s, g }) => ({ symptom: s, condition: g.condition, points: g.points.map((p) => p.label) }));
+  const methods = [...new Set(found.flatMap(({ g }) => g.methods))];
   return {
     condition: main.condition,
-    methods: main.methods,
+    methods: found.length > 1 ? methods : main.methods,
     points,
+    areas,
     pins: [...new Set(points.flatMap((l) => pts.get(l)!))],
     caution: main.caution,
     ref: [...new Set(found.map((x) => x.g.ref))].join(' · ') || main.ref,
