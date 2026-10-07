@@ -144,6 +144,16 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   // วันที่มีในตาราง (วันนี้ → วันสุดท้ายที่มีคิว) · เวลาของวันที่เลือก
   const days = Array.from({ length: anySlots.length ? Math.max(...anySlots.map((f) => f.day)) + 1 : 0 }, (_, i) => i);
   const timesOf = (d: number) => [...new Set(anySlots.filter((f) => f.day === d).map((f) => f.time))].sort();
+  // เลือกผู้ให้บริการ → เลื่อนการ์ดที่เลือกมาชิดซ้าย (แบบแถบเลือกเรื่อง) · เลือกให้อัตโนมัติก็เลื่อนตาม
+  const whoRef = React.useRef<ScrollView>(null);
+  React.useEffect(() => {
+    if (day === null || !time) return;
+    const i = who === ANY_THERAPIST ? 0 : freeAt(day, time).findIndex((x) => x.id === who) + 1;
+    if (i < 0) return;
+    const id = setTimeout(() => whoRef.current?.scrollTo({ x: i * (THERAPIST_CARD_W + space[3]), animated: true }), 60);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [who, day, time]);
   const pickService = (v: ServiceId) => {
     setService(v);
     if (!slotOk(who, day, time, v)) {
@@ -400,7 +410,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
 
                 {/* ③ ผู้ให้บริการ: การ์ดแนวนอน เฉพาะคนที่ว่างเวลานั้น · ไม่ระบุ = คลินิกจัดคนที่ว่าง */}
                 {day !== null && time ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} snapToInterval={THERAPIST_CARD_W + space[3]} decelerationRate="fast" style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[3], paddingHorizontal: space[4] }}>
+                  <ScrollView ref={whoRef} horizontal showsHorizontalScrollIndicator={false} snapToInterval={THERAPIST_CARD_W + space[3]} decelerationRate="fast" style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[3], paddingHorizontal: space[4] }}>
                     <Pressable accessibilityRole="radio" accessibilityState={{ selected: any }} accessibilityLabel="ไม่ระบุแพทย์" onPress={() => setWho(ANY_THERAPIST)}>
                       <AnyTherapistCard compact slots={[]} selected={any ? pick : null} onPick={() => undefined} />
                     </Pressable>
