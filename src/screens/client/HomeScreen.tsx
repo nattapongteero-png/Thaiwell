@@ -3217,6 +3217,43 @@ function TilePill({ icon, label, dark = true }: { icon: React.ComponentProps<typ
 }
 
 /** วันที่นัดชิดขวา รูปแบบเดียวกับคิว: "พฤ. 9 ต.ค." → ป้าย พฤ. + ค่า 9 ต.ค. · คำอื่น (พรุ่งนี้) → ป้าย วัน */
+const WEEKDAY: Record<string, string> = { 'อา.': 'วันอาทิตย์', 'จ.': 'วันจันทร์', 'อ.': 'วันอังคาร', 'พ.': 'วันพุธ', 'พฤ.': 'วันพฤหัสบดี', 'ศ.': 'วันศุกร์', 'ส.': 'วันเสาร์' };
+/**
+ * หัวการ์ดนัด — ลำดับที่ผู้ใช้อยากรู้: เมื่อไหร่ (วัน + เวลา ใหญ่สุด) → ที่ไหน (ชื่อคลินิก ตัวเข้ม) → นัดครั้งที่เท่าไหร่ (ป้ายเล็ก)
+ * วันนี้: เวลาใหญ่ + คิวด้านขวา
+ */
+function ApptHeader({ label, date, time, clinic, today, extra, right }: { label: string; date: string; time: string; clinic?: string; today: boolean; extra?: string; right?: React.ReactNode }) {
+  const { colors } = useTheme();
+  const m = date.match(/^(\S+\.)\s+(.+)$/);
+  const day = today ? 'วันนี้' : m ? WEEKDAY[m[1]] ?? m[1] : '';
+  return (
+    <View style={{ gap: space[2] }}>
+      <Text variant="labelSm" tone="secondary">
+        {label}
+      </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: space[2] }}>
+        <View style={{ flexShrink: 1 }}>
+          <Text variant="bodyXs" tone="secondary">
+            {day}
+            {extra ? ` · ${extra}` : ''}
+          </Text>
+          <Text variant="titleXl" numberOfLines={1}>
+            {today ? time : `${m ? m[2] : date} · ${time}`}
+          </Text>
+        </View>
+        {right}
+      </View>
+      {clinic ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+          <Icon name="map-pin" size="xs" color={colors.text.secondary} />
+          <Text variant="labelMd" numberOfLines={1} style={{ flexShrink: 1 }}>
+            {clinic}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
 function DateBlock({ date }: { date: string }) {
   const m = date.match(/^(\S+\.)\s+(.+)$/);
   return (
@@ -3813,21 +3850,7 @@ function FirstVisitCard({
   const needAssess = !!onAssess;
   return (
     <Tile style={{ gap: space[3] }} onPress={onOpen} accessibilityLabel={`นัดครั้งที่ 1 ${b.date} ${b.time}${b.queue ? ` คิว ${b.queue}` : ''} ดูรายละเอียด`}>
-      <TileTitle title="นัดครั้งที่ 1" meta={b.clinic} />
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
-        <View>
-          <Text variant="bodyXs" tone="secondary">
-            {today ? 'วันนี้' : 'เวลา'}
-            {minutes ? ` · ${minutes}` : ''}
-          </Text>
-          <Text variant="titleXl">{b.time}</Text>
-        </View>
-        {today ? (
-          <QueueBlock queue={b.queue} stage={b.stage} />
-        ) : (
-          <DateBlock date={b.date} />
-        )}
-      </View>
+      <ApptHeader label="นัดครั้งที่ 1" date={b.date} time={b.time} clinic={b.clinic} today={today} extra={minutes} right={today ? <QueueBlock queue={b.queue} stage={b.stage} /> : null} />
       <View style={{ gap: space[2] }}>
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
         {needAssess ? <StepRow text={assessStep} /> : null}
@@ -4488,23 +4511,11 @@ function HomeBento({
         onPress={hasNext ? onOpen : undefined}
         accessibilityLabel={hasNext ? `นัดครั้งที่ ${nextNo} ${ap.today ? `วันนี้ ${ap.time} คิว ${ap.queue}` : `${ap.date} ${ap.time}`} ดูรายละเอียด` : `ครั้งที่ ${nextNo} ยังไม่มีนัด`}
       >
-        <TileTitle title={finished ? 'ครบคอร์สแล้ว' : hasNext ? `นัดครั้งที่ ${nextNo}` : `ครั้งที่ ${nextNo}`} meta={hasNext ? clinic : cancelledAppts.includes(tcase.id) ? 'คลินิกยกเลิกนัด' : finished ? undefined : 'รอคลินิกนัดตามแผน'} />
+        {hasNext ? null : <TileTitle title={finished ? 'ครบคอร์สแล้ว' : `ครั้งที่ ${nextNo}`} meta={cancelledAppts.includes(tcase.id) ? 'คลินิกยกเลิกนัด' : finished ? undefined : 'รอคลินิกนัดตามแผน'} />}
         {hasNext ? (
           <>
-            {/* เวลา (ซ้าย) · คิว/วันที่ (ขวา) */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
-              <View>
-                <Text variant="bodyXs" tone="secondary">
-                  {ap.today ? 'วันนี้' : 'เวลา'}
-                </Text>
-                <Text variant="titleXl">{ap.time}</Text>
-              </View>
-              {ap.today ? (
-                <QueueBlock queue={ap.queue} stage={ap.stage} />
-              ) : (
-                <DateBlock date={ap.date} />
-              )}
-            </View>
+            {/* เมื่อไหร่ (ใหญ่) → ที่ไหน (ตัวเข้ม) · วันนี้ = คิวด้านขวา */}
+            <ApptHeader label={`นัดครั้งที่ ${nextNo}/${tc.course.total}`} date={ap.date} time={ap.time} clinic={clinic} today={ap.today} right={ap.today ? <QueueBlock queue={ap.queue} stage={ap.stage} /> : null} />
             {/* สิ่งที่ต้องทำก่อนครั้งนี้ */}
             <View style={{ gap: space[2] }}>
               {needPost ? <StepRow text={`ประเมินหลังนวดครั้งที่ ${tc.visits.length}`} /> : null}
