@@ -146,6 +146,9 @@ const REGION_CHIP: Record<string, string> = {
 /** Figma: คอลัมน์ข้อมูลด้านซ้ายกว้าง 179 */
 const LEFT_COLUMN = 179;
 /* bento หน้าแรก: ระยะห่างช่อง + ความสูงแถว (แถวหุ่นยืดเต็มที่เหลือ) */
+/** ประเมินเรื่องใหม่ที่บริเวณซ้ำเรื่องเดิม: รวม หรือแยกเป็นแท็บใหม่ */
+const MERGE_OLD = 'รวมกับเรื่องเดิม';
+const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
 /** ข้อมูลหน้าแรกเริ่มที่ 60% ของจอ (ขั้นแรก: เห็นหุ่นเกือบทั้งตัว หมุนได้) → ปัดขึ้น = แผ่นข้อมูลขึ้นมาบังหุ่น (ขั้นที่สอง) */
@@ -241,7 +244,7 @@ export function HomeScreen() {
   /** ใบการรักษาที่เลือกดู (แยกตามโรค) — mark บนหุ่น · ผลการรักษา · ติดตามอาการ ตามใบนี้ */
   const [caseIdx, setCaseIdx] = React.useState(0);
   /** คนไข้ใหม่ (สมัครเอง ยังไม่มีใบการรักษา) — หน้าแรกเปลี่ยนตามข้อมูลที่มี: ไม่มีอะไร = แชท · ประเมินแล้ว = ใบร่าง · รักษาแล้ว = ใบการรักษา */
-  const { newPatient, setNewPatient, account, careStage, setCareStage, setLastAssess, profile, setProfile, drafts, upsertDraft, setActiveDraftId, promoted, followUps, looseBookings, addLooseBooking, removeLooseBooking, log, markEntered } = useJourney();
+  const { newPatient, setNewPatient, account, careStage, setCareStage, setLastAssess, profile, setProfile, drafts, upsertDraft, setActiveDraftId, removeDraft, clinicVisits, promoted, followUps, looseBookings, addLooseBooking, removeLooseBooking, log, markEntered } = useJourney();
   // ถึงหน้าแรกแล้ว → เริ่มจำข้อมูลข้ามการรีเฟรช
   React.useEffect(() => markEntered(), [markEntered]);
   /** หัวข้อ "เรื่องเดิมหรืออาการใหม่" — ถามเฉพาะเมื่อมีใบอยู่แล้ว */
@@ -283,6 +286,9 @@ export function HomeScreen() {
   }, [looseBookings.length]);
   /** แชทประเมินที่เริ่มจากแท็บนัดเรื่องใหม่ → ประเมินเสร็จ นัดนั้นผูกกับเรื่องที่ประเมิน */
   const looseFor = React.useRef<Record<string, string>>({});
+  /** แชทที่เริ่มจาก "ประเมินเรื่องใหม่" (แท็บใหม่เสมอ) · ข้อเสนอรวมกับเรื่องเดิมที่บริเวณซ้ำ */
+  const freshFor = React.useRef<Record<string, boolean>>({});
+  const mergeFor = React.useRef<Record<string, { newId: string; oldId: string }>>({});
   /** คำตอบข้ออื่นที่ผู้ใช้บอกมาก่อนถึงข้อนั้น (เช่น "ปวดคอ 7 เป็นมา 3 วัน") → ถึงข้อนั้นแล้วข้าม ไม่ถามซ้ำ · แยกตามแชท */
   const prefill = React.useRef<Record<string, Partial<Assessment>>>({});
   /** คำถามที่ค้างก่อนถามยืนยัน (เช่น ร้องเรียน) → ตอบยืนยันแล้วกลับมาถามต่อ */
@@ -948,11 +954,19 @@ export function HomeScreen() {
       if (splitOff) results.push({ id: `r-split-${Date.now()}`, day: 'today', from: 'ai', text: `อาการนี้คนละบริเวณกับเรื่อง${toCase!.short} จึงแยกเป็นเรื่องใหม่ค่ะ จองแยกได้`, source: 'AI Interview', time: results[0]?.time });
       // เรื่องเดิม = หัวข้อเดียวกัน หรืออาการชุดเดียวกัน (ไม่สร้างใบซ้ำ)
       const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
-      const old = drafts.find((d) => d.title === topic) ?? drafts.find((d) => same(d.symptoms, sym));
+      // เลือก "ประเมินเรื่องใหม่" เอง → แท็บใหม่เสมอ · บริเวณซ้ำเรื่องเดิม → ถามต่อท้ายว่าจะรวมไหม
+      const fresh = !!freshFor.current[sid];
+      const dupDraft = drafts.find((d) => same(d.symptoms, sym));
+      const old = fresh ? undefined : drafts.find((d) => d.title === topic) ?? dupDraft;
       const id = old?.id ?? `d${Date.now()}`;
+      if (fresh && dupDraft) {
+        mergeFor.current[sid] = { newId: id, oldId: dupDraft.id };
+        results.push({ ...aiText(`บริเวณเดียวกับเรื่อง${dupDraft.title}ที่ประเมินไว้ เพิ่มเป็นแท็บใหม่ให้แล้วค่ะ ถ้าเป็นเรื่องเดียวกัน รวมกับเรื่องเดิมได้`), card: { type: 'intents', options: [MERGE_OLD, KEEP_NEW] }, time: results[0]?.time ?? nowTimeText() });
+      }
       // นัดเรื่องใหม่ที่จองไว้ก่อนประเมิน → ผูกกับใบใหม่ที่เพิ่งประเมิน แล้วไม่ถือเป็นนัดลอยอีก (ไม่ไปติดใบถัดไปซ้ำ)
       // นัดที่เลือกไว้ตอนเริ่มประเมิน (แท็บนัดนั้น) · มีนัดเดียว = นัดนั้น · หลายนัดแต่ไม่ได้ระบุ = ไม่เดา
-      const lid = looseFor.current[sid] ?? (looseBookings.length === 1 ? looseBookings[0].id : undefined);
+      // ผูกกับนัดเฉพาะที่เริ่มประเมินจากแท็บ/การ์ดของนัดนั้น (ไม่เดาให้เอง)
+      const lid = looseFor.current[sid];
       const loose = !old && lid ? looseBookings.find((b) => b.id === lid) : undefined;
       if (loose) removeLooseBooking(loose.id);
       // มีนัดอยู่แล้ว → แสดงนัดนั้น (ผลประเมินส่งให้ผู้ให้บริการของนัดนี้) แทนการเสนอให้จองใหม่
@@ -1342,9 +1356,10 @@ export function HomeScreen() {
     const missing = (['risk', 'pressure', 'avoid'] as const).find((k) => !assess[k]);
     answerStep('ยืนยันข้อมูลนี้', {}, undefined, missing ? ASSESS_ORDER[ASSESS_ORDER.indexOf(missing) - 1] : 'avoid');
   };
-  const newChat = () => {
+  /** fresh = ผู้ใช้เลือก "ประเมินเรื่องใหม่" เอง → แท็บใหม่เสมอ (ไม่ทำต่อของค้าง ไม่รวมเข้าเรื่องเดิมเอง) */
+  const newChat = (fresh = false) => {
     // มีการประเมินที่ทำค้างไว้ → ทำต่อจากเดิม (ไม่เริ่มใหม่ให้ต้องตอบซ้ำ)
-    if (unfinished) return openChat(unfinished.id);
+    if (unfinished && !fresh) return openChat(unfinished.id);
     setStarted(true);
     bodyRef.current?.face('front');
     const blank = active.title === 'แชทใหม่' && !active.items.some((m) => m.from === 'user') && (active.assess.step === 'topic') === askTopic;
@@ -1355,8 +1370,9 @@ export function HomeScreen() {
       setActiveId(next.id);
       sid = next.id;
     }
-    // เริ่มจากแท็บนัดเรื่องใหม่ → ประเมินนี้เป็นของนัดนั้น
-    if (selLoose) looseFor.current[sid] = selLoose.id;
+    // เริ่มจากแท็บนัดเรื่องใหม่ → ประเมินนี้เป็นของนัดนั้น (เลือกเรื่องใหม่เอง = ไม่ผูกนัด)
+    if (selLoose && !fresh) looseFor.current[sid] = selLoose.id;
+    if (fresh) freshFor.current[sid] = true;
     scrollToThread();
   };
   /** ติดตามผลบนหุ่น: "ยังปวด" → เริ่มประเมินโดยกรอกอาการบริเวณนั้นให้แล้ว (ข้ามข้อแรก) */
@@ -1397,7 +1413,22 @@ export function HomeScreen() {
   const pickIntent = (label: string) => {
     const born = account ? birthElement(account.birthDate) : null;
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
-    if (label === NEW_TOPIC_INTENT) return newChat();
+    if (label === NEW_TOPIC_INTENT) return newChat(true);
+    // ประเมินเรื่องใหม่แต่บริเวณซ้ำเรื่องเดิม → ผู้ใช้เลือกรวม/แยก
+    if (label === MERGE_OLD || label === KEEP_NEW) {
+      const m = mergeFor.current[activeId];
+      delete mergeFor.current[activeId];
+      if (!m) return;
+      const nd = drafts.find((d) => d.id === m.newId);
+      const od = drafts.find((d) => d.id === m.oldId);
+      if (label === KEEP_NEW || !nd || !od) return aiReply(activeId, label, () => [aiText(`แยกเป็นเรื่องใหม่ไว้แล้วค่ะ`)]);
+      // รวม: ผลประเมินล่าสุดแทนของเดิม · คงชื่อ นัด และแชทของเรื่องเดิม
+      upsertDraft({ ...nd, id: od.id, title: od.title, prevPain: od.pain, stage: od.stage, booking: od.booking ?? nd.booking, chatId: od.chatId ?? nd.chatId });
+      removeDraft(nd.id);
+      setActiveDraftId(od.id);
+      setCaseIdx(caseCount + drafts.filter((d) => d.id !== nd.id).findIndex((d) => d.id === od.id));
+      return aiReply(activeId, label, () => [aiText(`รวมกับเรื่อง${od.title}แล้วค่ะ ใช้ผลประเมินล่าสุดนี้แทนของเดิม`)]);
+    }
     if (label === DRAFT_REASSESS_INTENT) {
       const d = drafts.find((x) => x.chatId === activeId) ?? selDraft;
       return d ? reassessDraft(d) : startAssess(label);
@@ -2766,7 +2797,7 @@ export function HomeScreen() {
                 </Animated.View>
               </View>
             ) : !started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => (b.course ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => (b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
           </View>
@@ -3632,8 +3663,9 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { widt
     <View style={{ gap: BENTO_GAP }}>
       <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} onAssess={onAssess} minutes={mins} steps={<StepRow text="งดอาหารหนัก 30 นาที · ใส่เสื้อผ้าหลวมสบาย" />} />
       <TherapistTile name={b.therapist} width={width} />
-      {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา */}
-      {b.course ? (
+      {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา
+       * ยังไม่เคยรักษาที่คลินิก (แพทย์ยังไม่ได้ตรวจ) = ยังไม่มีคอร์สจริง → ไม่แสดง แม้หลังบ้านจะส่งมา */}
+      {b.course && clinicVisits.length ? (
         <Tile onPress={() => nav.navigate('Course')} accessibilityLabel="ดูคอร์สและประวัติการรักษา" style={{ gap: space[1] }}>
           <TileTitle title="คอร์สการรักษา" meta={`ครั้งที่ ${b.course.no}/${b.course.total}`} />
           <Text variant="bodySm" numberOfLines={2}>

@@ -250,6 +250,8 @@ interface JourneyState {
   drafts: DraftCase[];
   /** เพิ่มใบใหม่ หรือแก้ใบเดิม (id ตรงกัน) */
   upsertDraft: (d: DraftCase) => void;
+  /** ลบใบร่าง (เช่น รวมเข้าเรื่องเดิม) */
+  removeDraft: (id: string) => void;
   /** ใบร่างที่กำลังจอง/รับบริการ */
   activeDraftId: string | null;
   setActiveDraftId: (id: string | null) => void;
@@ -789,6 +791,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     (d: DraftCase) => setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d])),
     [],
   );
+  const removeDraft = useCallback((id: string) => setDrafts((all) => all.filter((x) => x.id !== id)), []);
   const log = useCallback((actor: string, action: string) => {
     const d = new Date();
     const at = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -1332,6 +1335,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setLastAssess,
     drafts,
     upsertDraft,
+    removeDraft,
     activeDraftId,
     setActiveDraftId,
     promoted,
