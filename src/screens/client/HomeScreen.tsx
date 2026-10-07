@@ -4780,9 +4780,8 @@ function GuideTile({ width, title = 'แนวทางที่แนะนำ'
       <View style={{ gap: space[2] }}>
         {list.map((m) => (
           <View key={m} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-            <View style={{ width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand.subtle }}>
-              <Icon name="check" size="xs" color={colors.brand.primary} />
-            </View>
+            {/* จุดธรรมดา — ไม่ใช้ติ๊กถูก (ดูเหมือน "ทำแล้ว" ทั้งที่เป็นสิ่งที่จะได้รับ) */}
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.brand.primary }} />
             <Text variant="labelSm" style={{ flex: 1 }} numberOfLines={2}>
               {m}
             </Text>
