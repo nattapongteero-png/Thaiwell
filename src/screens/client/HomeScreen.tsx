@@ -581,7 +581,7 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts.length]);
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
-  const modelTag = ((): { items: string[]; note?: string; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean } | null => {
+  const modelTag = ((): { items: string[]; note?: string; /** good = ดีขึ้น (พื้นเขียว) */ noteTone?: 'good' | 'bad'; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean } | null => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บริเวณที่ปวด (บริเวณหลักก่อน) · ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ
     if (selDraft) return { items: draftRegions(selDraft), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
@@ -592,9 +592,13 @@ export function HomeScreen() {
       const t = caseToday[tcase.id];
       const v = t?.pain ?? lv?.selfPain ?? lv?.painAfter;
       if (v === undefined) return null;
+      // แนวโน้มทั้งคอร์ส: ปวดก่อนนวดครั้งแรก → ล่าสุด (ระดับปวดอยู่ในการ์ดผลแล้ว ไม่ซ้ำ)
+      const first = tcase.visits[0]?.painBefore;
+      const pct = first ? Math.round(((first - v) / first) * 100) : 0;
       return {
         items: tcase.areas.map((a) => a.label),
-        note: t ? (t.red ? `ปวด ${v}/10 · ควรพบแพทย์ก่อนนวด` : `ปวด ${v}/10 · ประเมินก่อนนวดครั้งนี้`) : `ปวด ${v}/10 · หลังนวดครั้งที่ ${tcase.visits.length}`,
+        note: t?.red ? 'ควรพบแพทย์ก่อนนวด' : pct > 0 ? `↘ ดีขึ้น ${pct}%` : pct < 0 ? `↗ ปวดเพิ่ม ${-pct}%` : 'เท่าเดิม',
+        noteTone: t?.red || pct < 0 ? 'bad' : pct > 0 ? 'good' : undefined,
         color: t?.red ? colors.status.danger.fg : painColorOf(v),
       };
     }
@@ -2603,9 +2607,9 @@ export function HomeScreen() {
       {/* ข้อมูลอื่น (ระดับปวด · ครั้งที่) ชิดขวา แถวเดียวกับป้ายจุดแรก — ป้ายจุดที่ปวดอยู่ซ้าย */}
       {modelTag?.note ? (
         <View style={{ position: 'absolute', top: headerBottom + space[3] + (modelTag.ranked ? 18 : 0), right: space[4] }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
             {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
-            <Text variant="labelSm" tone="secondary">
+            <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
               {modelTag.note}
             </Text>
           </View>
