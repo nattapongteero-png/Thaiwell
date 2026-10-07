@@ -3702,7 +3702,7 @@ const stretchGroupFor = (symptoms: string[]) => {
  * ดูแลตัวเอง — ภาพท่ายืดเคลื่อนไหว (GIF) เต็มความกว้างช่อง + ชื่อท่า + ปุ่มเล่น
  * ท่าที่ไม่มีภาพ (เช่น ฝึกหายใจ) → แถวเดียวแบบเดิม
  */
-function SelfCareTile({ groupId, title, done, onPress }: { groupId?: string; title: string; done?: boolean; onPress: () => void }) {
+function SelfCareTile({ groupId, title, done, fill, onPress }: { groupId?: string; title: string; done?: boolean; /** ยืดเต็มความสูงช่อง (ภาพขยายตาม) */ fill?: boolean; onPress: () => void }) {
   const { colors } = useTheme();
   const group = SYMPTOM_GROUPS.find((g) => g.id === groupId);
   const motion = group ? STRETCH_MOTION[group.stretch.name] : undefined;
@@ -3725,8 +3725,8 @@ function SelfCareTile({ groupId, title, done, onPress }: { groupId?: string; tit
     </View>
   );
   return (
-    <Tile style={{ padding: 0 }} onPress={onPress} accessibilityLabel={`ดูแลตัวเอง ${name}${motion ? ` ช่วย${motion.primary.label}` : ''}`}>
-      <View style={{ height: 120, overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
+    <Tile style={{ padding: 0, ...(fill ? { flex: 1 } : null) }} onPress={onPress} accessibilityLabel={`ดูแลตัวเอง ${name}${motion ? ` ช่วย${motion.primary.label}` : ''}`}>
+      <View style={{ ...(fill ? { flex: 1, minHeight: 120 } : { height: 120 }), overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
         {/* เห็นหุ่นเต็มตัวทุกจังหวะ (ชูแขนก็ไม่หลุดขอบ) · ขนาดเท่ากับหน้ารวมท่า */}
         {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={84} style={{ width: '100%', height: '100%' }} /> : null}
         {motion ? (
@@ -3923,18 +3923,22 @@ function DraftBento({
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" fill onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
-          {/* เตรียมตัวก่อนนวด: ข้อควรระวัง (ส่วนที่ไม่นวด/ต้องระวัง) · งดครั้งนี้ (หัตถการเสริม) · ก่อนมานวด — แบ่งด้วยหัวข้อ */}
-          <Tile style={{ width: halfW, gap: space[3] }}>
+          {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
+          <View style={{ width: halfW, gap: BENTO_GAP }}>
             {[
-              { title: 'ข้อควรระวัง', icon: 'alert-triangle' as const, color: colors.status.warning.fg, items: d.caution ? d.caution.split(' · ') : [] },
-              { title: 'งดครั้งนี้', icon: 'slash' as const, color: colors.status.warning.fg, items: procedureGates(profile).filter((g) => !g.allowed).map((g) => g.procedure) },
-              { title: 'ก่อนมานวด', icon: 'check-circle' as const, color: colors.brand.primary, items: prep },
+              { title: 'ไม่ต้องการ', icon: 'x-circle' as const, color: colors.status.danger.fg, items: d.caution ? d.caution.split(' · ') : [] },
+              {
+                title: 'ก่อนมานวด',
+                icon: 'check-circle' as const,
+                color: colors.brand.primary,
+                items: [...prep, ...procedureGates(profile).filter((g) => !g.allowed).map((g) => `งด${g.procedure}ครั้งนี้`)],
+              },
             ]
               .filter((sec) => sec.items.length)
-              .map((sec, i) => (
-                <View key={sec.title} style={{ gap: space[2], ...(i ? { paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle } : null) }}>
+              .map((sec) => (
+                <Tile key={sec.title} style={{ flex: 1, gap: space[2] }}>
                   <TileTitle title={sec.title} />
                   {sec.items.map((it) => (
                     <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
@@ -3946,9 +3950,9 @@ function DraftBento({
                       </Text>
                     </View>
                   ))}
-                </View>
+                </Tile>
               ))}
-          </Tile>
+          </View>
         </View>
       )}
 
