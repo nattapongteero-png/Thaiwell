@@ -522,17 +522,28 @@ export function HomeScreen() {
   /** ตำแหน่งบนจอของจุดที่ป้ายชี้ (หุ่นโหลด/ขยับเข้าที่ช้ากว่าหน้า → อ่านซ้ำช่วงแรก) */
   const [tagAt, setTagAt] = React.useState<{ x: number; y: number } | null>(null);
   const tagPin = modelTag?.pin;
+  /** ชั้นของป้าย (วัดตำแหน่งบนจอ → แปลงตำแหน่งจุดจากพิกัดจอเป็นพิกัดในชั้นนี้) */
+  const tagLayer = React.useRef<View>(null);
+  const homeFocused = useIsFocused();
   React.useEffect(() => {
-    setTagAt(null);
-    if (!tagPin) return;
+    if (!tagPin || !homeFocused) return;
+    // กลับมาหน้านี้ / หุ่นขยับเข้าที่ → ตำแหน่งบนจอเปลี่ยน: วัดหุ่นใหม่ แล้วอ่านตำแหน่งจุดตามไปตลอดที่อยู่หน้านี้
+    bodyRef.current?.remeasure();
     let n = 0;
-    const t = setInterval(() => {
+    const read = () => {
+      if (++n % 8 === 0) bodyRef.current?.remeasure();
       const q = bodyRef.current?.projectPin(tagPin);
-      if (q) setTagAt((o) => (o && Math.abs(o.x - q.x) < 1 && Math.abs(o.y - q.y) < 1 ? o : q));
-      if (++n > 20) clearInterval(t);
-    }, 250);
+      if (!q) return;
+      tagLayer.current?.measureInWindow((ox, oy) => {
+        const v = { x: q.x - (ox || 0), y: q.y - (oy || 0) };
+        setTagAt((o) => (o && Math.abs(o.x - v.x) < 1 && Math.abs(o.y - v.y) < 1 ? o : v));
+      });
+    };
+    read();
+    const t = setInterval(read, 400);
     return () => clearInterval(t);
-  }, [tagPin, started]);
+  }, [tagPin, started, homeFocused]);
+  React.useEffect(() => setTagAt(null), [tagPin]);
 
   /** แตะบนหุ่น → เลือก chip ของส่วนนั้น (หรือเพิ่ม chip ใหม่) · แตะจุดเดิม → ยกเลิก · ใช้ได้ระหว่างถามอาการ/อาการร่วม */
   /** โหมด focus: mark ที่อยู่ใกล้ตำแหน่งแตะ (ระยะนิ้ว 44px) → ลำดับขั้น */
@@ -2362,6 +2373,7 @@ export function HomeScreen() {
         <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : chatHome ? WELCOME_ANGLE : 0} />
       </Animated.View>
       {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
+      <View ref={tagLayer} pointerEvents="none" style={StyleSheet.absoluteFill} />
       {modelTag ? (
         (() => {
           // ป้ายอยู่ข้างจุดบนหุ่น + เส้นชี้ · จุดอยู่ครึ่งขวาของจอ → ป้ายไปซ้าย · ยังไม่รู้ตำแหน่ง = มุมขวาใต้แท็บ
@@ -2391,11 +2403,13 @@ export function HomeScreen() {
                 top: Math.max(headerBottom + space[2], tagAt.y - 24),
                 height: 48,
                 justifyContent: 'center',
-                ...(left ? { left: tagAt.x + 6, right: space[4] } : { right: winW - tagAt.x + 6, left: space[4] }),
+                ...(left ? { left: tagAt.x, right: space[4] } : { right: winW - tagAt.x, left: space[4] }),
                 flexDirection: left ? 'row' : 'row-reverse',
                 alignItems: 'center',
               }}
             >
+              {/* ปลายเส้น = จุดบนหุ่นพอดี */}
+              <View style={{ width: 8, height: 8, borderRadius: 4, marginHorizontal: -4, backgroundColor: colors.surface.default, borderWidth: 2, borderColor: colors.text.secondary }} />
               <View style={{ width: LINE, height: 1.5, backgroundColor: colors.text.tertiary }} />
               {box}
             </View>
