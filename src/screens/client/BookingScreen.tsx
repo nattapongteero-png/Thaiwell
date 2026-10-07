@@ -131,9 +131,9 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     return free.length > 0 && (id === ANY_THERAPIST || free.some((x) => x.id === id));
   };
   const pickDay = (d: number) => {
+    // เปลี่ยนวัน = เลือกเวลาใหม่เสมอ (ไม่พาเวลาเดิมข้ามวันโดยไม่รู้ตัว)
+    if (d !== day) setTime(null);
     setDay(d);
-    // เวลาเดิมไม่มีในวันใหม่ → เลือกเวลาใหม่
-    if (!anySlots.some((f) => f.day === d && f.time === time)) setTime(null);
   };
   const pickTime = (t: string) => {
     setTime(t);
