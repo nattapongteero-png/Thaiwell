@@ -35,7 +35,7 @@ export interface CloudRow {
   therapist?: string | null;
   queue_no?: string | null;
   record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; painBefore?: number; painAfter?: number; advice?: string; therapist?: string } | null;
-  bill?: { amount: number; items?: string[]; status: 'pending' | 'paid' | 'void'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
+  bill?: { amount: number; items?: string[]; lines?: { name: string; amount: number }[]; status: 'pending' | 'paid' | 'void'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
   plan?: { summary: string; sessions: number; frequency: string; phases?: { title: string; weeks: string; focus: string }[]; homeCare?: string[]; course?: { name: string; total: number; used: number } } | null;
   note?: string | null;
   created_at: string;
@@ -210,9 +210,9 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
   const pb = prev?.bill;
   if (b && JSON.stringify(b) !== JSON.stringify(pb ?? null)) {
     // บิลใหม่ / คลินิกแก้ยอดระหว่างรอชำระ
-    if (b.status === 'pending' && (pb?.status !== 'pending' || pb.amount !== b.amount)) out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], receiptNo: b.receipt_no });
+    if (b.status === 'pending' && (pb?.status !== 'pending' || pb.amount !== b.amount)) out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], lines: b.lines, receiptNo: b.receipt_no });
     // จ่ายที่คลินิก → ใบเสร็จ (จ่ายในแอปเองไม่ต้องแจ้งซ้ำ)
-    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at });
+    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, lines: b.lines });
   }
   if (row.plan && JSON.stringify(row.plan) !== JSON.stringify(prev?.plan ?? null)) {
     out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: row.plan.course ?? { name: row.plan.summary, total: row.plan.sessions, used: 0 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });

@@ -971,7 +971,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setBills((all) => {
         const prev = all.find((b) => b.id === billId);
         const title = prev?.title ?? l.title ?? `รักษา${tc?.short ?? ''}`;
-        return [{ id: billId, caseId: l.caseId, title, date: prev?.date ?? 'วันนี้', items: [{ name: e.items.join(' + ') || 'ค่าบริการ', amount: e.amount }], total: e.amount, status: 'pending', cloudRef: ref, receiptNo: e.receiptNo }, ...all.filter((b) => b.id !== billId)];
+        return [{ id: billId, caseId: l.caseId, title, date: prev?.date ?? 'วันนี้', items: e.lines?.length ? e.lines : [{ name: e.items.join(' + ') || 'ค่าบริการ', amount: e.amount }], total: e.amount, status: 'pending', cloudRef: ref, receiptNo: e.receiptNo }, ...all.filter((b) => b.id !== billId)];
       });
       note('bill', `บิล${l.title ?? `รักษา${tc?.short ?? ''}`} รอชำระ ${e.amount} บาท`, billId);
     } else if (e.type === 'receipt') {
@@ -1075,11 +1075,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const title = `${t.title ?? t.label} ครั้งที่ 1`;
         const billId = `cb-${e.ref}`;
         if (e.type === 'bill') {
-          setBills((all) => [{ id: billId, caseId, title, date: 'วันนี้', items: [{ name: e.items.join(' + ') || 'ค่าบริการ', amount: e.amount }], total: e.amount, status: 'pending', cloudRef: e.ref, receiptNo: e.receiptNo }, ...all.filter((b) => b.id !== billId)]);
+          setBills((all) => [{ id: billId, caseId, title, date: 'วันนี้', items: e.lines?.length ? e.lines : [{ name: e.items.join(' + ') || 'ค่าบริการ', amount: e.amount }], total: e.amount, status: 'pending', cloudRef: e.ref, receiptNo: e.receiptNo }, ...all.filter((b) => b.id !== billId)]);
           setApptNotices((all) => [{ id: `n-${e.id}`, caseId, kind: 'bill', billId, text: `บิล${title} รอชำระ ${e.amount} บาท`, at: nowAtLabel() }, ...all]);
         } else {
           const paid = { status: 'paid' as const, paidAt: nowAtLabel(), receiptNo: e.receiptNo };
-          setBills((all) => (all.some((b) => b.id === billId) ? all.map((b) => (b.id === billId ? { ...b, ...paid } : b)) : [{ id: billId, caseId, title, date: 'วันนี้', items: [{ name: 'ค่าบริการ', amount: e.amount }], total: e.amount, cloudRef: e.ref, ...paid }, ...all]));
+          setBills((all) => (all.some((b) => b.id === billId) ? all.map((b) => (b.id === billId ? { ...b, ...paid } : b)) : [{ id: billId, caseId, title, date: 'วันนี้', items: e.lines?.length ? e.lines : [{ name: 'ค่าบริการ', amount: e.amount }], total: e.amount, cloudRef: e.ref, ...paid }, ...all]));
           setApptNotices((all) => [{ id: `n-${e.id}`, caseId, kind: 'receipt', billId, text: `ชำระที่คลินิกแล้ว ${e.amount} บาท · ใบเสร็จ${title}`, at: nowAtLabel() }, ...all]);
         }
         continue;

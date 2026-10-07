@@ -99,9 +99,9 @@ export type ClinicEvent =
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
-  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; receiptNo?: string }
+  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; /** รายการพร้อมราคา (ค่าบริการ + หัตถการเพิ่ม) */ lines?: { name: string; amount: number }[]; receiptNo?: string }
   /** จ่ายที่คลินิกแล้ว → ใบเสร็จ */
-  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string }
+  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string; lines?: { name: string; amount: number }[] }
   /** นวดครั้งต่อ ๆ ไปตามแผน (นัดที่คลินิกลงเอง) */
   | { id: string; at: string; type: 'visit'; patientId: string; apptId: string; date: string; painBefore: number; painAfter: number }
   /** แผนการรักษา: นัดถัดไปที่คลินิกลงไว้ + คอร์ส */
