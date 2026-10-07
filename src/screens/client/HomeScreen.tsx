@@ -66,7 +66,7 @@ import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLa
 import { SERVICES } from './BookingScreen';
 import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
 import { ASSESS_LOCK_TEXT, assessLock, caseClinic, needsConfirm, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
-import { isoToLabel, todayISO } from '../../services/clinicBridge';
+import { isoToLabel, readAvailability, todayISO } from '../../services/clinicBridge';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
@@ -171,6 +171,38 @@ const radiateNow = (symptoms: string[], radiate?: string) => radiateForAll(sympt
 /** ชา / อ่อนแรง ร่วมด้วย (ถามทุกบริเวณ) — ⚠️ ตีความจาก CPG หน้า 139 ข้อ 3.1 "ปวดเกี่ยวกับระบบประสาท" (CPG ไม่ได้เขียนคำว่าชา/อ่อนแรงตรง ๆ) · รอแพทย์แผนไทยยืนยันเกณฑ์ */
 const NUMB = 'ชาบริเวณที่ปวด';
 const WEAK = 'แขนหรือขาอ่อนแรง';
+/** สถานะวันนัดจากคลินิก → ช่องคิว · ขั้นตอน · ปุ่ม บนการ์ดนัด (ใช้ทั้งนัดครั้งแรกและนัดครั้งถัดไป) */
+type VisitStage = 'checked_in' | 'called' | 'in_service' | undefined;
+/** รออีกกี่คิว (คิวที่คลินิกประกาศว่ายังรอ) */
+const queueAhead = (queue?: string) => {
+  const q = readAvailability()?.queue;
+  return queue && q ? q.waiting.filter((x) => x < queue).length : null;
+};
+/** ขั้นตอนหลังเช็กอิน: ได้คิว (รออีก N) → ถึงคิว → กำลังรับบริการ */
+function VisitStageSteps({ queue, stage, therapist }: { queue?: string; stage: VisitStage; therapist?: string }) {
+  const ahead = queueAhead(queue);
+  return (
+    <>
+      <StepRow done={!!queue} text={queue ? `ได้คิว ${queue}${!stage || stage === 'checked_in' ? (ahead ? ` · รออีก ${ahead} คิว` : ' · รอเรียกคิว') : ''}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
+      {stage === 'called' || stage === 'in_service' ? <StepRow done text="ถึงคิวแล้ว เชิญเข้ารับบริการ" /> : null}
+      {stage === 'in_service' ? <StepRow done text={`กำลังรับบริการ${therapist ? `กับ${therapist}` : ''}`} /> : null}
+    </>
+  );
+}
+/** ช่องขวาบนของการ์ดวันนัด: คิว → ถึงคิว (สีเขียว) → รับบริการ */
+function QueueBlock({ queue, stage }: { queue?: string; stage: VisitStage }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ alignItems: 'flex-end' }}>
+      <Text variant="bodyXs" tone="secondary">
+        {stage === 'in_service' ? 'สถานะ' : stage === 'called' ? 'ถึงคิวแล้ว' : 'คิว'}
+      </Text>
+      <Text variant="titleXl" color={stage === 'in_service' ? colors.text.primary : queue ? colors.brand.primary : colors.text.tertiary}>
+        {stage === 'in_service' ? 'รับบริการ' : queue ?? '–'}
+      </Text>
+    </View>
+  );
+}
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
 /** ข้อมูลหน้าแรกเริ่มที่ 60% ของจอ (ขั้นแรก: เห็นหุ่นเกือบทั้งตัว หมุนได้) → ปัดขึ้น = แผ่นข้อมูลขึ้นมาบังหุ่น (ขั้นที่สอง) */
@@ -3766,7 +3798,7 @@ function FirstVisitCard({
 }: {
   /** ประเมินอีกครั้ง (ยังไม่ถึงวันนัด/ยังไม่เช็กอิน) — ปุ่มรองต่อจากสถานะนัด */
   onReassess?: () => void;
-  booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed' };
+  booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed'; stage?: VisitStage; therapist?: string };
   /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
   steps?: React.ReactNode;
   onCheckIn: () => void;
@@ -3795,14 +3827,7 @@ function FirstVisitCard({
           <Text variant="titleXl">{b.time}</Text>
         </View>
         {today ? (
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text variant="bodyXs" tone="secondary">
-              คิว
-            </Text>
-            <Text variant="titleXl" color={b.queue ? colors.brand.primary : colors.text.tertiary}>
-              {b.queue ?? '–'}
-            </Text>
-          </View>
+          <QueueBlock queue={b.queue} stage={b.stage} />
         ) : (
           <DateBlock date={b.date} />
         )}
@@ -3811,7 +3836,7 @@ function FirstVisitCard({
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
         {needAssess ? <StepRow text={assessStep} /> : null}
         {steps}
-        <StepRow done={!!b.queue} text={b.queue ? `ได้คิว ${b.queue}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
+        <VisitStageSteps queue={b.queue} stage={b.stage} therapist={b.therapist} />
       </View>
       {needAssess ? (
         // ยังไม่เคยประเมิน: ประเมินก่อน (คัดกรองความปลอดภัย) · วันนัด = ยังเช็กอินไม่ได้จนกว่าจะประเมิน
@@ -3840,10 +3865,16 @@ function FirstVisitCard({
         </View>
       ) : today ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-          {/* เช็กอินแล้ว (ได้คิว) → ดูคิว */}
-          <Pressable accessibilityRole="button" accessibilityLabel={b.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={onCheckIn} style={{ flex: 1 }}>
-            <TilePill icon={b.queue ? 'eye' : 'maximize'} label={b.queue ? 'ดูคิว' : 'เช็กอิน'} />
-          </Pressable>
+          {/* เช็กอิน → ดูคิว → ถึงคิวแล้ว · กำลังรับบริการ = ไม่มีปุ่ม (ดูรายละเอียดได้) */}
+          {b.stage === 'in_service' ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen} style={{ flex: 1 }}>
+              <TilePill icon="file-text" label="รายละเอียด" dark={false} />
+            </Pressable>
+          ) : (
+            <Pressable accessibilityRole="button" accessibilityLabel={b.stage === 'called' ? 'ถึงคิวแล้ว' : b.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={b.queue ? onOpen : onCheckIn} style={{ flex: 1 }}>
+              <TilePill icon={b.stage === 'called' ? 'bell' : b.queue ? 'eye' : 'maximize'} label={b.stage === 'called' ? 'ถึงคิวแล้ว' : b.queue ? 'ดูคิว' : 'เช็กอิน'} />
+            </Pressable>
+          )}
           <NavIconButton clinic={b.clinic} />
         </View>
       ) : (
@@ -3862,7 +3893,7 @@ function FirstVisitCard({
   );
 }
 
-function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void; /** ประเมินอาการก่อนมา (แชท AI) */ onAssess: () => void }) {
+function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; stage?: VisitStage; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void; /** ประเมินอาการก่อนมา (แชท AI) */ onAssess: () => void }) {
   const { colors } = useTheme();
   const mins = b.service.split(' · ')[1];
   const nav = useNav();
@@ -4472,14 +4503,7 @@ function HomeBento({
                 <Text variant="titleXl">{ap.time}</Text>
               </View>
               {ap.today ? (
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text variant="bodyXs" tone="secondary">
-                    คิว
-                  </Text>
-                  <Text variant="titleXl" color={colors.brand.primary}>
-                    {ap.queue ?? '–'}
-                  </Text>
-                </View>
+                <QueueBlock queue={ap.queue} stage={ap.stage} />
               ) : (
                 <DateBlock date={ap.date} />
               )}
@@ -4489,6 +4513,8 @@ function HomeBento({
               {needPost ? <StepRow text={`ประเมินหลังนวดครั้งที่ ${tc.visits.length}`} /> : null}
               <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : opensOn ? `ประเมินก่อนนวดได้ตั้งแต่${opensOn === 'พรุ่งนี้' ? '' : ' '}${opensOn}` : 'ประเมินก่อนนวด · ต่อจากครั้งก่อน'} />
               <StepRow text={tc.prep.join(' · ')} />
+              {/* วันนัด: เช็กอิน → ได้คิว (รออีก N) → ถึงคิว → กำลังรับบริการ */}
+              {ap.today && preDone ? <VisitStageSteps queue={ap.queue} stage={ap.stage} therapist={caseAppts[tc.id]?.therapist || tc.therapist} /> : null}
             </View>
             {/* ทุกครั้งต้องประเมินก่อน (อาการ/ข้อห้ามเปลี่ยนได้ระหว่างนัด) → ผ่านแล้วจึงเช็กอินได้ · ควรพบแพทย์ = เช็กอินไม่ได้ */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
@@ -4504,10 +4530,11 @@ function HomeBento({
                   <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
                 </Pressable>
               )}
-              {ap.today && preDone && !today?.red ? (
+              {ap.today && preDone && !today?.red && ap.stage === 'in_service' ? null : ap.today && preDone && !today?.red ? (
                 <>
-                  <Pressable accessibilityRole="button" accessibilityLabel="เช็กอิน" onPress={onCheckIn} style={{ flex: 1 }}>
-                    <TilePill icon="maximize" label="เช็กอิน" />
+                  {/* เช็กอิน → ดูคิว → ถึงคิวแล้ว (กำลังรับบริการ = ไม่มีปุ่มนี้) */}
+                  <Pressable accessibilityRole="button" accessibilityLabel={ap.stage === 'called' ? 'ถึงคิวแล้ว' : ap.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={ap.queue ? onOpen : onCheckIn} style={{ flex: 1 }}>
+                    <TilePill icon={ap.stage === 'called' ? 'bell' : ap.queue ? 'eye' : 'maximize'} label={ap.stage === 'called' ? 'ถึงคิวแล้ว' : ap.queue ? 'ดูคิว' : 'เช็กอิน'} />
                   </Pressable>
                   <NavIconButton clinic={clinic} />
                 </>

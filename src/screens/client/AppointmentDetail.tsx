@@ -7,6 +7,7 @@ import { serviceMismatch, useAppointment } from '../../state/appointments';
 import { NotFoundScreen } from './NotFound';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
+import { readAvailability } from '../../services/clinicBridge';
 import { PLACES, callClinic, clinicPhone, openMap } from './PlacesScreen';
 
 /**
@@ -27,6 +28,9 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   // นัดของเรื่องนี้ (ใบการรักษา / ใบร่าง / จองไว้ก่อนประเมิน)
   const appt = useAppointment(target);
   if (!appt) return <NotFoundScreen title="รายละเอียดนัด" message="นัดนี้ถูกยกเลิกหรือใช้ไปแล้ว" />;
+  // คิวที่คลินิกประกาศว่ายังรอ → รออีกกี่คิว
+  const waiting = readAvailability()?.queue?.waiting;
+  const ahead = appt.queue && waiting ? waiting.filter((x) => x < appt.queue!).length : null;
   const place = PLACES.find((p) => p.name === appt.clinic);
   const draftOf = drafts.find((d) => d.id === target.draftId);
   const mismatch = appt.kind === 'draft' && !appt.red && !draftOf?.keepService ? serviceMismatch(appt.service, draftOf?.caution) : null;
@@ -60,8 +64,9 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
           </View>
         ) : (
           <View style={{ gap: space[2] }}>
-            {appt.today && !appt.red && !appt.pending ? <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', appt.target)} /> : null}
-            {appt.kind === 'case' ? (
+            {appt.today && !appt.red && !appt.pending && !appt.queue ? <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', appt.target)} /> : null}
+            {/* เช็กอินแล้ว / ถึงคิว / รับบริการ: เลื่อน-ยกเลิกในแอปไม่ได้แล้ว → ติดต่อคลินิก */}
+            {appt.kind === 'case' || appt.queue || appt.stage ? (
               // นัดของการรักษา: เลื่อน/ยกเลิกทำที่คลินิกเท่านั้น (หลังบ้านโรงพยาบาลแก้แล้วแอปแจ้งเตือน)
               <Button label={`ติดต่อคลินิก ${clinicPhone(appt.clinic)}`} iconLeft="phone" variant="secondary" onPress={() => callClinic(appt.clinic)} />
             ) : (
@@ -116,7 +121,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
             </View>
           ) : null}
           <View style={{ flex: 1 }} />
-          {place ? (
+          {place && !appt.stage ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`นำทางไป ${appt.clinic}`}
@@ -130,6 +135,21 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
             </Pressable>
           ) : null}
         </View>
+        {/* วันนัดหลังเช็กอิน (รวมหน้าดูคิวไว้ที่นี่): รออีกกี่คิว → ถึงคิว (เด่น) → กำลังรับบริการ */}
+        {appt.today && (appt.queue || appt.stage) ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], paddingVertical: space[2], borderRadius: 14, backgroundColor: appt.stage === 'called' || appt.stage === 'in_service' ? colors.brand.primary : colors.surface.sunken }}>
+            <Icon name={appt.stage === 'in_service' ? 'activity' : appt.stage === 'called' ? 'bell' : 'clock'} size="sm" color={appt.stage === 'called' || appt.stage === 'in_service' ? '#FFFFFF' : colors.text.secondary} />
+            <Text variant="labelMd" color={appt.stage === 'called' || appt.stage === 'in_service' ? '#FFFFFF' : colors.text.secondary} style={{ flex: 1 }}>
+              {appt.stage === 'in_service'
+                ? `กำลังรับบริการ${appt.therapist ? ` · ${appt.therapist}` : ''}`
+                : appt.stage === 'called'
+                  ? 'ถึงคิวแล้ว เชิญเข้ารับบริการ'
+                  : ahead
+                    ? `รออีก ${ahead} คิว`
+                    : 'รอเรียกคิว'}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/* จองไว้ก่อนประเมิน แล้วผลประเมินต้องการบริการอื่น → เปลี่ยนบริการในนัดนี้ */}
@@ -159,7 +179,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
           </Text>
         </Panel>
       ) : null}
-      {appt.kind === 'case' ? (
+      {appt.kind === 'case' && !appt.queue && !appt.stage ? (
         <Text variant="bodySm" tone="secondary">
           ต้องการเลื่อนหรือยกเลิกนัด ติดต่อคลินิก คลินิกจะแก้ไขให้และแจ้งเตือนในแอป
         </Text>
