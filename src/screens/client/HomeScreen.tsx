@@ -179,22 +179,13 @@ const queueAhead = (queue?: string) => {
   const q = readAvailability()?.queue;
   return queue && q ? q.waiting.filter((x) => x < queue).length : null;
 };
-/** ขั้นตอนเช็กอิน: ได้คิว (รออีก N) — ถึงคิว/กำลังรับบริการ บอกที่ช่องคิว ปุ่ม และการ์ดผู้ให้บริการแล้ว ไม่ซ้ำเป็นขั้นตอน */
-function VisitStageSteps({ queue, stage, therapist }: { queue?: string; stage: VisitStage; therapist?: string }) {
-  const ahead = queueAhead(queue);
-  return (
-    <>
-      <StepRow done={!!queue} text={queue ? `ได้คิว ${queue}${!stage || stage === 'checked_in' ? (ahead ? ` · รออีก ${ahead} คิว` : ' · รอเรียกคิว') : ''}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
-    </>
-  );
-}
-/** ช่องขวาบนของการ์ดวันนัด: คิว → ถึงคิว (สีเขียว) → รับบริการ */
+/** ช่องคิวบนการ์ดนัด — สถานะวันนัดอยู่ที่นี่ที่เดียว: คิว (รออีก N) → ถึงคิวแล้ว → รับบริการ */
 function QueueBlock({ queue, stage }: { queue?: string; stage: VisitStage }) {
   const { colors } = useTheme();
   return (
     <View style={{ alignItems: 'flex-end' }}>
       <Text variant="bodyXs" tone="secondary">
-        {stage === 'in_service' ? 'สถานะ' : stage === 'called' ? 'ถึงคิวแล้ว' : 'คิว'}
+        {stage === 'in_service' ? 'สถานะ' : stage === 'called' ? 'ถึงคิวแล้ว' : queue && queueAhead(queue) ? `คิว · รออีก ${queueAhead(queue)}` : 'คิว'}
       </Text>
       <Text variant="titleXl" color={stage === 'in_service' ? colors.text.primary : queue ? colors.brand.primary : colors.text.tertiary}>
         {stage === 'in_service' ? 'รับบริการ' : queue ?? '–'}
@@ -3855,7 +3846,6 @@ function FirstVisitCard({
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
         {needAssess ? <StepRow text={assessStep} /> : null}
         {steps}
-        <VisitStageSteps queue={b.queue} stage={b.stage} therapist={b.therapist} />
       </View>
       {needAssess ? (
         // ยังไม่เคยประเมิน: ประเมินก่อน (คัดกรองความปลอดภัย) · วันนัด = ยังเช็กอินไม่ได้จนกว่าจะประเมิน
@@ -4521,8 +4511,6 @@ function HomeBento({
               {needPost ? <StepRow text={`ประเมินหลังนวดครั้งที่ ${tc.visits.length}`} /> : null}
               <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : opensOn ? `ประเมินก่อนนวดได้ตั้งแต่${opensOn === 'พรุ่งนี้' ? '' : ' '}${opensOn}` : 'ประเมินก่อนนวด · ต่อจากครั้งก่อน'} />
               <StepRow text={tc.prep.join(' · ')} />
-              {/* วันนัด: เช็กอิน → ได้คิว (รออีก N) → ถึงคิว → กำลังรับบริการ */}
-              {ap.today && preDone ? <VisitStageSteps queue={ap.queue} stage={ap.stage} therapist={caseAppts[tc.id]?.therapist || tc.therapist} /> : null}
             </View>
             {/* ทุกครั้งต้องประเมินก่อน (อาการ/ข้อห้ามเปลี่ยนได้ระหว่างนัด) → ผ่านแล้วจึงเช็กอินได้ · ควรพบแพทย์ = เช็กอินไม่ได้ */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
