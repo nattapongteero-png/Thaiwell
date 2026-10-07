@@ -2926,6 +2926,11 @@ export function HomeScreen() {
                     </View>
                   ) : m.card?.type === 'sources' ? (
                     <SourcesCard refs={m.card.refs} />
+                  ) : m.card?.type === 'action' && m.card.to === 'CheckIn' && chatCase()?.appointment.queue ? (
+                    // เช็กอินแล้ว (ได้คิว) → ปุ่มเช็กอินเดิมในแชทเปลี่ยนเป็นดูคิว · กำลังรับบริการ = ไม่มีปุ่ม
+                    chatCase()!.appointment.stage === 'in_service' ? null : (
+                      <PillButton label={chatCase()!.appointment.stage === 'called' ? 'ถึงคิวแล้ว' : `ดูคิว ${chatCase()!.appointment.queue}`} icon={chatCase()!.appointment.stage === 'called' ? 'bell' : 'users'} onPress={() => nav.navigate('AppointmentDetail', { caseId: chatCase()!.id })} />
+                    )
                   ) : m.card?.type === 'action' ? (
                     <PillButton label={m.card.label} icon="arrow-right" onPress={() => runAction((m.card as Extract<ThreadCard, { type: 'action' }>).to)} />
                   ) : m.card ? (

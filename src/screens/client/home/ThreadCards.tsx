@@ -130,7 +130,7 @@ export function ThreadCardView({
 }) {
   const { colors } = useTheme();
   const nav = useNav();
-  const { elements } = useJourney();
+  const { elements, cases, drafts } = useJourney();
   const [answer, setAnswer] = React.useState(card.type === 'followup' ? card.answer : undefined);
 
   switch (card.type) {
@@ -264,24 +264,30 @@ export function ThreadCardView({
           </HStack>
         </GlassCard>
       );
-    case 'appointment':
+    case 'appointment': {
+      // สถานะล่าสุดของนัดนี้ (การ์ดในแชทเป็นภาพตอนตอบ → เช็กอิน/ได้คิวแล้วต้องเปลี่ยนตาม)
+      const live = card.caseId ? cases.find((c) => c.id === card.caseId)?.appointment : card.draftId ? drafts.find((d) => d.id === card.draftId)?.booking : undefined;
+      const queue = live?.queue ?? card.queue;
+      const stage = live?.stage;
+      const isToday = !card.date || card.date === 'วันนี้';
+      const target = { caseId: card.caseId, draftId: card.draftId };
       return (
         <GlassCard strong>
           <HStack justify="space-between" align="flex-end">
             <BigNumber label={card.date ?? 'วันนี้'} value={card.time} />
-            {card.queue ? (
+            {queue ? (
               <View style={{ alignItems: 'flex-end' }}>
                 <Text variant="caption" tone="secondary">
-                  คิว
+                  {stage === 'in_service' ? 'กำลังรับบริการ' : stage === 'called' ? 'ถึงคิวแล้ว' : 'คิว'}
                 </Text>
                 <Text variant="displayMd" color={colors.brand.primary}>
-                  {card.queue}
+                  {queue}
                 </Text>
               </View>
             ) : null}
           </HStack>
           <Text variant="bodyXs" tone="secondary">
-            {[card.place, card.therapist, card.waitMin ? `อีก ${card.waitMin} นาที` : ''].filter(Boolean).join(' · ')}
+            {[card.place, card.therapist, !queue && card.waitMin ? `อีก ${card.waitMin} นาที` : ''].filter(Boolean).join(' · ')}
           </Text>
           {card.service ? (
             <HStack gap={1} align="center">
@@ -292,17 +298,24 @@ export function ThreadCardView({
             </HStack>
           ) : null}
           <HStack gap={2}>
-            {/* เช็กอิน/เลื่อนนัดของเรื่องนี้ (ไม่ใช่นัดล่าสุดที่จอง) */}
-            {!card.date || card.date === 'วันนี้' ? <PillButton label="เช็กอิน" icon="maximize" onPress={() => nav.navigate('CheckIn', { caseId: card.caseId, draftId: card.draftId })} /> : null}
-            {/* นัดของการรักษา: เลื่อน/ยกเลิกผ่านคลินิก · นัดที่จองเองในแอป: เลื่อนเองได้ */}
-            {card.caseId ? (
+            {/* วันนัด: เช็กอิน → ดูคิว / ถึงคิวแล้ว → กำลังรับบริการ (ไม่มีปุ่ม) */}
+            {queue ? (
+              stage === 'in_service' ? null : (
+                <PillButton label={stage === 'called' ? 'ถึงคิวแล้ว' : 'ดูคิว'} icon={stage === 'called' ? 'bell' : 'users'} onPress={() => nav.navigate('AppointmentDetail', target)} />
+              )
+            ) : isToday ? (
+              <PillButton label="เช็กอิน" icon="maximize" onPress={() => nav.navigate('CheckIn', target)} />
+            ) : null}
+            {/* นัดของการรักษา หรือเช็กอินแล้ว: ติดต่อคลินิก · นัดที่จองเองในแอป (ยังไม่เช็กอิน): เลื่อนเองได้ */}
+            {card.caseId || queue ? (
               <PillButton label="ติดต่อคลินิก" icon="phone" tone="light" onPress={() => callClinic(card.place)} />
             ) : (
-              <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('Booking', { caseId: card.caseId, draftId: card.draftId })} />
+              <PillButton label="เลื่อนนัด" tone="light" onPress={() => nav.navigate('Booking', target)} />
             )}
           </HStack>
         </GlassCard>
       );
+    }
     case 'guideline':
       return (
         <GlassCard strong>
