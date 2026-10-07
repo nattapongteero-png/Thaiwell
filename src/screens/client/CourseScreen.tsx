@@ -21,11 +21,21 @@ const STAGE: Record<string, string> = { checked_in: 'เช็กอินแล
 export function CourseScreen() {
   const nav = useNav();
   const { colors } = useTheme();
-  const { clinicCourse: c, clinicVisits, looseBookings } = useJourney();
+  const { clinicCourse: c, clinicVisits, looseBookings, courseSlots, cases } = useJourney();
   const [open, setOpen] = React.useState<string | null>(null);
-  const appts = looseBookings
-    .filter((b): b is LooseBooking & { course: NonNullable<LooseBooking['course']> } => !!b.course)
-    .sort((a, b) => `${a.iso ?? ''}${a.time}`.localeCompare(`${b.iso ?? ''}${b.time}`));
+  // นัดตามคอร์ส: ผูกกับเรื่องที่รักษาอยู่ (ประเมินก่อนนวด/เช็กอินที่นัดถัดไปของเรื่อง) + นัดแยก (ยังไม่มีเรื่อง)
+  const appts = [
+    ...looseBookings
+      .filter((b): b is LooseBooking & { course: NonNullable<LooseBooking['course']> } => !!b.course)
+      .map((b) => ({ id: b.id, iso: b.iso, date: b.date, time: b.time, therapist: b.therapist, service: b.service, course: b.course, stage: b.stage, target: { looseId: b.id } })),
+    ...courseSlots
+      .filter((x): x is typeof x & { course: NonNullable<typeof x.course> } => !!x.course)
+      .map((x, i, arr) => {
+        const tc = cases.find((cc) => cc.id === x.caseId);
+        const next = arr.findIndex((y) => y.caseId === x.caseId) === i;
+        return { id: x.ref, iso: x.iso, date: x.iso, time: x.time, therapist: x.therapist, service: x.service, course: x.course, stage: next ? tc?.appointment.stage : undefined, target: { caseId: x.caseId } };
+      }),
+  ].sort((a, b) => `${a.iso ?? ''}${a.time}`.localeCompare(`${b.iso ?? ''}${b.time}`));
   const left = c ? Math.max(0, c.total - c.used) : 0;
   const row = (b: (typeof appts)[number], last: boolean) => {
     const date = b.iso ? isoToLabel(b.iso) : b.date;
@@ -35,7 +45,7 @@ export function CourseScreen() {
         key={b.id}
         accessibilityRole="button"
         accessibilityLabel={`ครั้งที่ ${b.course.no} ${date} ${b.time}`}
-        onPress={() => nav.navigate('AppointmentDetail', { looseId: b.id })}
+        onPress={() => nav.navigate('AppointmentDetail', b.target)}
         style={({ pressed }) => ({ backgroundColor: pressed ? colors.surface.sunken : 'transparent' })}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[3], marginHorizontal: space[4], borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.border.subtle }}>
