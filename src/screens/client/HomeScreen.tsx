@@ -305,7 +305,7 @@ export function HomeScreen() {
   /** รอข้อความ "แจ้งอาการเพิ่ม" ในแชทนี้ (ชื่อเรื่อง) */
   const noteFor = React.useRef<Record<string, string>>({});
   /** ปวดหลายบริเวณ: รอคำตอบ "ตรงไหนปวดมากที่สุด" ของแชทนี้ → จัดแนวทางใหม่ตามบริเวณหลัก */
-  const primaryFor = React.useRef<Record<string, { draftId: string; symptoms: string[]; radiate?: string }>>({});
+  const primaryFor = React.useRef<Record<string, { draftId: string; symptoms: string[]; radiate?: string; /** แนวทาง + สิ่งที่ตามมา (นัด/จอง) ที่รอแสดงหลังตอบ */ held?: ThreadItem[] }>>({});
   /** คำตอบข้ออื่นที่ผู้ใช้บอกมาก่อนถึงข้อนั้น (เช่น "ปวดคอ 7 เป็นมา 3 วัน") → ถึงข้อนั้นแล้วข้าม ไม่ถามซ้ำ · แยกตามแชท */
   const prefill = React.useRef<Record<string, Partial<Assessment>>>({});
   /** คำถามที่ค้างก่อนถามยืนยัน (เช่น ร้องเรียน) → ตอบยืนยันแล้วกลับมาถามต่อ */
@@ -1009,12 +1009,6 @@ export function HomeScreen() {
       // จองไว้ก่อนประเมิน แต่บริการไม่ตรงผลประเมิน (เช่น นวดผ่อนคลาย แต่ต้องนวดรักษา) → บอกและให้เปลี่ยนได้ในนัดเดิม
       const mismatch = !red && bk ? serviceMismatch(bk.service, [caution, guide?.type === 'guideline' ? guide.caution : ''].filter(Boolean).join(' ')) : null;
       if (mismatch) log('ระบบ → ผู้ให้บริการ', `นัด ${bk!.date} ${bk!.time}: ${mismatch}`);
-      // ปวดหลายบริเวณ → ถามบริเวณหลัก (ปวดมากที่สุด) แล้วจัดแนวทางตามนั้น (เดิมใช้อาการแรกที่เลือก)
-      const gl = results.find((r) => r.card?.type === 'guideline')?.card;
-      if (gl?.type === 'guideline' && (gl.areas?.length ?? 0) > 1) {
-        primaryFor.current[sid] = { draftId: id, symptoms: gl.areas!.map((a) => a.symptom), radiate: after.radiate };
-        results.push({ ...aiText(`ปวด ${gl.areas!.length} บริเวณ ตรงไหนปวดมากที่สุดคะ? จะใช้เป็นบริเวณหลักของแนวทาง`), card: { type: 'intents', options: gl.areas!.map((a) => a.symptom) }, time: results[0]?.time ?? nowTimeText() });
-      }
       const withBooking: ThreadItem[] = bk
         ? [
             ...results.map((r) => (r.card?.type === 'guideline' ? { ...r, card: { ...r.card, booked: true } } : r)),
@@ -1079,6 +1073,13 @@ export function HomeScreen() {
       if (old?.booking) notifyClinic(level === 'red' ? 'ผู้ป่วยอัปเดตผลประเมิน: ควรพบแพทย์ก่อน' : 'ผู้ป่วยอัปเดตผลประเมิน', `${old.title} · ปวด ${old.pain} → ${after.pain}/10${caution ? ` · ${caution}` : ''}`);
       // หน้าแรกเปิดที่ใบนี้
       setCaseIdx(caseCount + (old ? drafts.indexOf(old) : drafts.length));
+      // ปวดหลายบริเวณ → ถามบริเวณหลัก (ปวดมากที่สุด) ให้เสร็จก่อน แล้วจึงแสดงแนวทาง (และสิ่งที่ตามมา) ที่จัดตามบริเวณนั้น
+      const gi = withBooking.findIndex((r) => r.card?.type === 'guideline');
+      const gl = gi >= 0 ? withBooking[gi].card : undefined;
+      if (gl?.type === 'guideline' && (gl.areas?.length ?? 0) > 1) {
+        primaryFor.current[sid] = { draftId: id, symptoms: gl.areas!.map((a) => a.symptom), radiate: after.radiate, held: withBooking.slice(gi) };
+        return [...withBooking.slice(0, gi), { ...aiText(`ปวด ${gl.areas!.length} บริเวณ ตรงไหนปวดมากที่สุดคะ? จะใช้เป็นบริเวณหลักของแนวทาง`), card: { type: 'intents', options: gl.areas!.map((a) => a.symptom) }, time: withBooking[0]?.time ?? nowTimeText() }];
+      }
       return withBooking;
     }, userExtra);
   };
@@ -1504,9 +1505,14 @@ export function HomeScreen() {
       const d = drafts.find((x) => x.id === pf.draftId);
       const g = guideFor([label, ...pf.symptoms.filter((x) => x !== label)], pf.radiate);
       if (d) upsertDraft({ ...d, primary: label, guide: { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution ?? d.guide?.caution, areas: g.areas } });
-      return aiReply(activeId, label, () => [
-        { ...aiText(`ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`), card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: g.caution, ref: g.ref, areas: g.areas, booked: !!d?.booking }, source: 'Knowledge Hub' as const },
-      ]);
+      // แนวทางที่จัดตามบริเวณหลัก แทนแนวทางเดิมที่พักไว้ · สิ่งที่ตามมา (นัด/จอง) แสดงต่อจากนั้น
+      return aiReply(activeId, label, () =>
+        (pf.held ?? [{ ...aiText('แนวทางการรักษาที่แนะนำค่ะ'), source: 'Knowledge Hub' as const }]).map((m, i) =>
+          m.card?.type === 'guideline' || (i === 0 && !pf.held)
+            ? { ...m, id: `${m.id}-p`, text: `ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`, card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: m.card?.type === 'guideline' ? m.card.caution : g.caution, ref: g.ref, areas: g.areas, booked: m.card?.type === 'guideline' ? m.card.booked : !!d?.booking } }
+            : { ...m, id: `${m.id}-p` },
+        ),
+      );
     }
     if (label === LOOSE_ASSESS_INTENT) {
       const lid = Object.entries(caseChats).find(([k, v]) => k.startsWith('loose:') && v === activeId)?.[0].slice(6) ?? selLoose?.id;
