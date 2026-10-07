@@ -124,6 +124,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     date: request.date,
     start: request.start,
     assessment: {
+      at: new Date().toISOString(),
       serviceId: request.serviceId,
       therapistId: request.therapistId || undefined,
       complaint,
@@ -138,6 +139,39 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
   });
   if (error) throw error;
   await logEvent('booking.requested', request.id, patient.name, `ประเมินอาการแล้ว ส่งคำขอจอง ${service} ${request.date} ${request.start} น.`);
+}
+
+/** ข้อมูลประเมินที่เปลี่ยนได้ในรอบใหม่ */
+export interface ReassessPatch {
+  complaint?: string;
+  pain?: number;
+  areas?: string[];
+  avoid?: string[];
+  summary?: string;
+  screening?: Record<string, boolean | number | undefined>;
+}
+/**
+ * ประเมินใหม่ก่อนเช็กอิน → รอบใหม่ (รอบเดิมเก็บไว้ใน rounds ไม่ทับ) · เช็กอินแล้ว/เริ่มรับบริการ = ไม่รับ (คืน false)
+ * คลินิกใช้ผลรอบล่าสุด และเห็นว่าเปลี่ยนจากเดิมตรงไหน
+ */
+export async function cloudReassess(id: string, patch: ReassessPatch) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status,queue_no').eq('id', id).maybeSingle();
+  if (!cur || !['requested', 'confirmed'].includes(cur.status as string) || cur.queue_no) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown> & { rounds?: Record<string, unknown>[]; addenda?: unknown[] };
+  const { rounds, addenda, ...prev } = old;
+  const next = { ...prev, ...patch, at: new Date().toISOString(), rounds: [...(rounds ?? []), prev], ...(addenda ? { addenda } : {}) };
+  const { data, error } = await cloud.from('tw_appointments').update({ assessment: next }).eq('id', id).in('status', ['requested', 'confirmed']).is('queue_no', null).select('id');
+  if (error) throw error;
+  return !!data?.length;
+}
+/** หลังเช็กอิน: แจ้งอาการเพิ่ม (แปะไว้กับรอบเดิม ไม่แก้ผลประเมิน) */
+export async function cloudAddendum(id: string, text: string) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status').eq('id', id).maybeSingle();
+  if (!cur || !['checked_in', 'called', 'in_service'].includes(cur.status as string)) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown> & { addenda?: { at: string; text: string }[] };
+  const { error } = await cloud.from('tw_appointments').update({ assessment: { ...old, addenda: [...(old.addenda ?? []), { at: new Date().toISOString(), text }] } }).eq('id', id);
+  if (error) throw error;
+  return true;
 }
 
 /** มาถึงคลินิก → checked_in (คลินิกออกเลขคิวแล้วเขียนกลับมาใน queue_no) */

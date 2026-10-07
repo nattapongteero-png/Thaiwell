@@ -70,7 +70,7 @@ export type ThreadCard =
     }
   /** ผลประเมินก่อนนวดครั้งถัดไป: วันนี้เป็นอย่างไร + ครั้งนี้จะรักษาอย่างไร · focus = บริเวณที่ยังปวด (ให้เน้น) */
   | { type: 'preResult'; caseId: string; focus?: string }
-  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' | 'CallClinic' | 'CheckIn' };
+  | { type: 'action'; label: string; to: 'Booking' | 'ElementQuiz' | 'History' | 'Places' | 'RedFlag' | 'SelfCare' | 'assess' | 'CallClinic' | 'CheckIn' | 'PreVisit' };
 
 /* ---------- การประเมินอาการในแชท ----------
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)

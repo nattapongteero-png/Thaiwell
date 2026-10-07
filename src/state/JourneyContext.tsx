@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { cloudAddendum, cloudReassess, clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -293,6 +293,13 @@ interface JourneyState {
    */
   caseToday: Record<string, CaseToday>;
   setCaseToday: (caseId: string, v: CaseToday) => void;
+  /**
+   * ประเมินซ้ำได้ไหม ตามสถานะนัด: open = ได้ (แทนผลเดิม) · final = วันนัด ก่อนเช็กอิน (รอบสุดท้าย ส่งให้ผู้ให้บริการ)
+   * checkedIn = ล็อก แจ้งอาการเพิ่มได้ · inService = ถูกเรียกคิว/กำลังรับบริการ ล็อกทั้งหมด
+   */
+  assessLock: (target: { caseId?: string; draftId?: string; looseId?: string }) => AssessLock;
+  /** หลังเช็กอิน: แจ้งอาการเพิ่มให้ผู้ให้บริการ (ไม่แก้ผลประเมิน) */
+  addSymptomNote: (target: { caseId?: string; draftId?: string; looseId?: string }, text: string) => Promise<boolean>;
   /** แจ้งเตือนจากคลินิก: เลื่อน/ยกเลิกนัดของการรักษา (ผู้ใช้เปลี่ยนเองไม่ได้ — หลังบ้านโรงพยาบาลแก้แล้วแจ้งมา) */
   apptNotices: ApptNotice[];
   /** อ่านแล้ว (ยังอยู่ในรายการ) */
@@ -373,6 +380,7 @@ const SAMPLE_NOTICES: ApptNotice[] = [
   { id: 'n-office-receipt', caseId: 'case-office', kind: 'receipt', billId: 'b-office-5', text: 'ใบเสร็จรักษาออฟฟิศซินโดรม ครั้งที่ 5 · 450 บาท', at: '30 ส.ค. 12:20', read: true },
 ];
 
+export type AssessLock = 'open' | 'final' | 'checkedIn' | 'inService';
 export interface CaseToday {
   pain: number;
   /** อาการหลังนวดครั้งก่อน (ไม่มี / ระบม / ปวดมากขึ้น / ชา-อ่อนแรง) */
@@ -703,7 +711,44 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // บิลนี้จ่ายแล้ว → แจ้งเตือนบิลถือว่าอ่านแล้ว
     setApptNotices((all) => all.map((n) => (n.billId === id ? { ...n, read: true } : n)));
   }, []);
-  const setCaseToday = useCallback((caseId: string, v: CaseToday) => setCaseTodayState((m) => ({ ...m, [caseId]: v })), []);
+  /** สถานะล็อกการประเมินของนัดนั้น */
+  const assessLockOf = (target: { caseId?: string; draftId?: string; looseId?: string }): AssessLock => {
+    const tc = target.caseId ? casesRef.current.find((c) => c.id === target.caseId) : undefined;
+    const b = tc
+      ? tc.appointment.date !== '-' ? { date: tc.appointment.today ? 'วันนี้' : tc.appointment.date, stage: tc.appointment.stage } : undefined
+      : target.draftId
+        ? latest.current.drafts.find((d) => d.id === target.draftId)?.booking
+        : latest.current.looseBookings.find((x) => x.id === target.looseId);
+    if (!b) return 'open';
+    if (b.stage === 'called' || b.stage === 'in_service') return 'inService';
+    if (b.stage === 'checked_in') return 'checkedIn';
+    return b.date === 'วันนี้' ? 'final' : 'open';
+  };
+  const assessLock = useCallback(assessLockOf, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** ประเมินซ้ำ (ก่อนเช็กอิน) → รอบใหม่ในนัดของคลินิก */
+  const pushReassess = (target: { caseId?: string; draftId?: string; looseId?: string }, patch: Parameters<typeof cloudReassess>[1]) => {
+    if (!isCloud()) return;
+    const lock = assessLockOf(target);
+    if (lock === 'checkedIn' || lock === 'inService') return;
+    const ref = refOf(target);
+    if (ref) void cloudReassess(ref, patch).catch(() => undefined);
+  };
+  const addSymptomNote = useCallback(async (target: { caseId?: string; draftId?: string; looseId?: string }, text: string) => {
+    const ref = refOf(target);
+    if (!ref || !text.trim() || !isCloud()) return false;
+    return cloudAddendum(ref, text.trim()).catch(() => false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const setCaseToday = useCallback((caseId: string, v: CaseToday) => {
+    setCaseTodayState((m) => ({ ...m, [caseId]: v }));
+    // ประเมินก่อนนวด (ก่อนเช็กอิน) → ส่งเป็นรอบใหม่ให้คลินิก
+    pushReassess({ caseId }, {
+      pain: v.pain,
+      summary: `ประเมินก่อนนวด: ปวด ${v.pain}/10${v.adverse ? ` · หลังนวดครั้งก่อน ${v.adverse}` : ''}${v.risk && v.risk !== 'ไม่มี' ? ` · ${v.risk}` : ''}${v.red ? ' · ควรพบแพทย์ก่อนนวด' : ''}`,
+      screening: { fever: /ไข้/.test(v.risk ?? ''), recentSurgery: /บาดเจ็บ|ผ่าตัด/.test(v.risk ?? '') },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const recordCaseVisit = useCallback((caseId: string, painBefore: number, painAfter: number) => {
     // นวดครั้งนี้แล้ว → ประเมินก่อนนวดรอบนี้ใช้ไปแล้ว
     setCaseTodayState((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== caseId)));
@@ -765,10 +810,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // ใบร่างนี้ไม่มีแล้ว → ไม่ให้การจองครั้งถัดไปไปผูกกับใบที่หายไป
     setActiveDraftId((id) => (id === draftId ? null : id));
   }, []);
-  const upsertDraft = useCallback(
-    (d: DraftCase) => setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d])),
-    [],
-  );
+  const upsertDraft = useCallback((d: DraftCase) => {
+    // ประเมินเรื่องเดิมอีกครั้ง (จองแล้ว · ก่อนเช็กอิน) → ส่งเป็นรอบใหม่ให้คลินิก
+    const old = latest.current.drafts.find((x) => x.id === d.id);
+    if (old?.booking && d.booking && (old.pain !== d.pain || old.symptoms.join() !== d.symptoms.join() || old.title !== d.title))
+      pushReassess({ draftId: d.id }, { complaint: d.title, pain: d.pain, areas: d.symptoms, avoid: d.avoid && d.avoid !== 'ไม่มี' ? [d.avoid] : [], summary: `ประเมินใหม่: ${d.title} · ปวด ${d.pain}/10${d.caution ? ` · ${d.caution}` : ''}` });
+    setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const log = useCallback((actor: string, action: string) => {
     const d = new Date();
     const at = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -1300,6 +1349,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     issueQueue,
     caseToday,
     setCaseToday,
+    assessLock,
+    addSymptomNote,
     // แจ้งเตือนเฉพาะเรื่องที่มีอยู่จริงของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
     apptNotices: apptNotices.filter((n) => (n.caseId ? cases.some((c) => c.id === n.caseId) : n.draftId ? drafts.some((d) => d.id === n.draftId) : n.looseId ? looseBookings.some((b) => b.id === n.looseId) : true)),
     dismissNotice,

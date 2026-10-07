@@ -231,7 +231,7 @@ export function HomeScreen() {
   const chatHome = noRecords && !looseBookings.length;
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, assessLock } = useJourney();
   const allAppts = useAllAppointments();
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;
@@ -883,6 +883,25 @@ export function HomeScreen() {
       const sameArea = !!toCase && sym.some((x) => toCase.areas.some((a) => core(a.symptom).some((w) => core(x).some((y) => y.includes(w) || w.includes(y)))));
       const splitOff = !!toCase && !newPatient && !sameArea && sym.length > 0;
       const topic = splitOff ? undefined : after.topic;
+      // เช็กอินแล้ว/กำลังรับบริการ → ผลประเมินถูกล็อก (ไม่บันทึกทับ) · บอกชัดว่าทำอะไรได้
+      const lockNow = toCase && !newPatient && !splitOff ? assessLock({ caseId: toCase.id }) : 'open';
+      if (toCase && (lockNow === 'checkedIn' || lockNow === 'inService')) {
+        return [
+          ...results,
+          {
+            id: `r-lock-${Date.now()}`,
+            day: 'today' as const,
+            from: 'ai' as const,
+            text:
+              lockNow === 'inService'
+                ? `ตอนนี้กำลังรับบริการ${toCase.short}อยู่ค่ะ ผลประเมินแก้ไม่ได้แล้ว มีอาการอะไรเพิ่ม แจ้งผู้ให้บริการได้โดยตรงเลยนะคะ`
+                : `เช็กอินแล้วค่ะ ผู้ให้บริการได้รับผลประเมินก่อนนวดแล้ว จึงแก้ไม่ได้ ถ้ามีอาการเพิ่ม กด “แจ้งอาการเพิ่ม” ผู้ให้บริการจะเห็นก่อนเริ่มนวด`,
+            card: lockNow === 'checkedIn' ? ({ type: 'action', label: 'แจ้งอาการเพิ่ม', to: 'PreVisit' } as const) : undefined,
+            source: 'AI Interview' as const,
+            time: results[0]?.time,
+          },
+        ];
+      }
       if (toCase && !newPatient && !splitOff) {
         const red = level === 'red';
         const hasAppt = toCase.appointment.date !== '-';
@@ -1421,6 +1440,8 @@ export function HomeScreen() {
           ? nav.navigate('ClientTabs', { screen: 'Places' })
           : to === 'CheckIn'
           ? nav.navigate('CheckIn', { caseId: (chatCase() ?? tcase).id })
+          : to === 'PreVisit'
+          ? nav.navigate('PreVisit', { caseId: (chatCase() ?? tcase).id })
           : to === 'CallClinic'
           ? (log('ผู้รับบริการ', 'โทรหาคลินิกเรื่องนัด'), callClinic(chatCase() ? caseClinic(chatCase()!) : undefined))
           : to === 'RedFlag'
