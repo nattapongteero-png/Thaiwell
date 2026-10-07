@@ -160,7 +160,6 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     const rec = recommendedFor(d, c);
     if (rec && rec !== service) pickService(rec);
   };
-  const pickLabel = pick ? `${any ? 'ไม่ระบุแพทย์' : picked?.name ?? ''} · ${pick.day} ${pick.time}` : null;
   // เวลาชนกับนัดอื่นของเรา (ไม่นับนัดเดิมของเรื่องนี้ที่กำลังเลื่อน) → จองซ้อนเวลาเดียวกันไม่ได้
   const selfKey = tc ? `c:${tc.id}` : draft ? `d:${draft.id}` : loose ? `l:${loose.id}` : '';
   const clash = pick ? allAppts.find((a) => a.key !== selfKey && a.date === pick.day && a.time === pick.time) : undefined;
