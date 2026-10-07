@@ -37,6 +37,7 @@ import {
   palette,
   typeScale,
   radius,
+  elevation,
   space,
   useGrid,
   useTheme,
@@ -60,7 +61,7 @@ import {
 import { useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
-import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
+import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
@@ -472,14 +473,29 @@ export function HomeScreen() {
       ...(!started && selCase
         ? tcase.areas.map((a) => {
             // คะแนนติดตามผลล่าสุด · ยังไม่ให้ = คะแนนหลังนวดครั้งล่าสุด
-            const v = fuSessions.map((ss) => fuScores[`${ss.id}:${a.pin}`]).find((x) => x !== undefined) ?? tcase.visits[tcase.visits.length - 1]?.painAfter;
+            // ประเมินก่อนนวดครั้งถัดไปแล้ว → ใช้คะแนนวันนี้ (ล่าสุดที่สุด)
+            const v = caseToday[tcase.id]?.pain ?? fuSessions.map((ss) => fuScores[`${ss.id}:${a.pin}`]).find((x) => x !== undefined) ?? tcase.visits[tcase.visits.length - 1]?.painAfter;
             return { at: a.pin, tone: 'point' as const, color: v === undefined ? undefined : painColorOf(v) };
           })
         : []),
     ],
-    [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor],
+    [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor, caseToday],
   );
   const marks = React.useMemo(() => Object.values(sel).flatMap((pts) => pts ?? []), [sel]);
+  /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
+  const modelTag = (() => {
+    if (started || chatHome) return null;
+    if (selDraft) return { title: `${selDraft.symptoms.join(' ') || selDraft.title} · ปวด ${selDraft.pain}/10`, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จากผลประเมิน', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    if (selCase && cases.length) {
+      const lv = tcase.visits[tcase.visits.length - 1];
+      const t = caseToday[tcase.id];
+      const v = t?.pain ?? lv?.selfPain ?? lv?.painAfter;
+      if (v === undefined) return null;
+      const area = tcase.areas.slice(0, 2).map((a) => a.label).join(' ') || tcase.short;
+      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v) };
+    }
+    return null;
+  })();
 
   /** แตะบนหุ่น → เลือก chip ของส่วนนั้น (หรือเพิ่ม chip ใหม่) · แตะจุดเดิม → ยกเลิก · ใช้ได้ระหว่างถามอาการ/อาการร่วม */
   /** โหมด focus: mark ที่อยู่ใกล้ตำแหน่งแตะ (ระยะนิ้ว 44px) → ลำดับขั้น */
@@ -2303,6 +2319,20 @@ export function HomeScreen() {
       >
         <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : chatHome ? WELCOME_ANGLE : 0} />
       </Animated.View>
+      {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
+      {modelTag ? (
+        <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4], maxWidth: winW * 0.42, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
+          <View style={{ flexShrink: 1 }}>
+            <Text variant="labelMd" numberOfLines={1}>
+              {modelTag.title}
+            </Text>
+            <Text variant="caption" tone="secondary" numberOfLines={1}>
+              {modelTag.sub}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       </Animated.View>
 
       {/* ชั้นกลาง: เนื้อหาเลื่อนผ่านหน้าหุ่น · จางหายที่ขอบล่างของ header ด้วย mask (โปร่งจนเห็นหุ่น ไม่ใช่แผ่นทับ) */}
@@ -2419,7 +2449,7 @@ export function HomeScreen() {
                 ) : homeLoading ? (
                   <BentoSkeleton width={bentoW} />
                 ) : selLoose ? (
-                  <BookingBento width={bentoW} booking={selLoose} onCheckIn={() => nav.navigate('CheckIn', { looseId: selLoose.id })} onEdit={() => nav.navigate('AppointmentDetail', { looseId: selLoose.id })} />
+                  <BookingBento width={bentoW} booking={selLoose} onCheckIn={() => nav.navigate('CheckIn', { looseId: selLoose.id })} onEdit={() => nav.navigate('AppointmentDetail', { looseId: selLoose.id })} onAssess={openAI} />
                 ) : selDraft ? (
                   <DraftBento
                     width={bentoW}
@@ -3458,6 +3488,18 @@ function CaseTabs({ cases, drafts, extras = [], value, onChange, onNew }: { case
   );
 }
 
+/** ผู้ให้บริการจากชื่อในนัด: รายชื่อจริงจากคลินิก → รายชื่อตัวอย่าง → มีแค่ชื่อ (บทบาทเดาจากคำนำหน้า) */
+const findTherapist = (name: string): Therapist => {
+  const all = [...(liveTherapists() ?? []), ...Object.values(THERAPIST_SCHEDULE).flat()];
+  return all.find((t) => t.name === name) ?? { id: name, name, role: /แพทย์|พท\./.test(name) ? 'แพทย์แผนไทย' : 'หมอนวด', free: [] };
+};
+
+/** การ์ดผู้ให้บริการของนัด — ตัวเดียวกับตอนเลือกในหน้าจอง (รูป ชื่อ บทบาท ประสบการณ์ ถนัด) ดูอย่างเดียว */
+function TherapistTile({ name, width }: { name?: string; width: number }) {
+  if (!name || name === '-' || name === 'ไม่ระบุแพทย์') return null;
+  return <TherapistCard t={findTherapist(name)} compact width={width} />;
+}
+
 /** จองไว้ก่อนประเมิน — แผ่นการ์ดแสดงเฉพาะข้อมูลนัดที่มี (นัด · ผู้ให้บริการ · บริการ) */
 /**
  * การ์ดนัดครั้งแรก (เต็มแถว) — รูปแบบเดียวกับ "นัดครั้งที่ N" หลังรักษาแล้ว (HomeBento)
@@ -3527,7 +3569,7 @@ function FirstVisitCard({
   );
 }
 
-function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void }) {
+function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void; /** ประเมินอาการก่อนมา (แชท AI) */ onAssess: () => void }) {
   const halfW = (width - BENTO_GAP) / 2;
   const [svc, mins] = b.service.split(' · ');
   const nav = useNav();
@@ -3547,18 +3589,18 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number;
           </Text>
         </Tile>
       ) : null}
+      <TherapistTile name={b.therapist} width={width} />
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <Tile style={{ width: halfW, gap: space[1] }}>
-          <TileTitle title="ผู้ให้บริการ" />
-          <Text variant="bodySm" numberOfLines={2}>
-            {b.therapist}
-          </Text>
-        </Tile>
         <Tile style={{ width: halfW, gap: space[1] }}>
           <TileTitle title="บริการ" meta={mins} />
           <Text variant="bodySm" numberOfLines={2}>
             {svc}
           </Text>
+        </Tile>
+        {/* ยังไม่ได้ประเมิน → ให้ผู้ให้บริการรู้อาการและข้อห้ามก่อนถึงวันนัด */}
+        <Tile style={{ width: halfW, gap: space[2], justifyContent: 'space-between' }} onPress={onAssess} accessibilityLabel="ประเมินอาการก่อนมา">
+          <TileTitle title="ก่อนมา" />
+          <TilePill icon="edit-3" label="ประเมินอาการ" />
         </Tile>
       </View>
     </View>
@@ -3825,6 +3867,7 @@ function DraftBento({
       <View style={{ gap: BENTO_GAP }}>
         {tabs}
         <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
+        <TherapistTile name={b.therapist} width={width} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
           <PlanTile width={halfW} plan="นวดราชสำนัก" done={0} total={6} values={[]} />
           <View pointerEvents="none">
@@ -4108,21 +4151,23 @@ function HomeBento({
             </View>
             {/* สิ่งที่ต้องทำก่อนครั้งนี้ */}
             <View style={{ gap: space[2] }}>
-              <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : 'ประเมินอาการก่อนนวด'} />
+              <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : 'ประเมินก่อนนวด · ต่อจากครั้งก่อน'} />
               <StepRow text={tc.prep.join(' · ')} />
             </View>
-            {/* ยังไม่ประเมิน = ประเมิน (หลัก) · ประเมินแล้ว + วันนี้ = เช็กอิน (หลัก) */}
+            {/* ทุกครั้งต้องประเมินก่อน (อาการ/ข้อห้ามเปลี่ยนได้ระหว่างนัด) → ผ่านแล้วจึงเช็กอินได้ · ควรพบแพทย์ = เช็กอินไม่ได้ */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
               <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onPreVisit} style={{ flex: 1 }}>
-                <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมิน'} dark={!preDone} />
+                <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
               </Pressable>
-              {ap.today ? (
+              {ap.today && preDone && !today?.red ? (
                 <>
                   <Pressable accessibilityRole="button" accessibilityLabel="เช็กอิน" onPress={onCheckIn} style={{ flex: 1 }}>
-                    <TilePill icon="maximize" label="เช็กอิน" dark={preDone} />
+                    <TilePill icon="maximize" label="เช็กอิน" />
                   </Pressable>
                   <NavIconButton clinic={clinic} />
                 </>
+              ) : ap.today ? (
+                <NavIconButton clinic={clinic} />
               ) : (
                 <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen} style={{ flex: 1 }}>
                   <TilePill icon="file-text" label="รายละเอียด" dark={false} />
@@ -4155,6 +4200,9 @@ function HomeBento({
           </>
         )}
       </Tile>
+
+      {/* ผู้ให้บริการของนัดครั้งถัดไป (การ์ดเดียวกับตอนจอง) */}
+      {hasNext ? <TherapistTile name={caseAppts[tc.id]?.therapist || tc.therapist} width={width} /> : null}
 
       {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>

@@ -16,11 +16,11 @@ type Sel = { day: string; time: string } | null;
  * t.free = ช่วงที่ลงตารางไว้ (กรองตามบริการมาแล้วจาก therapistsAt)
  * ⚠️ ต้นแบบ: ข้อมูลแนะนำตัวเป็นตัวอย่าง
  */
-export function TherapistCard({ t, selected, onPick, badge, compact }: { t: Therapist; selected?: Sel; onPick?: (day: string, time: string) => void; /** เช่น แนะนำ (จาก AI) */ badge?: string; /** ดูข้อมูลอย่างเดียว (หน้าคลินิก) — ไม่มีคิวให้เลือก */ compact?: boolean }) {
+export function TherapistCard({ t, selected, onPick, badge, compact, width }: { t: Therapist; selected?: Sel; onPick?: (day: string, time: string) => void; /** เช่น แนะนำ (จาก AI) */ badge?: string; /** ดูข้อมูลอย่างเดียว (หน้าคลินิก) — ไม่มีคิวให้เลือก */ compact?: boolean; /** ความกว้าง (ไม่ระบุ = ขนาดการ์ดในแถวเลือก) */ width?: number }) {
   const { colors } = useTheme();
   const doctor = t.role === 'แพทย์แผนไทย';
   return (
-    <Frame selected={!!selected}>
+    <Frame selected={!!selected} width={width}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
         <ProfileAvatar sex={t.sex} size={52} photo={t.photo} />
         <View style={{ flex: 1 }}>
@@ -32,13 +32,16 @@ export function TherapistCard({ t, selected, onPick, badge, compact }: { t: Ther
           </Text>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {badge ? <Tag text={badge} tone="warn" /> : null}
-        {t.years ? <Tag text={`ประสบการณ์ ${t.years} ปี`} /> : null}
-        {(t.focus ?? []).map((f) => (
-          <Tag key={f} text={f} tone="good" />
-        ))}
-      </View>
+      {/* ไม่มีข้อมูลแนะนำตัว (ชื่อจากนัดอย่างเดียว) → ไม่เว้นแถวว่าง */}
+      {badge || t.years || t.focus?.length ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {badge ? <Tag text={badge} tone="warn" /> : null}
+          {t.years ? <Tag text={`ประสบการณ์ ${t.years} ปี`} /> : null}
+          {(t.focus ?? []).map((f) => (
+            <Tag key={f} text={f} tone="good" />
+          ))}
+        </View>
+      ) : null}
       {compact || !onPick ? null : <Slots slots={[...t.free].sort((a, b) => a.day - b.day || a.time.localeCompare(b.time))} who={t.name} selected={selected ?? null} onPick={onPick} />}
     </Frame>
   );
@@ -67,10 +70,10 @@ export function AnyTherapistCard({ slots, selected, onPick }: { slots: FreeSlot[
   );
 }
 
-function Frame({ selected, children }: { selected: boolean; children: React.ReactNode }) {
+function Frame({ selected, width, children }: { selected: boolean; width?: number; children: React.ReactNode }) {
   const { colors } = useTheme();
   return (
-    <View style={{ width: CARD_W, gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.brand.primary : colors.border.subtle }}>
+    <View style={{ width: width ?? CARD_W, gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.brand.primary : colors.border.subtle }}>
       {children}
     </View>
   );
