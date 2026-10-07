@@ -964,6 +964,8 @@ export function HomeScreen() {
       const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
       // เลือก "ประเมินเรื่องใหม่" เอง → แท็บใหม่เสมอ · บริเวณซ้ำเรื่องเดิม → ถามต่อท้ายว่าจะรวมไหม
       const fresh = !!freshFor.current[sid];
+      // ใช้ครั้งเดียว: แก้อาการ/ประเมินซ้ำในแชทเดิมภายหลัง = เรื่องเดิม (ไม่สร้างแท็บใหม่อีก)
+      delete freshFor.current[sid];
       const dupDraft = drafts.find((d) => same(d.symptoms, sym));
       const old = fresh ? undefined : drafts.find((d) => d.title === topic) ?? dupDraft;
       const id = old?.id ?? `d${Date.now()}`;
@@ -1357,6 +1359,8 @@ export function HomeScreen() {
       reuseHealth: d.health,
     };
     const text = 'ข้อมูลที่ประเมินไว้ครั้งก่อนค่ะ แตะข้อที่อยากแก้ หรือพิมพ์บอกได้เลย';
+    // ประเมินซ้ำ = เรื่องนี้ (ไม่ใช่เรื่องใหม่ แม้แชทนี้เคยเริ่มจาก "ประเมินเรื่องใหม่")
+    if (d.chatId) delete freshFor.current[d.chatId];
     const id = d.chatId && sessions.some((c) => c.id === d.chatId) ? d.chatId : null;
     if (id) {
       updateSession(id, (c) => ({ ...c, assess: prevAssess, items: withReview(c.items, text) }));
