@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { fetchMyCourse, fetchMyHn, type ClinicCourse, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -302,6 +302,8 @@ interface JourneyState {
   bills: Bill[];
   /** คอร์สการรักษาที่คลินิกเปิดให้ (บัญชีจริง) */
   clinicCourse: ClinicCourse | null;
+  /** ประวัติการรักษาที่คลินิกบันทึก (ล่าสุดก่อน) */
+  clinicVisits: ClinicVisit[];
   payBill: (id: string) => void;
   /** ส่งคำขอจองไปคลินิก (ต้นแบบ: จำลองว่าเจ้าหน้าที่ยืนยันหลังไม่กี่วินาที แล้วแจ้งเตือนในแอป) */
   requestBooking: (target: { draftId?: string; looseId?: string }, label: string) => void;
@@ -476,10 +478,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const queueNo = React.useRef(saved('queueNo', 11));
   const clinicHnRef = React.useRef<string | null>(null);
   const [clinicCourse, setClinicCourse] = useState<ClinicCourse | null>(null);
+  const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
   /** อ่านคอร์สจากคลินิกใหม่ (คลินิกลงนัด/นวดเสร็จ → จำนวนครั้งที่ใช้เปลี่ยน) */
   const refreshCourse = useCallback(() => {
     const id = latest.current.account?.userId;
-    if (id && isCloud()) void fetchMyCourse(id).then(setClinicCourse).catch(() => undefined);
+    if (id && isCloud())
+      void fetchMyCourse(id)
+        .then((r) => {
+          setClinicCourse(r.course);
+          setClinicVisits(r.visits);
+        })
+        .catch(() => undefined);
   }, []);
   const casesRef = React.useRef<TreatmentCase[]>([]);
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
@@ -656,6 +665,24 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         if (n) void notify(...n);
       }
     });
+  }, []);
+  // นัดที่คลินิกลงให้ (นัดตามคอร์ส) แต่ยังไม่มีในแอป → เพิ่มเข้ามา (เช่น แอปรุ่นเก่าเคยเห็นแถวนั้นแล้วแต่ไม่ได้รับ)
+  React.useEffect(() => {
+    if (!isCloud()) return;
+    const t = setInterval(() => {
+      if (!latest.current.account?.userId) return;
+      const me = patientOf().id;
+      const missing = clinicMadeRows().filter((r) => r.patient_id === me && !bridgeRefs.current[r.id]);
+      if (!missing.length) return;
+      onClinic.current(
+        missing.map((r) => {
+          const as = (r as CloudRow & { assessment?: { course?: { name: string; no: number; total: number } } }).assessment;
+          return { id: `${r.id}:sync`, at: r.updated_at, type: 'approved' as const, ref: r.id, date: r.date ?? '', start: r.start ?? '', therapist: r.therapist ?? '', service: r.service ?? '', cloud: true, byClinic: true, patientId: r.patient_id, course: as?.course };
+        }),
+      );
+    }, 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const nowAtLabel = () => {
     const d = new Date();
@@ -1148,6 +1175,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     });
     void fetchMyHn(uid).then((hn) => alive && setClinicHn(hn));
     setClinicCourse(null);
+    setClinicVisits([]);
     refreshCourse();
     // ระยะทางจริงไปคลินิก (ขอสิทธิ์ตำแหน่งครั้งแรก)
     void locate();
@@ -1242,6 +1270,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // บิลเฉพาะเรื่องของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
     bills: bills.filter((b) => !b.caseId || cases.some((c) => c.id === b.caseId)),
     clinicCourse,
+    clinicVisits,
     payBill,
     requestBooking,
     bookCase,

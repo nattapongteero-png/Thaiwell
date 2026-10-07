@@ -2706,7 +2706,7 @@ export function HomeScreen() {
                 </Animated.View>
               </View>
             ) : !started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => (b.course ? `คอร์ส ครั้งที่ ${b.course.no}` : b.service.split(' · ')[0]))} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
           </View>
@@ -3527,12 +3527,26 @@ function FirstVisitCard({
   );
 }
 
-function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed' }; onCheckIn: () => void; onEdit: () => void }) {
+function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void }) {
   const halfW = (width - BENTO_GAP) / 2;
   const [svc, mins] = b.service.split(' · ');
+  const nav = useNav();
+  const { clinicCourse, clinicVisits } = useJourney();
   return (
     <View style={{ gap: BENTO_GAP }}>
       <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} />
+      {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา */}
+      {b.course ? (
+        <Tile onPress={() => nav.navigate('Course')} accessibilityLabel="ดูคอร์สและประวัติการรักษา" style={{ gap: space[1] }}>
+          <TileTitle title="คอร์สการรักษา" meta={`ครั้งที่ ${b.course.no}/${b.course.total}`} />
+          <Text variant="bodySm" numberOfLines={2}>
+            {clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : b.course.name}
+          </Text>
+          <Text variant="bodyXs" tone="secondary">
+            ดูนัดทั้งหมด{clinicVisits.length ? ` และประวัติการรักษา ${clinicVisits.length} ครั้ง` : ''} ›
+          </Text>
+        </Tile>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <Tile style={{ width: halfW, gap: space[1] }}>
           <TileTitle title="ผู้ให้บริการ" />

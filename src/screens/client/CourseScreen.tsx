@@ -21,7 +21,8 @@ const STAGE: Record<string, string> = { checked_in: 'เช็กอินแล
 export function CourseScreen() {
   const nav = useNav();
   const { colors } = useTheme();
-  const { clinicCourse: c, looseBookings } = useJourney();
+  const { clinicCourse: c, clinicVisits, looseBookings } = useJourney();
+  const [open, setOpen] = React.useState<string | null>(null);
   const appts = looseBookings
     .filter((b): b is LooseBooking & { course: NonNullable<LooseBooking['course']> } => !!b.course)
     .sort((a, b) => `${a.iso ?? ''}${a.time}`.localeCompare(`${b.iso ?? ''}${b.time}`));
@@ -58,8 +59,49 @@ export function CourseScreen() {
       </Pressable>
     );
   };
+  // ประวัติการรักษาที่คลินิกบันทึก (ล่าสุดก่อน) · แตะ = ดูผลตรวจ หัตถการ คำแนะนำ
+  const history = clinicVisits.length ? (
+    <Panel title="ประวัติการรักษา" flush>
+      {clinicVisits.map((v, i) => {
+        const shown = open === v.id;
+        const last = i === clinicVisits.length - 1;
+        return (
+          <Pressable key={v.id} accessibilityRole="button" accessibilityState={{ expanded: shown }} accessibilityLabel={`รักษา ${thaiDate(v.date)}`} onPress={() => setOpen(shown ? null : v.id)}>
+            <View style={{ gap: space[2], paddingVertical: space[3], marginHorizontal: space[4], borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.border.subtle }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
+                <IconBox icon="check" tint={TINT.green} size={36} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text variant="labelMd">
+                    {thaiDate(v.date)} · {v.start} น.
+                  </Text>
+                  <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+                    {[v.service, v.therapist].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+                {v.painBefore !== undefined && v.painAfter !== undefined ? <Tag text={`ปวด ${v.painBefore} → ${v.painAfter}`} tone={v.painAfter < v.painBefore ? 'good' : undefined} /> : null}
+                <Icon name={shown ? 'chevron-up' : 'chevron-down'} size="sm" color={colors.text.tertiary} />
+              </View>
+              {shown ? (
+                <View style={{ gap: space[1], paddingLeft: 36 + space[3] }}>
+                  {v.findings ? <InfoRow k="ผลตรวจ" v={v.findings} /> : null}
+                  {v.diagnoses?.length ? <InfoRow k="วินิจฉัย" v={v.diagnoses.join(', ')} /> : null}
+                  {v.procedures?.length ? <InfoRow k="หัตถการ" v={v.procedures.join('\n')} /> : null}
+                  {v.advice ? <InfoRow k="คำแนะนำ" v={v.advice} /> : null}
+                  {!v.findings && !v.diagnoses?.length && !v.procedures?.length && !v.advice ? (
+                    <Text variant="bodyXs" tone="secondary">
+                      ไม่มีรายละเอียดเพิ่มเติม
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          </Pressable>
+        );
+      })}
+    </Panel>
+  ) : null;
   return (
-    <Screen header={<AppBar title="คอร์สการรักษา" onBack={() => nav.goBack()} />}>
+    <Screen header={<AppBar title="คอร์สและประวัติการรักษา" onBack={() => nav.goBack()} />}>
       {c ? (
         <>
           <Panel title={c.name} right={<Tag text={left ? `เหลือ ${left} ครั้ง` : 'ครบคอร์สแล้ว'} tone={left ? 'good' : undefined} />}>
@@ -83,12 +125,15 @@ export function CourseScreen() {
               </View>
             )}
           </Panel>
+          {history}
         </>
+      ) : history ? (
+        history
       ) : (
         <View style={{ alignItems: 'center', gap: space[3], paddingVertical: space[10] }}>
           <IconBox icon="calendar" tint={TINT.green} size={56} />
           <Text variant="bodyMd" tone="secondary" align="center">
-            ยังไม่มีคอร์สการรักษา{'\n'}เมื่อคลินิกเปิดคอร์สให้ จะแสดงจำนวนครั้งและนัดตามวันที่นี่
+            ยังไม่มีคอร์สและประวัติการรักษา{'\n'}เมื่อคลินิกเปิดคอร์สหรือบันทึกการรักษา จะแสดงที่นี่
           </Text>
         </View>
       )}

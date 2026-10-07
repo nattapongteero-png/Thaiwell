@@ -222,6 +222,9 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
 
 /** ฟังความเปลี่ยนแปลงจากคลินิก: realtime + สำรองอ่านซ้ำทุก 6 วินาที · คืนฟังก์ชันเลิกฟัง */
 /* ---------- บัญชีจริง: ข้อมูลในแอปของแต่ละคน (tw_app_state) ---------- */
+/** นัดที่คลินิกลงให้เอง (นัดตามคอร์ส) ที่ยังไม่จบ — แอปเทียบกับนัดในเครื่องทุกรอบ (ไม่พึ่งเหตุการณ์อย่างเดียว) */
+export const clinicMadeRows = () =>
+  [...rows.values()].filter((r) => (r as CloudRow & { assessment?: { source?: string } }).assessment?.source === 'clinic' && ['confirmed', 'checked_in', 'called', 'in_service'].includes(r.status));
 /** สถานะนัดที่แอปเคยเห็นล่าสุด (เก็บกับข้อมูลแอป) → เปิดแอปใหม่ได้เหตุการณ์ที่เกิดระหว่างปิดแอปด้วย */
 export const seenRows = () => Object.fromEntries(rows);
 let gateOpen = false;
@@ -254,9 +257,25 @@ export interface ClinicCourse {
   startedOn: string;
   expiresOn: string;
 }
-export async function fetchMyCourse(userId: string): Promise<ClinicCourse | null> {
+/** ครั้งที่รักษาที่คลินิก (คลินิกบันทึก) */
+export interface ClinicVisit {
+  id: string;
+  date: string;
+  start: string;
+  service: string;
+  therapist: string;
+  painBefore?: number;
+  painAfter?: number;
+  findings?: string;
+  diagnoses?: string[];
+  procedures?: string[];
+  advice?: string;
+}
+/** คอร์ส + ประวัติการรักษาที่คลินิกส่งให้ (tw_patients.profile) */
+export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[] }> {
   const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
-  return ((data?.profile as { course?: ClinicCourse } | null)?.course as ClinicCourse | undefined) ?? null;
+  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[] };
+  return { course: p.course ?? null, visits: p.visits ?? [] };
 }
 /** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
 export async function fetchMyHn(userId: string): Promise<string | null> {
@@ -277,8 +296,8 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     const out: ClinicEvent[] = [];
     for (const r of list) {
       const prev = rows.get(r.id);
-      if (prev && prev.updated_at === r.updated_at && prev.status === r.status) continue;
-      if (emit) out.push(...diffRow(prev, r));
+      // ไม่เปลี่ยน → ไม่มีเหตุการณ์ แต่เก็บแถวเต็มไว้ (ที่จำไว้ในเครื่องเก็บแค่บางช่อง)
+      if (emit && !(prev && prev.updated_at === r.updated_at && prev.status === r.status)) out.push(...diffRow(prev, r));
       rows.set(r.id, r);
     }
     saveSeen();
