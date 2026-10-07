@@ -37,75 +37,88 @@ const WEEKDAY_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', '�
 const MONTH_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
 /**
- * ปฏิทินรายเดือน (เลือกวันล่วงหน้าไกลกว่าแถบวัน) — ช่วงตามที่หมอลงตาราง · วันมีคิว = จุด · ไม่มี/ผ่านไปแล้ว = กดไม่ได้
+ * ปฏิทิน (bottom sheet) — แบบแอปจองปัจจุบัน: เลื่อนแนวตั้งต่อเนื่องทุกเดือน (ไม่มีลูกศร) · หัววันในสัปดาห์ค้างด้านบน
+ * วันมีคิว = ตัวเข้ม + จำนวนคิวใต้ตัวเลข · ไม่มีคิว/ผ่านไปแล้ว = จางกดไม่ได้ · วันนี้ = วงขอบ · เลือก = พื้นเข้ม
+ * ช่วงตามที่หมอลงตาราง · ทางลัด "วันแรกที่ว่าง"
  */
-function CalendarSheet({ visible, onClose, open, last, value, onPick }: { visible: boolean; onClose: () => void; open: Set<number>; last: number; value: number | null; onPick: (offset: number) => void }) {
+function CalendarSheet({ visible, onClose, counts, last, value, onPick }: { visible: boolean; onClose: () => void; /** วัน (offset) → จำนวนรอบว่าง */ counts: Map<number, number>; last: number; value: number | null; onPick: (offset: number) => void }) {
   const { colors } = useTheme();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const lastDate = new Date(today);
   lastDate.setDate(today.getDate() + Math.max(0, last));
-  const months = (lastDate.getFullYear() - today.getFullYear()) * 12 + lastDate.getMonth() - today.getMonth();
-  const [m, setM] = React.useState(0);
-  React.useEffect(() => {
-    if (!visible) return;
-    // เปิดที่เดือนของวันที่เลือกไว้
-    if (value === null) return setM(0);
-    const v = new Date(today);
-    v.setDate(today.getDate() + value);
-    setM((v.getFullYear() - today.getFullYear()) * 12 + v.getMonth() - today.getMonth());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-  const first = new Date(today.getFullYear(), today.getMonth() + m, 1);
-  const count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const cells: (number | null)[] = [...Array.from({ length: first.getDay() }, () => null), ...Array.from({ length: count }, (_, i) => i + 1)];
-  const offsetOf = (dnum: number) => Math.round((new Date(first.getFullYear(), first.getMonth(), dnum).getTime() - today.getTime()) / 86400000);
-  const navBtn = (icon: 'chevron-left' | 'chevron-right', disabled: boolean, onPress: () => void, label: string) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.sunken, opacity: disabled ? 0.35 : 1 }}>
-      <Icon name={icon} size="sm" />
-    </Pressable>
-  );
-  return (
-    <BottomSheet visible={visible} onClose={onClose} title="เลือกวัน">
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        {navBtn('chevron-left', m <= 0, () => setM(m - 1), 'เดือนก่อน')}
+  const monthCount = (lastDate.getFullYear() - today.getFullYear()) * 12 + lastDate.getMonth() - today.getMonth() + 1;
+  const firstOpen = [...counts.keys()].sort((x, y) => x - y)[0];
+  const offsetOf = (dt: Date) => Math.round((dt.getTime() - today.getTime()) / 86400000);
+  const cellW = `${100 / 7}%` as const;
+  const month = (mi: number) => {
+    const first = new Date(today.getFullYear(), today.getMonth() + mi, 1);
+    const count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const cells: (number | null)[] = [...Array.from({ length: first.getDay() }, () => null), ...Array.from({ length: count }, (_, i) => i + 1)];
+    return (
+      <View key={mi} style={{ gap: space[2] }}>
         <Text variant="titleSm">
           {MONTH_FULL[first.getMonth()]} {first.getFullYear() + 543}
         </Text>
-        {navBtn('chevron-right', m >= months, () => setM(m + 1), 'เดือนถัดไป')}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: space[1] }}>
+          {cells.map((dnum, i) => {
+            if (dnum === null) return <View key={`e${i}`} style={{ width: cellW }} />;
+            const off = offsetOf(new Date(first.getFullYear(), first.getMonth(), dnum));
+            const n = counts.get(off) ?? 0;
+            const can = n > 0;
+            const on = value === off;
+            return (
+              <View key={dnum} style={{ width: cellW, alignItems: 'center' }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on, disabled: !can }}
+                  accessibilityLabel={`${dnum} ${MONTH_FULL[first.getMonth()]}${can ? ` ว่าง ${n} รอบ` : ' ไม่มีคิว'}`}
+                  disabled={!can}
+                  onPress={() => onPick(off)}
+                  style={{ width: 44, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 1, backgroundColor: on ? colors.text.primary : can ? colors.brand.subtle : 'transparent', borderWidth: off === 0 && !on ? 1.5 : 0, borderColor: colors.text.primary }}
+                >
+                  <Text variant={can ? 'labelMd' : 'bodySm'} color={on ? colors.text.inverse : can ? colors.text.primary : colors.text.tertiary} style={off < 0 ? { opacity: 0.5 } : undefined}>
+                    {dnum}
+                  </Text>
+                  {can ? (
+                    <Text style={{ fontSize: 10, lineHeight: 14 }} color={on ? 'rgba(255,255,255,0.75)' : colors.brand.primary}>
+                      {n} คิว
+                    </Text>
+                  ) : null}
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
       </View>
-      <View style={{ flexDirection: 'row' }}>
-        {WEEKDAY_SHORT.map((w) => (
-          <Text key={w} variant="caption" tone="tertiary" style={{ flex: 1, textAlign: 'center' }}>
-            {w}
-          </Text>
-        ))}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {cells.map((dnum, i) => {
-          if (dnum === null) return <View key={`e${i}`} style={{ width: `${100 / 7}%`, height: 48 }} />;
-          const off = offsetOf(dnum);
-          const can = open.has(off);
-          const on = value === off;
-          return (
-            <View key={dnum} style={{ width: `${100 / 7}%`, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: on, disabled: !can }}
-                accessibilityLabel={`${dnum} ${MONTH_FULL[first.getMonth()]}${can ? '' : ' ไม่มีคิว'}`}
-                disabled={!can}
-                onPress={() => onPick(off)}
-                style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text.primary : 'transparent', opacity: can ? 1 : 0.3 }}
-              >
-                <Text variant="labelMd" color={on ? colors.text.inverse : off === 0 ? colors.brand.primary : colors.text.primary}>
-                  {dnum}
-                </Text>
-                {can && !on ? <View style={{ position: 'absolute', bottom: 5, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand.primary }} /> : null}
-              </Pressable>
-            </View>
-          );
-        })}
-      </View>
+    );
+  };
+  return (
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="เลือกวัน"
+      heightRatio={0.85}
+      // หัววันในสัปดาห์ค้างไว้ตอนเลื่อนผ่านหลายเดือน
+      header={
+        <View style={{ gap: space[3] }}>
+          {firstOpen !== undefined ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="วันแรกที่ว่าง" onPress={() => onPick(firstOpen)} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space[3], height: 34, borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
+              <Icon name="zap" size="xs" color={colors.brand.primary} />
+              <Text variant="labelSm">วันแรกที่ว่าง · {dayLabel(firstOpen)}</Text>
+            </Pressable>
+          ) : null}
+          <View style={{ flexDirection: 'row' }}>
+            {WEEKDAY_SHORT.map((w) => (
+              <Text key={w} variant="caption" tone="tertiary" style={{ width: cellW, textAlign: 'center' }}>
+                {w}
+              </Text>
+            ))}
+          </View>
+        </View>
+      }
+    >
+      <View style={{ gap: space[6] }}>{Array.from({ length: monthCount }, (_, mi) => month(mi))}</View>
     </BottomSheet>
   );
 }
@@ -223,6 +236,9 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const lastDay = anySlots.length ? Math.max(...anySlots.map((f) => f.day)) : -1;
   const days = Array.from({ length: lastDay < 0 ? 0 : Math.max(Math.min(lastDay, 13), day ?? 0) + 1 }, (_, i) => i);
   const openDays = new Set(anySlots.map((f) => f.day));
+  // จำนวนรอบว่างต่อวัน (ปฏิทิน)
+  const dayCounts = new Map<number, number>();
+  for (const f of anySlots) dayCounts.set(f.day, (dayCounts.get(f.day) ?? 0) + 1);
   const [calOpen, setCalOpen] = React.useState(false);
   const stripRef = React.useRef<ScrollView>(null);
   const DAY_W = 56;
@@ -469,7 +485,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
             <CalendarSheet
               visible={calOpen}
               onClose={() => setCalOpen(false)}
-              open={openDays}
+              counts={dayCounts}
               last={lastDay}
               value={day}
               onPick={(d) => {
