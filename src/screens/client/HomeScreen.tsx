@@ -4638,57 +4638,56 @@ function HomeBento({
       </View>
 
 
-      {/* 4) แนวทางการรักษา (แพทย์ทำอะไรให้) | ดูแลตัวเอง (ทำเองที่บ้าน) */}
+      {/* 4) แนวทางของครั้งเดียวกับการ์ดผลด้านบน (เต็มแถว: ชิปหัตถการเรียงแถวเดียว · ข้อที่ปรับ) */}
+      {nextGuide && hasNext ? (
+        // ประเมินก่อนนวดครั้งถัดไปแล้ว → แนวทางของครั้งนั้น (ชุดเดียวกับแท็บครั้งนั้นใน sheet)
+        <GuideTile
+          wide
+          width={width}
+          title={`แนวทางครั้งที่ ${nextNo}`}
+          subtitle={nextGuide.diagnosis}
+          items={nextGuide.items}
+          adjust={nextGuide.adjust}
+          danger={nextGuide.red}
+          onAdjust={() => onHistory(tc.visits.length)}
+          onPress={() => onHistory(tc.visits.length)}
+        />
+      ) : (
+        <GuideTile wide width={width} title={`แนวทางครั้งที่ ${tc.visits.length}`} subtitle={rec.diagnoses?.[0] ?? tc.condition} items={rec.techniques} onPress={() => onHistory(tc.visits.length - 1)} />
+      )}
+
+      {/* 5) ดูแลตัวเอง | บิล/ใบเสร็จ · ติดต่อคลินิก (มีนัด = ปุ่มโทรอยู่ในการ์ดนัดแล้ว) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        {nextGuide && hasNext ? (
-          // ประเมินก่อนนวดครั้งถัดไปแล้ว → แนวทางของครั้งนั้น (ชุดเดียวกับแท็บครั้งนั้นใน sheet)
-          <GuideTile
-            width={halfW}
-            title={`แนวทางครั้งที่ ${nextNo}`}
-            subtitle={nextGuide.diagnosis}
-            items={nextGuide.items}
-            adjust={nextGuide.adjust}
-            danger={nextGuide.red}
-            onAdjust={() => onHistory(tc.visits.length)}
-            onPress={() => onHistory(tc.visits.length)}
-          />
-        ) : (
-          <GuideTile width={halfW} title={`แนวทางครั้งที่ ${tc.visits.length}`} subtitle={rec.diagnoses?.[0] ?? tc.condition} items={rec.techniques} onPress={() => onHistory(tc.visits.length - 1)} />
-        )}
         <View style={{ width: halfW }}>
           <SelfCareTile groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare(tc.selfCare.groupId)} />
         </View>
+        <View style={{ width: halfW, gap: BENTO_GAP }}>
+          {bill ? (
+            <Tile style={{ flex: 1, gap: space[2], justifyContent: 'space-between' }} onPress={() => nav.navigate('Bill', { id: bill.id })} accessibilityLabel={`${bill.status === 'pending' ? 'บิลรอชำระ' : 'ใบเสร็จ'} ${bill.total} บาท`}>
+              <TileTitle title={bill.status === 'pending' ? 'รอชำระ' : 'ใบเสร็จล่าสุด'} />
+              <View>
+                <Text variant="titleSm" color={bill.status === 'pending' ? TINT.amber : undefined}>
+                  {bill.total} บาท
+                </Text>
+                <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+                  {bill.title.replace(/^.*(ครั้งที่ \d+)$/, '$1')} · {bill.date}
+                </Text>
+              </View>
+            </Tile>
+          ) : null}
+          {hasNext ? null : (
+            <Tile style={{ flex: 1, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(clinic)} accessibilityLabel={`โทรหา ${clinic}`}>
+              <TileTitle title="ติดต่อคลินิก" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+                <Icon name="phone" size="xs" color={colors.brand.primary} />
+                <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
+                  {clinicPhone(clinic)}
+                </Text>
+              </View>
+            </Tile>
+          )}
+        </View>
       </View>
-
-      {/* 5) บิล/ใบเสร็จ · ติดต่อคลินิก (มีนัด = ปุ่มโทรอยู่ในการ์ดนัดแล้ว) */}
-      {bill || !hasNext ? (
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        {bill ? (
-          <Tile style={{ flex: 1, gap: space[2], justifyContent: 'space-between' }} onPress={() => nav.navigate('Bill', { id: bill.id })} accessibilityLabel={`${bill.status === 'pending' ? 'บิลรอชำระ' : 'ใบเสร็จ'} ${bill.total} บาท`}>
-            <TileTitle title={bill.status === 'pending' ? 'รอชำระ' : 'ใบเสร็จล่าสุด'} />
-            <View>
-              <Text variant="titleSm" color={bill.status === 'pending' ? TINT.amber : undefined}>
-                {bill.total} บาท
-              </Text>
-              <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                {bill.title.replace(/^.*(ครั้งที่ \d+)$/, '$1')} · {bill.date}
-              </Text>
-            </View>
-          </Tile>
-        ) : null}
-        {hasNext ? null : (
-          <Tile style={{ flex: 1, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(clinic)} accessibilityLabel={`โทรหา ${clinic}`}>
-            <TileTitle title="ติดต่อคลินิก" />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-              <Icon name="phone" size="xs" color={colors.brand.primary} />
-              <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-                {clinicPhone(clinic)}
-              </Text>
-            </View>
-          </Tile>
-        )}
-      </View>
-      ) : null}
     </View>
   );
 }
@@ -4783,20 +4782,24 @@ const shortMethod = (m: string) =>
     .replace(/\s*ตามแนวเส้น.*$/, '')
     .replace(/\s*\(.*\)$/, '')
     .trim();
-function GuideTile({ width, title = 'แนวทางที่แนะนำ', subtitle, items, adjust, danger, onAdjust, onPress }: { width: number; title?: string; subtitle: string; items: string[]; /** ผู้ให้บริการจะปรับ (ผลคัดกรอง) */ adjust?: string[]; /** ควรพบแพทย์ก่อน → แถบแดง */ danger?: boolean; onAdjust?: () => void; onPress?: () => void }) {
+function GuideTile({ width, title = 'แนวทางที่แนะนำ', subtitle, items, adjust, danger, onAdjust, onPress, wide }: { width: number; /** เต็มแถว: ชื่อโรคไปอยู่ขวาของหัวข้อ */ wide?: boolean; title?: string; subtitle: string; items: string[]; /** ผู้ให้บริการจะปรับ (ผลคัดกรอง) */ adjust?: string[]; /** ควรพบแพทย์ก่อน → แถบแดง */ danger?: boolean; onAdjust?: () => void; onPress?: () => void }) {
   const { colors } = useTheme();
   const list = items.map(shortMethod).filter((m, i, arr) => m && arr.indexOf(m) === i).slice(0, 3);
   const warn = danger ? colors.status.danger : colors.status.warning;
   return (
     <Tile style={{ width, gap: space[3] }} onPress={onPress} accessibilityLabel={`${title} ดูรายละเอียด`}>
-      <View>
-        <Text variant="labelMd" numberOfLines={1}>
-          {title}
-        </Text>
-        <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
+      {wide ? (
+        <TileTitle title={title} meta={subtitle} />
+      ) : (
+        <View>
+          <Text variant="labelMd" numberOfLines={1}>
+            {title}
+          </Text>
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            {subtitle}
+          </Text>
+        </View>
+      )}
       {/* UI เดียวกับ "แนวทางครั้งนี้" ในหน้ารายละเอียด: หัตถการเป็นชิป · ข้อที่ปรับเป็นแถวไอคอนเตือน */}
       {list.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
