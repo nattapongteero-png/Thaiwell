@@ -231,7 +231,7 @@ function Stat({ label, value, unit, color, small }: { label: string; value: stri
   );
 }
 
-function Chip({ text, tone }: { text: string; tone?: 'good' }) {
+export function Chip({ text, tone }: { text: string; tone?: 'good' }) {
   const { colors } = useTheme();
   return (
     <View style={{ paddingHorizontal: space[2] + 2, height: 26, justifyContent: 'center', borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : colors.surface.sunken }}>

@@ -127,7 +127,7 @@ import { PainPicker } from './home/PainPicker';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
-import { afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
+import { Chip as DetailChip, afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
 import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
@@ -4777,24 +4777,20 @@ function GuideTile({ width, title = 'แนวทางที่แนะนำ'
           {subtitle}
         </Text>
       </View>
-      <View style={{ gap: space[2] }}>
-        {list.map((m) => (
-          <View key={m} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-            {/* จุดธรรมดา — ไม่ใช้ติ๊กถูก (ดูเหมือน "ทำแล้ว" ทั้งที่เป็นสิ่งที่จะได้รับ) */}
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.brand.primary }} />
-            <Text variant="labelSm" style={{ flex: 1 }} numberOfLines={2}>
-              {m}
-            </Text>
-          </View>
-        ))}
-      </View>
-      {/* ผลคัดกรอง: วันนัดผู้ให้บริการจะปรับอะไร · แตะ = ผลตรวจเต็ม */}
+      {/* UI เดียวกับ "แนวทางครั้งนี้" ในหน้ารายละเอียด: หัตถการเป็นชิป · ข้อที่ปรับเป็นแถวไอคอนเตือน */}
+      {list.length ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {list.map((m) => (
+            <DetailChip key={m} text={m} />
+          ))}
+        </View>
+      ) : null}
       {adjust?.length ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="ผลคัดกรอง ดูรายละเอียด" onPress={onAdjust} style={{ marginTop: 'auto', gap: 2, padding: space[2], borderRadius: radius.md, backgroundColor: warn.bg }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="ข้อที่ปรับ ดูรายละเอียด" onPress={onAdjust} style={{ gap: space[1] }}>
           {adjust.slice(0, 2).map((it) => (
-            <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+            <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
               <Icon name="alert-triangle" size="xs" color={warn.fg} />
-              <Text variant="labelSm" color={warn.fg} style={{ flex: 1 }} numberOfLines={1}>
+              <Text variant="bodySm" color={warn.fg} style={{ flex: 1 }} numberOfLines={2}>
                 {it}
               </Text>
             </View>
