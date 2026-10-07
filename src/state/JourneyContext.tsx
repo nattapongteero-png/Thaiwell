@@ -138,6 +138,8 @@ export interface DraftCase {
   avoid?: string;
   /** แนวทางที่ AI แนะนำ (จากการ์ดแนวทางในแชท) — ยังไม่ใช่แผนของแพทย์ */
   guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string };
+  /** ผลประเมินรอบก่อน ๆ (ประเมินซ้ำ = รอบใหม่ ไม่ลบของเดิม) — at = วันเวลาที่ประเมินรอบนั้นถูกแทน */
+  history?: { at: string; pain: number; symptoms: string[]; caution?: string }[];
   radiate?: string;
   /** ผู้ใช้เลือกคงบริการที่จองไว้ แม้ไม่ตรงผลประเมิน (ไม่บังคับเปลี่ยน · ไม่เตือนซ้ำ) */
   keepService?: boolean;

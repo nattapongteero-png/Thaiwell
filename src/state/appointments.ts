@@ -131,3 +131,22 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
     stage: booking.stage,
   };
 }
+
+/**
+ * แก้ผลประเมินได้ถึงเมื่อไหร่ — ผู้ให้บริการใช้ผลล่าสุดก่อนเช็กอิน
+ * null = แก้ได้ (ยังไม่ถึงคลินิก) · checked_in = ล็อก แจ้งอาการเพิ่มได้ · in_service = ล็อกทั้งหมด (แจ้งผู้ให้บริการโดยตรง) · done = นวดแล้ว เป็นบันทึก
+ */
+export type AssessLock = null | 'checked_in' | 'in_service' | 'done';
+export function assessLock(appt?: { stage?: 'checked_in' | 'called' | 'in_service'; queue?: string } | null, served?: boolean): AssessLock {
+  if (served) return 'done';
+  if (!appt) return null;
+  if (appt.stage === 'called' || appt.stage === 'in_service') return 'in_service';
+  if (appt.stage === 'checked_in' || appt.queue) return 'checked_in';
+  return null;
+}
+/** ข้อความบอกผู้ใช้ว่าทำไมแก้ไม่ได้ */
+export const ASSESS_LOCK_TEXT: Record<Exclude<AssessLock, null>, string> = {
+  checked_in: 'เช็กอินแล้ว ผู้ให้บริการได้รับผลประเมินแล้วค่ะ ถ้าอาการเปลี่ยน แจ้งอาการเพิ่มได้',
+  in_service: 'กำลังรับบริการอยู่ค่ะ มีอาการเพิ่ม แจ้งผู้ให้บริการได้โดยตรง',
+  done: 'ผลประเมินครั้งนี้ใช้ในการนวดแล้ว เก็บเป็นบันทึกค่ะ ถ้ามีอาการใหม่ ประเมินเรื่องใหม่ได้',
+};

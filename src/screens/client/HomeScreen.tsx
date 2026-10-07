@@ -64,7 +64,7 @@ import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
-import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
+import { ASSESS_LOCK_TEXT, assessLock, caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
@@ -148,6 +148,8 @@ const LEFT_COLUMN = 179;
 /* bento หน้าแรก: ระยะห่างช่อง + ความสูงแถว (แถวหุ่นยืดเต็มที่เหลือ) */
 /** ประเมินเรื่องใหม่ที่บริเวณซ้ำเรื่องเดิม: รวม หรือแยกเป็นแท็บใหม่ */
 const MERGE_OLD = 'รวมกับเรื่องเดิม';
+/** หลังเช็กอิน: แก้ผลประเมินไม่ได้ → ส่งข้อความเพิ่มถึงผู้ให้บริการ (ไม่แทนผลเดิม) */
+const ADD_NOTE_INTENT = 'แจ้งอาการเพิ่ม';
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
@@ -289,6 +291,8 @@ export function HomeScreen() {
   /** แชทที่เริ่มจาก "ประเมินเรื่องใหม่" (แท็บใหม่เสมอ) · ข้อเสนอรวมกับเรื่องเดิมที่บริเวณซ้ำ */
   const freshFor = React.useRef<Record<string, boolean>>({});
   const mergeFor = React.useRef<Record<string, { newId: string; oldId: string }>>({});
+  /** รอข้อความ "แจ้งอาการเพิ่ม" ในแชทนี้ (ชื่อเรื่อง) */
+  const noteFor = React.useRef<Record<string, string>>({});
   /** คำตอบข้ออื่นที่ผู้ใช้บอกมาก่อนถึงข้อนั้น (เช่น "ปวดคอ 7 เป็นมา 3 วัน") → ถึงข้อนั้นแล้วข้าม ไม่ถามซ้ำ · แยกตามแชท */
   const prefill = React.useRef<Record<string, Partial<Assessment>>>({});
   /** คำถามที่ค้างก่อนถามยืนยัน (เช่น ร้องเรียน) → ตอบยืนยันแล้วกลับมาถามต่อ */
@@ -1025,12 +1029,16 @@ export function HomeScreen() {
         pressure: after.pressure,
         avoid: after.avoid,
         radiate: after.radiate,
+        // ประเมินซ้ำเรื่องเดิม → เก็บรอบก่อนไว้ (ไม่ลบ) ให้เห็นว่าเปลี่ยนจากอะไร
+        history: old ? [...(old.history ?? []), { at: nowTimeText(), pain: old.pain, symptoms: old.symptoms, caution: old.caution }] : undefined,
         guide: (() => {
           const g = results.find((r) => r.card?.type === 'guideline')?.card;
           return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution } : old?.guide;
         })(),
       });
       setActiveDraftId(id);
+      // จองไว้แล้วและประเมินใหม่ก่อนวันนัด → แจ้งคลินิกว่าผลเปลี่ยน (ผู้ให้บริการใช้ผลล่าสุดก่อนเช็กอิน)
+      if (old?.booking) notifyClinic(level === 'red' ? 'ผู้ป่วยอัปเดตผลประเมิน: ควรพบแพทย์ก่อน' : 'ผู้ป่วยอัปเดตผลประเมิน', `${old.title} · ปวด ${old.pain} → ${after.pain}/10${caution ? ` · ${caution}` : ''}`);
       // หน้าแรกเปิดที่ใบนี้
       setCaseIdx(caseCount + (old ? drafts.indexOf(old) : drafts.length));
       return withBooking;
@@ -1100,7 +1108,10 @@ export function HomeScreen() {
   const openAI = () => {
     if (selCase) {
       const hasAppt = tcase.appointment.date !== '-';
-      const item = menuItem(`เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...(hasAppt ? [CASE_INTENTS[0]] : []), CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
+      // เช็กอินแล้ว → ประเมินก่อนนวดแก้ไม่ได้ (แจ้งอาการเพิ่มแทน) · กำลังรับบริการ → ไม่มีทั้งคู่
+      const lock = hasAppt ? assessLock(caseAppts[tcase.id] ?? tcase.appointment) : null;
+      const pre = !hasAppt ? [] : !lock ? [CASE_INTENTS[0]] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
+      const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...pre, CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
       const id = caseChats[tcase.id] ?? tcase.chatId;
       if (id && sessions.some((c) => c.id === id)) {
         setThread((t) => [...t.filter((m) => m.card?.type !== 'intents' || m !== t[t.length - 1]), item], id);
@@ -1112,11 +1123,14 @@ export function HomeScreen() {
       return openChat(ss.id);
     }
     if (selDraft) {
-      const item = menuItem(`เรื่อง${selDraft.title} อยากให้ช่วยเรื่องไหนคะ?`, [DRAFT_REASSESS_INTENT, NEW_TOPIC_INTENT]);
+      // ถึงคลินิกแล้ว (เช็กอิน/รับบริการ/นวดแล้ว) → ประเมินอีกครั้งไม่ได้ (ผู้ให้บริการใช้ผลก่อนเช็กอิน)
+      const lock = assessLock(selDraft.booking, selDraft.stage === 'served');
+      const first = !lock ? [DRAFT_REASSESS_INTENT] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
+      const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${selDraft.title} อยากให้ช่วยเรื่องไหนคะ?`, [...first, NEW_TOPIC_INTENT]);
       const id = selDraft.chatId && sessions.some((c) => c.id === selDraft.chatId) ? selDraft.chatId : null;
       if (id) {
         // แชทเดิม (ประวัติการประเมิน) + ตัวเลือกต่อท้าย · เปิดซ้ำ = ไม่เพิ่มตัวเลือกซ้อน
-        setThread((t) => (t[t.length - 1]?.card?.type === 'intents' ? t : [...t, item]), id);
+        setThread((t) => (t[t.length - 1]?.card?.type === 'intents' ? [...t.slice(0, -1), item] : [...t, item]), id);
         return openChat(id);
       }
       const ss: ChatSession = { ...newChatSession(), title: `ประเมิน${selDraft.title}`, items: [item], assess: { ...blankAssessment(), step: 'done' } };
@@ -1429,14 +1443,23 @@ export function HomeScreen() {
       setCaseIdx(caseCount + drafts.filter((d) => d.id !== nd.id).findIndex((d) => d.id === od.id));
       return aiReply(activeId, label, () => [aiText(`รวมกับเรื่อง${od.title}แล้วค่ะ ใช้ผลประเมินล่าสุดนี้แทนของเดิม`)]);
     }
+    if (label === ADD_NOTE_INTENT) {
+      const d = drafts.find((x) => x.chatId === activeId) ?? selDraft;
+      noteFor.current[activeId] = d?.title ?? (selCase ? tcase.short : 'อาการ');
+      return aiReply(activeId, label, () => [aiText('พิมพ์อาการที่เปลี่ยนไปได้เลยค่ะ ส่งถึงผู้ให้บริการทันที ผลประเมินเดิมไม่ถูกแก้')]);
+    }
     if (label === DRAFT_REASSESS_INTENT) {
       const d = drafts.find((x) => x.chatId === activeId) ?? selDraft;
+      const lock = d ? assessLock(d.booking, d.stage === 'served') : null;
+      if (lock) return aiReply(activeId, label, () => [aiText(ASSESS_LOCK_TEXT[lock])]);
       return d ? reassessDraft(d) : startAssess(label);
     }
     // แชทของเรื่องที่รักษาอยู่
     if (CASE_INTENTS.includes(label)) {
       const last = tcase.visits[tcase.visits.length - 1];
       if (label === CASE_INTENTS[0]) {
+        const lock = assessLock(caseAppts[tcase.id] ?? tcase.appointment);
+        if (lock) return aiReply(activeId, label, () => [aiText(ASSESS_LOCK_TEXT[lock])]);
         // ประเมินวันนี้ไปแล้ว → สรุปผลเดิม (ไม่ถามซ้ำ) · ยังไม่ได้ประเมิน → ถามแบบสั้น (ปวดวันนี้ · อาการหลังนวด · ข้อห้ามใหม่)
         const done = caseToday[tcase.id];
         if (done && tcase.appointment.date !== '-') return aiReply(activeId, label, () => preResultItems(tcase, undefined, done.red));
@@ -1897,6 +1920,14 @@ export function HomeScreen() {
   const send = (text: string) => {
     // อาการฉุกเฉิน → เตือนทันที ไม่รอ AI (กฎตายตัว)
     if (EMERGENCY.test(text)) return reply(text, 'อาการนี้อาจเป็นภาวะฉุกเฉิน โทร 1669 หรือไปโรงพยาบาลทันทีค่ะ ยังไม่ควรนวด', { type: 'action', label: 'ดูคำแนะนำ', to: 'RedFlag' });
+    // แจ้งอาการเพิ่มหลังเช็กอิน → ส่งถึงผู้ให้บริการเป็นข้อความเพิ่ม (แยกจากผลประเมิน ไม่แทนของเดิม)
+    const noteTopic = noteFor.current[activeId];
+    if (noteTopic) {
+      delete noteFor.current[activeId];
+      notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${noteTopic}: ${text}`);
+      log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${noteTopic}): ${text}`);
+      return reply(text, 'ส่งให้ผู้ให้บริการแล้วค่ะ ผลประเมินเดิมยังอยู่ ผู้ให้บริการจะเห็นข้อความนี้แยกไว้');
+    }
     const pend = pendingNow();
     const lastCard = thread[thread.length - 1]?.card;
     // ตอบข้อประเมิน/ติดตามผลแบบสั้น ๆ → ส่งเข้าข้อนั้นเลย

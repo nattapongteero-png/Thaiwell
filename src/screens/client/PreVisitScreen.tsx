@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
-import { AppBar, Button, Icon, Panel, ReplyChips, ScaleSelector, Screen, Text, TINT, space, useTheme } from '../../design-system';
+import { AppBar, Button, Icon, Panel, ReplyChips, ScaleSelector, Screen, Text, TextField, TINT, space, useTheme } from '../../design-system';
+import { ASSESS_LOCK_TEXT, assessLock } from '../../state/appointments';
 import { FU_ADVERSE, FU_RISK } from '../../data/homeFeed';
 import { preVisitRed, preVisitSummary } from '../../data/preVisit';
 import { useJourney } from '../../state/JourneyContext';
@@ -9,12 +10,14 @@ import { NotFoundScreen } from './NotFound';
 
 /**
  * ประเมินก่อนนวด (กรอกเอง ไม่ต้องคุยกับ AI) — ผลเหมือนตอบในแชท: บันทึกเป็นอาการก่อนนวดครั้งนี้ · ส่งให้ผู้ให้บริการ · สรุปว่าครั้งนี้จะรักษาอย่างไร
- * ประเมินแล้ว → เปิดมาที่ผลประเมิน (แก้ไขได้)
+ * ประเมินแล้ว → เปิดมาที่ผลประเมิน (แก้ไขได้จนถึงเช็กอิน · หลังเช็กอิน = แจ้งอาการเพิ่มเป็นข้อความแยก ไม่แทนผลเดิม)
  */
 export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string } } }) {
   const nav = useNav();
   const { colors } = useTheme();
-  const { cases, caseToday, setCaseToday, log, notifyClinic } = useJourney();
+  const { cases, caseToday, caseAppts, setCaseToday, log, notifyClinic } = useJourney();
+  const [note, setNote] = React.useState('');
+  const [noteSent, setNoteSent] = React.useState(false);
   const tc = cases.find((c) => c.id === route?.params?.caseId);
   const saved = tc ? caseToday[tc.id] : undefined;
   const [editing, setEditing] = React.useState(!saved);
@@ -26,6 +29,8 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
   const no = tc.course.done + 1;
   const hasAppt = tc.appointment.date !== '-';
   const complete = pain !== undefined && !!adverse && !!risk;
+  // ถึงคลินิกแล้ว → ผู้ให้บริการใช้ผลนี้ (แก้ไม่ได้)
+  const lock = hasAppt ? assessLock(caseAppts[tc.id] ?? tc.appointment) : null;
 
   const submit = () => {
     const red = preVisitRed(adverse, risk);
@@ -47,9 +52,9 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
             {s.status === 'red' ? (
               <Button label="ดูคำแนะนำ" onPress={() => nav.navigate('RedFlag', { reason: `ผลประเมินก่อนนวด${tc.short}` })} />
             ) : tc.appointment.today ? (
-              <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', { caseId: tc.id })} />
+              <Button label={lock ? 'ดูคิว' : 'เช็กอิน'} iconLeft={lock ? 'eye' : 'maximize'} onPress={() => nav.navigate('CheckIn', { caseId: tc.id })} />
             ) : null}
-            <Button label="แก้ไขคำตอบ" variant="secondary" onPress={() => setEditing(true)} />
+            {lock ? null : <Button label="แก้ไขคำตอบ" variant="secondary" onPress={() => setEditing(true)} />}
           </>
         }
       >
@@ -89,6 +94,35 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
             </Text>
           ) : null}
         </Panel>
+        {/* ล็อกหลังเช็กอิน: บอกเหตุผล + แจ้งอาการเพิ่ม (ข้อความแยก ผู้ให้บริการเห็นว่ามาหลังเช็กอิน) */}
+        {lock ? (
+          <Panel icon="lock" tint={TINT.slate} title="แก้ผลประเมินไม่ได้แล้ว">
+            <Text variant="bodySm" tone="secondary">
+              {ASSESS_LOCK_TEXT[lock]}
+            </Text>
+            {lock === 'checked_in' ? (
+              noteSent ? (
+                <Text variant="bodySm" color={colors.brand.primary}>
+                  ส่งให้ผู้ให้บริการแล้ว
+                </Text>
+              ) : (
+                <>
+                  <TextField placeholder="เช่น ปวดร้าวลงแขนมากขึ้น" value={note} onChangeText={setNote} multiline />
+                  <Button
+                    label="แจ้งอาการเพิ่ม"
+                    variant="secondary"
+                    disabled={!note.trim()}
+                    onPress={() => {
+                      notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${tc.short} ครั้งที่ ${no}: ${note.trim()}`);
+                      log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${tc.short}): ${note.trim()}`);
+                      setNoteSent(true);
+                    }}
+                  />
+                </>
+              )
+            ) : null}
+          </Panel>
+        ) : null}
       </Screen>
     );
   }
