@@ -35,8 +35,8 @@ export interface CloudRow {
   therapist?: string | null;
   queue_no?: string | null;
   record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; painBefore?: number; painAfter?: number; advice?: string; therapist?: string } | null;
-  bill?: { amount: number; items?: string[]; status: 'pending' | 'paid'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
-  plan?: { summary: string; sessions: number; frequency: string; phases?: { title: string; weeks: string; focus: string }[]; homeCare?: string[] } | null;
+  bill?: { amount: number; items?: string[]; status: 'pending' | 'paid' | 'void'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
+  plan?: { summary: string; sessions: number; frequency: string; phases?: { title: string; weeks: string; focus: string }[]; homeCare?: string[]; course?: { name: string; total: number; used: number } } | null;
   note?: string | null;
   created_at: string;
   updated_at: string;
@@ -67,7 +67,7 @@ const loadSeen = () => {
 const saveSeen = () => {
   try {
     // เก็บเฉพาะที่ใช้หาความเปลี่ยนแปลง
-    const list = [...rows.values()].map(({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, queue_no, bill, plan, created_at, updated_at }));
+    const list = [...rows.values()].map(({ id, patient_id, status, service, date, start, therapist, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, service, date, start, therapist, queue_no, bill, plan, created_at, updated_at }));
     setItem(SEEN_KEY, JSON.stringify(list.slice(-300)));
   } catch {
     /* ignore */
@@ -102,7 +102,8 @@ async function logEvent(kind: string, apptId: string | null, patientName: string
 /** คำขอจอง + ผลประเมิน → แถวใหม่สถานะ requested (ลงทะเบียนผู้ป่วยใน cloud ด้วย) */
 export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPatient) {
   const it = request.intake;
-  const service = request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1;
+  // ชื่อบริการตามที่ผู้ป่วยเห็น (ไม่มีระยะเวลา) · คลินิกใช้รหัส serviceId เป็นหลัก
+  const service = (request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1).split(' · ')[0];
   const complaint = it?.complaint ?? patient.complaint;
   const { error: pe } = await cloud.from('tw_patients').upsert({
     id: patient.id,
@@ -122,6 +123,8 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     date: request.date,
     start: request.start,
     assessment: {
+      serviceId: request.serviceId,
+      therapistId: request.therapistId || undefined,
       complaint,
       pain: request.painScore,
       areas: it?.focusAreas ?? [],
@@ -161,11 +164,11 @@ export async function cloudPay(id: string, who?: string) {
 }
 
 /** ผู้ป่วยยกเลิกนัดในแอป (ก่อนเริ่มรับบริการ) */
-export async function cloudCancel(id: string, who?: string) {
-  const { data, error } = await cloud.from('tw_appointments').update({ status: 'cancelled', note: 'ผู้ป่วยยกเลิกจากแอป' }).eq('id', id).in('status', ['requested', 'confirmed', 'checked_in']).select('id');
+export async function cloudCancel(id: string, who?: string, reason = 'ผู้ป่วยยกเลิกจากแอป') {
+  const { data, error } = await cloud.from('tw_appointments').update({ status: 'cancelled', note: reason }).eq('id', id).in('status', ['requested', 'confirmed', 'checked_in']).select('id');
   if (error) throw error;
   if (!data?.length) return false; // เริ่มรับบริการไปแล้ว → ยกเลิกจากแอปไม่ได้
-  await logEvent('booking.cancelled', id, who, 'ผู้ป่วยยกเลิกนัดจากแอป');
+  await logEvent('booking.cancelled', id, who, reason);
   return true;
 }
 
@@ -188,21 +191,27 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
     else if (s === 'rejected') out.push({ id: id('no'), at, type: 'rejected', ref: row.id, reason: row.note ?? '' });
     else if (s === 'called') out.push({ id: id('call'), at, type: 'queue', ref: row.id, queue: row.queue_no ?? '', called: true });
     else if (s === 'in_service') out.push({ id: id('start'), at, type: 'started', ref: row.id });
+    // คลินิกยกเลิกใบเสร็จ (ถอยจากชำระแล้ว/ส่งบิล) → ไม่ใช่การนวดเสร็จครั้งใหม่
+    else if (s === 'recorded' && (p === 'billed' || p === 'paid')) out.push({ id: id('void'), at, type: 'billVoid', ref: row.id });
     else if (s === 'recorded') out.push({ id: id('done'), at, type: 'completed', ref: row.id, painBefore: row.record?.painBefore ?? 0, painAfter: row.record?.painAfter, cloud: true, record: row.record ?? undefined });
-    else if (s === 'cancelled') out.push({ id: id('cancel'), at, type: 'cancelled', ref: row.id });
+    else if (s === 'cancelled') out.push({ id: id('cancel'), at, type: 'cancelled', ref: row.id, reason: row.note ?? undefined });
     else if (s === 'no_show') out.push({ id: id('absent'), at, type: 'absent', ref: row.id });
   }
+  // คลินิกเลื่อนนัด (สถานะเดิม) → วัน/เวลา/ผู้ให้บริการใหม่
+  else if (prev && prev.date !== undefined && ['confirmed', 'checked_in'].includes(s) && (row.date !== prev.date || row.start !== prev.start || (row.therapist ?? '') !== (prev.therapist ?? '')))
+    out.push({ id: id('moved'), at, type: 'moved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '' });
   // เลขคิว: คลินิกออกให้หลังเช็กอิน (มาอีกรอบหลังสถานะ)
   if (s === 'checked_in' && row.queue_no && row.queue_no !== prev?.queue_no) out.push({ id: id('queue'), at, type: 'queue', ref: row.id, queue: row.queue_no, called: false });
   const b = row.bill;
   const pb = prev?.bill;
   if (b && JSON.stringify(b) !== JSON.stringify(pb ?? null)) {
-    if (b.status === 'pending' && pb?.status !== 'pending') out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [] });
+    // บิลใหม่ / คลินิกแก้ยอดระหว่างรอชำระ
+    if (b.status === 'pending' && (pb?.status !== 'pending' || pb.amount !== b.amount)) out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], receiptNo: b.receipt_no });
     // จ่ายที่คลินิก → ใบเสร็จ (จ่ายในแอปเองไม่ต้องแจ้งซ้ำ)
     if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at });
   }
   if (row.plan && JSON.stringify(row.plan) !== JSON.stringify(prev?.plan ?? null)) {
-    out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: { name: row.plan.summary, total: row.plan.sessions, used: 1 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });
+    out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: row.plan.course ?? { name: row.plan.summary, total: row.plan.sessions, used: 0 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });
   }
   return out;
 }

@@ -86,7 +86,11 @@ export type ClinicEvent =
   | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
   /** cloud = คลินิกเป็นคนออกบิล (แอปไม่จำลองบิล) · record = ผลการรักษาที่คลินิกบันทึก */
   | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number; cloud?: boolean; record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string } }
-  | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string }
+  | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string; reason?: string }
+  /** คลินิกเลื่อนนัด (วัน/เวลา/ผู้ให้บริการ/บริการ) */
+  | { id: string; at: string; type: 'moved'; ref: string; date: string; start: string; therapist: string; service: string }
+  /** คลินิกยกเลิกใบเสร็จ → รอชำระใหม่ */
+  | { id: string; at: string; type: 'billVoid'; ref: string }
   /** เลขคิวจากคลินิก (หลังเช็กอิน) · called = ถึงคิวแล้ว */
   | { id: string; at: string; type: 'queue'; ref: string; queue: string; called: boolean }
   /** เช็กอินไม่ผ่าน (รหัส QR ผิด/หมดอายุ/ไม่ใช่วันนัด) → สแกนใหม่ */
@@ -94,7 +98,7 @@ export type ClinicEvent =
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
-  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[] }
+  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; receiptNo?: string }
   /** จ่ายที่คลินิกแล้ว → ใบเสร็จ */
   | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string }
   /** นวดครั้งต่อ ๆ ไปตามแผน (นัดที่คลินิกลงเอง) */
@@ -183,9 +187,7 @@ export const sendNote = (title: string, body: string, patientId?: string, patien
 /** code = รหัสจาก QR เช็กอินที่เคาน์เตอร์ (คลินิกตรวจก่อนออกเลขคิว) */
 export const sendCheckIn = (ref: string, who?: string, code?: string) => (CLOUD ? cloudCheckIn(ref, who, code).catch(() => false) : Promise.resolve(false));
 /** ยกเลิกนัดที่ส่งไปแล้ว */
-export const sendCancel = (ref: string, who?: string) => {
-  if (CLOUD) void cloudCancel(ref, who).catch(() => undefined);
-};
+export const sendCancel = (ref: string, who?: string, reason?: string) => (CLOUD ? cloudCancel(ref, who, reason).catch(() => false) : Promise.resolve(true));
 /** จ่ายบิลในแอป → คลินิกเห็นว่าชำระแล้ว */
 export const sendPayment = (ref: string, who?: string) => {
   if (CLOUD) void cloudPay(ref, who).catch(() => undefined);

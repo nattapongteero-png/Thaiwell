@@ -149,8 +149,6 @@ const BENTO_GAP = 12;
 const BENTO_START = 0.6;
 /** ระยะในช่อง bento */
 const TILE_PAD = space[4];
-/** คลินิกของใบการรักษาตัวอย่าง (ยังไม่มีในข้อมูลใบการรักษา) */
-const CASE_CLINIC = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 const BENTO_CASE_H = 40;
 /** ระยะระหว่างแท็บที่มองเห็นจริง (gap ของ JellyRadio + ขอบพองตัว) — ใช้เป็นระยะปุ่มประเมินใหม่→แท็บแรก และความกว้างช่วงจางตอนเลื่อน */
 const TAB_GAP = 12;
@@ -233,7 +231,7 @@ export function HomeScreen() {
   const chatHome = noRecords && !looseBookings.length;
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, notifyClinic } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
   const allAppts = useAllAppointments();
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;
@@ -713,7 +711,7 @@ export function HomeScreen() {
     if (tc) {
       const moved = tc.appointment.date !== '-';
       const today = c.day === 'วันนี้';
-      setCaseAppointment(tc.id, { today, date: c.day, time: c.time, queue: today ? issueQueue() : undefined, clinic: c.name, therapist: c.therapist });
+      bookCase(tc.id, { today, date: c.day, time: c.time, queue: today ? issueQueue() : undefined, clinic: c.name, therapist: c.therapist }, c.service);
       log('ผู้รับบริการ', `${moved ? 'เลื่อนนัด' : 'จองนัด'}ในแชท ${tc.short} ${c.day} ${c.time}`);
       return aiReply(activeId, 'ยืนยันจอง', () => [
         { ...aiText(`${moved ? 'เลื่อนนัดแล้ว' : 'จองแล้ว'}ค่ะ ${c.day} ${c.time} กับ ${c.therapist}\n\nก่อนมานวด: ${tc.prep.join(' ')}`), source: 'ระบบนัดหมาย' as const },

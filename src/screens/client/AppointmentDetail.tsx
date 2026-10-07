@@ -33,7 +33,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
 
   const cancel = () => {
     // นัดที่ส่งไปคลินิกแล้ว (cloud) → แจ้งหลังบ้านว่าผู้ป่วยยกเลิก
-    if (appt.kind !== 'case') cancelBooking(appt.target);
+    cancelBooking(appt.target);
     if (appt.kind === 'case' && target.caseId) cancelAppointment(target.caseId);
     else if (appt.kind === 'draft') {
       const draft = drafts.find((d) => d.id === target.draftId);
