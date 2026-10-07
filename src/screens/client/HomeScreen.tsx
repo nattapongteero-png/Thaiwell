@@ -4444,9 +4444,7 @@ function HomeBento({
   onBook: () => void;
 }) {
   const { colors } = useTheme();
-  const { followUps, cancelledAppts, caseAppts, plannedVisits, clinicCourse } = useJourney();
-  // นัดที่คลินิกลงไว้ล่วงหน้าตามแผน (ครั้งแรก = นัดในการ์ดนี้)
-  const planned = plannedVisits[tcase.id] ?? [];
+  const { followUps, cancelledAppts, caseAppts, clinicCourse } = useJourney();
   // ไม่มีนัด = ยกเลิกแล้ว หรือยังไม่ได้จองครั้งถัดไป (เช่น เพิ่งนวดครั้งแรก) → ปุ่มจองนัด
   const cancelled = cancelledAppts.includes(tcase.id) || tcase.appointment.date === '-';
   const clinic = caseClinic(tcase);
@@ -4544,23 +4542,6 @@ function HomeBento({
                 </Pressable>
               )}
             </View>
-            {/* คลินิกลงนัดครั้งต่อ ๆ ไปไว้แล้ว → ดูนัดทั้งคอร์ส */}
-            {planned.length > 1 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`นัดตามแผนอีก ${planned.length - 1} ครั้ง ดูทั้งหมด`}
-                onPress={onHistory}
-                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[2], paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle, opacity: pressed ? 0.6 : 1 })}
-              >
-                <Icon name="calendar" size="xs" color={colors.brand.primary} />
-                <Text variant="bodySm" style={{ flex: 1 }}>
-                  นัดตามแผนอีก {planned.length - 1} ครั้ง
-                </Text>
-                <Text variant="labelSm" color={colors.brand.primary}>
-                  ดูทั้งหมด
-                </Text>
-              </Pressable>
-            ) : null}
           </>
         ) : (
           <>
