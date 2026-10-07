@@ -419,6 +419,8 @@ const Ctx = createContext<JourneyState | null>(null);
  * เก็บบัญชี การจอง เรื่องที่รักษา นัด แจ้งเตือน บิล และคำขอที่ส่งไปหลังบ้าน → เปิดใหม่ยังรับข้อมูลจากคลินิกต่อได้
  * ออกจากระบบ = ล้างทั้งหมด */
 export const APP_STATE_KEY = 'thaiwell.app.v1';
+/** แชทกับ AI (ประวัติการประเมิน/คำตอบ) + แชทของแต่ละเรื่อง — บันทึกที่หน้าแรก */
+export const CHATS_KEY = 'thaiwell.chats.v1';
 /** อ่านครั้งแรกตอนสร้าง provider (มือถือโหลดเข้าหน่วยความจำไว้แล้ว — App.tsx) */
 let SAVED: Record<string, unknown> | null | undefined;
 const savedState = () => {
@@ -733,6 +735,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // ล้างข้อมูลที่จำไว้ + คำขอที่ส่งไปหลังบ้าน
     try {
       removeItem(APP_STATE_KEY);
+      removeItem(CHATS_KEY);
     } catch {
       /* ignore */
     }

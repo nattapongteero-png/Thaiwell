@@ -59,7 +59,8 @@ import {
   BottomSheet,
   Button,
 } from '../../design-system';
-import { useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
+import { CHATS_KEY, useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
+import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
@@ -207,9 +208,28 @@ export function HomeScreen() {
   const [editing, setEditing] = React.useState<Extract<ThreadCard, { type: 'bookConfirm' }> | null>(null);
 
   /* ---------- แชท: เริ่มใหม่ในหน้าเดิม + ประวัติแชท ---------- */
-  const [sessions, setSessions] = React.useState<ChatSession[]>([CURRENT_CHAT, ...CHAT_HISTORY]);
+  // แชทที่บันทึกไว้ (ปิด/เปิดแอปแล้วยังเห็นคำถาม-คำตอบของการประเมินเดิม)
+  const savedChats = React.useMemo(() => {
+    try {
+      const raw = getItem(CHATS_KEY);
+      return raw ? (JSON.parse(raw) as { sessions?: ChatSession[]; caseChats?: Record<string, string> }) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [sessions, setSessions] = React.useState<ChatSession[]>(() => (savedChats?.sessions?.length ? savedChats.sessions : [CURRENT_CHAT, ...CHAT_HISTORY]));
   /** แชทของแต่ละเรื่อง: ใบการรักษา → key = case id · ใบร่าง → draft.chatId */
-  const [caseChats, setCaseChats] = React.useState<Record<string, string>>({});
+  const [caseChats, setCaseChats] = React.useState<Record<string, string>>(() => savedChats?.caseChats ?? {});
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        setItem(CHATS_KEY, JSON.stringify({ sessions, caseChats }));
+      } catch {
+        /* storage full / unavailable */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [sessions, caseChats]);
   const [activeId, setActiveId] = React.useState(CURRENT_CHAT.id);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   /** หน้าจอเริ่มต้น: มีแค่ข้อมูลผู้ป่วย + หุ่น + ปุ่ม "ประเมินคัดกรองโดย AI" · กดแล้วจึงเปิดแชท AI */
@@ -1094,7 +1114,8 @@ export function HomeScreen() {
       const item = menuItem(`เรื่อง${selDraft.title} อยากให้ช่วยเรื่องไหนคะ?`, [DRAFT_REASSESS_INTENT, NEW_TOPIC_INTENT]);
       const id = selDraft.chatId && sessions.some((c) => c.id === selDraft.chatId) ? selDraft.chatId : null;
       if (id) {
-        setThread((t) => [...t, item], id);
+        // แชทเดิม (ประวัติการประเมิน) + ตัวเลือกต่อท้าย · เปิดซ้ำ = ไม่เพิ่มตัวเลือกซ้อน
+        setThread((t) => (t[t.length - 1]?.card?.type === 'intents' ? t : [...t, item]), id);
         return openChat(id);
       }
       const ss: ChatSession = { ...newChatSession(), title: `ประเมิน${selDraft.title}`, items: [item], assess: { ...blankAssessment(), step: 'done' } };
