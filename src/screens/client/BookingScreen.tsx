@@ -147,13 +147,12 @@ function InlineCalendar({ counts, last, value, onPick }: { /** วัน (offset
           accessibilityRole="button"
           accessibilityLabel={`เลือกเดือน ตอนนี้ ${MONTH_FULL[headDate.getMonth()]} ${headDate.getFullYear() + 543}`}
           onPress={() => (setYear(headDate.getFullYear()), setSheet(true))}
-          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[2], height: 36, paddingLeft: space[3], paddingRight: space[2] + 2, borderRadius: radius.full, backgroundColor: colors.surface.sunken, opacity: pressed ? 0.7 : 1 })}
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[2], height: 36, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.sunken, opacity: pressed ? 0.7 : 1 })}
         >
           <Icon name="calendar" size="xs" color={colors.text.secondary} />
           <Text variant="labelMd">
             {MONTH_FULL[headDate.getMonth()]} {headDate.getFullYear() + 543}
           </Text>
-          <Icon name="chevron-down" size="xs" color={colors.text.secondary} />
         </Pressable>
         <View style={{ flexDirection: 'row', padding: 3, borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
           {seg('week', 'สัปดาห์')}
@@ -558,24 +557,30 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
 
                 {/* ② เวลา: เฉพาะวันที่เลือก (รวมทุกคน) */}
                 {day !== null ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
-                    {timesOf(day).map((t) => {
-                      const on = time === t;
-                      return (
-                        <Pressable
-                          key={t}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: on }}
-                          accessibilityLabel={`${dayLabel(day)} ${t}`}
-                          onPress={() => pickTime(t)}
-                          style={{ minWidth: 72, paddingHorizontal: space[3], height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text.primary : colors.surface.sunken }}
-                        >
-                          <Text variant="labelMd" color={on ? colors.text.inverse : colors.text.primary}>
-                            {t}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                  // ตาราง 4 คอลัมน์เต็มความกว้าง (แถวสุดท้ายไม่ครบ = ช่องว่างแทน ปุ่มยังกว้างเท่ากัน)
+                  <View style={{ gap: space[2] }}>
+                    {Array.from({ length: Math.ceil(timesOf(day).length / 4) }, (_, r) => timesOf(day).slice(r * 4, r * 4 + 4)).map((row, r) => (
+                      <View key={r} style={{ flexDirection: 'row', gap: space[2] }}>
+                        {[...row, ...Array.from({ length: 4 - row.length }, () => null)].map((t, i) =>
+                          t ? (
+                            <Pressable
+                              key={t}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: time === t }}
+                              accessibilityLabel={`${dayLabel(day)} ${t}`}
+                              onPress={() => pickTime(t)}
+                              style={{ flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: time === t ? colors.text.primary : colors.surface.sunken }}
+                            >
+                              <Text variant="labelMd" color={time === t ? colors.text.inverse : colors.text.primary}>
+                                {t}
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <View key={`e${i}`} style={{ flex: 1 }} />
+                          ),
+                        )}
+                      </View>
+                    ))}
                   </View>
                 ) : null}
 
