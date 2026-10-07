@@ -3816,172 +3816,127 @@ function DraftBento({
     );
   }
 
+  // ปุ่มรองวงกลม (ดูที่อื่น · ไอคอนแผนที่)
+  const mapBtn = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="ดูที่อื่น"
+      onPress={() => onPlaces()}
+      hitSlop={4}
+      style={({ pressed }) => ({ width: 34, height: 34, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
+    >
+      <Icon name="map" size="xs" color={colors.text.primary} />
+    </Pressable>
+  );
+
+  // โครงเดียวกับจองแล้ว/หลังรักษา: การ์ดหลักเต็มแถว → แผน | ผลประเมิน (สูงเท่ากัน) → แถวล่าง
   return (
     <View style={{ gap: BENTO_GAP }}>
       {tabs}
 
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <View style={{ width: halfW, gap: BENTO_GAP }}>
-          {/* นัด */}
-          {d.red ? (
-            <Tile style={{ gap: space[2] }} onPress={onRedFlag} accessibilityLabel="ควรพบแพทย์ก่อน">
-              <TileTitle title="นัด" />
-              <Text variant="titleSm" color={colors.status.danger.fg}>
-                ควรพบแพทย์ก่อน
+      {/* 1) การ์ดหลักเต็มแถว */}
+      {d.red ? (
+        <Tile style={{ gap: space[2] }} onPress={onRedFlag} accessibilityLabel="ควรพบแพทย์ก่อน">
+          <TileTitle title="นัด" />
+          <Text variant="titleSm" color={colors.status.danger.fg}>
+            ควรพบแพทย์ก่อน
+          </Text>
+          {/* มีนัดค้างอยู่ → ยังเข้าไปเลื่อน/ยกเลิกได้ */}
+          {b ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={`จัดการนัด ${b.date} ${b.time}`} onPress={onOpen}>
+              <Text variant="labelSm" color={colors.status.danger.fg}>
+                มีนัด {b.date} {b.time} · เลื่อน/ยกเลิก
               </Text>
-              <TilePill icon="alert-triangle" label="ดูคำแนะนำ" />
-              {/* มีนัดค้างอยู่ → ยังเข้าไปเลื่อน/ยกเลิกได้ */}
-              {b ? (
-                <Pressable accessibilityRole="button" accessibilityLabel={`จัดการนัด ${b.date} ${b.time}`} onPress={onOpen}>
-                  <Text variant="labelSm" color={colors.status.danger.fg}>
-                    มีนัด {b.date} {b.time} · เลื่อน/ยกเลิก
-                  </Text>
-                </Pressable>
-              ) : null}
-            </Tile>
-          ) : b ? (
-            <Tile style={{ gap: space[2] }} onPress={served ? undefined : onOpen} accessibilityLabel={`นัด ${b.date} ${b.time} ดูรายละเอียด`}>
-              <View style={{ gap: space[2] }}>
-                <TileTitle title={served ? 'นวดแล้ว' : 'นัดของคุณ'} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
-                  <View>
-                    <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                      {b.date === 'วันนี้' ? 'วันนี้' : b.clinic}
-                    </Text>
-                    <Text variant="titleXl">{b.time}</Text>
-                  </View>
-                  {b.date !== 'วันนี้' ? <DateBlock date={b.date} /> : null}
-                </View>
-              </View>
-              {/* แตะการ์ด = รายละเอียดนัด (แก้ไข/ยกเลิก) · ปุ่ม = เช็กอิน */}
-              {/* บริการที่จองไม่ตรงผลประเมิน → เตือนบนการ์ด (แตะการ์ด = รายละเอียดนัด เปลี่ยนบริการได้) */}
-              {!served && !d.keepService && serviceMismatch(b.service, d.caution) ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Icon name="alert-triangle" size="xs" color={colors.status.warning.fg} />
-                  <Text variant="caption" color={colors.status.warning.fg} numberOfLines={1}>
-                    บริการไม่ตรงผลประเมิน
-                  </Text>
-                </View>
-              ) : null}
-              {!served && b.status === 'pending' ? (
-                // คำขอจอง ยังรอคลินิกยืนยัน → ยังเช็กอินไม่ได้
-                <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
-              ) : served ? null : b.date === 'วันนี้' ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="เช็กอิน" onPress={onCheckIn} style={{ flex: 1 }}>
-                    <TilePill icon="maximize" label="เช็กอิน" />
-                  </Pressable>
-                  <NavIconButton clinic={b.clinic} />
-                </View>
-              ) : (
-                // เช็กอินได้เฉพาะวันนัด · วันอื่น = จัดการนัด
-                <TilePill icon="edit-2" label="จัดการนัด" dark={false} />
-              )}
-            </Tile>
-          ) : (
-            // ยังไม่ได้จอง → แนะนำที่ใกล้ที่สุด (มีแพทย์แผนไทย + บัตรทอง + คิวว่าง) จองได้เลย หรือดูที่อื่น
-            <Tile style={{ gap: space[2] }} onPress={() => onBook(near.name)} accessibilityLabel={`จองที่ ${near.name}`}>
-              <View style={{ gap: 2 }}>
-                <TileTitle title="แนะนำใกล้คุณ" />
-                <Text variant="bodySm" numberOfLines={2}>
-                  {near.name}
-                </Text>
-                <Text variant="bodyXs" tone="tertiary">
-                  {near.km} กม.{near.slots[0] ? ` ว่าง ${near.slots[0]}` : ''}
-                </Text>
-              </View>
-              {/* ปุ่มหลัก (จองที่นี่) + ปุ่มรองวงกลม (ดูที่อื่น · ไอคอนแผนที่) แถวเดียวกัน */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-                <View style={{ flex: 1 }}>
-                  <TilePill icon="calendar" label="จองที่นี่" />
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="ดูที่อื่น"
-                  onPress={() => onPlaces()}
-                  hitSlop={4}
-                  style={({ pressed }) => ({
-                    width: 34,
-                    height: 34,
-                    borderRadius: radius.full,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.surface.default,
-                    borderWidth: 1,
-                    borderColor: colors.border.subtle,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  <Icon name="map" size="xs" color={colors.text.primary} />
-                </Pressable>
-              </View>
-            </Tile>
-          )}
-
-          {/* ผลประเมิน = การ์ด Pain Score ตัวเดียวกับในแชท (ดูอย่างเดียว) · หลังนวดแสดงคะแนนหลังนวด */}
-          <View pointerEvents="none" style={{ flex: 1 }}>
-            {served && d.after !== undefined ? (
-              <PainScoreCard value={d.after} before={d.pain} stageLabel="หลังนวด" title="ผลครั้งที่ 1" strongTitle padding={TILE_PAD} chart width={halfW} />
-            ) : (
-              <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
-            )}
+            </Pressable>
+          ) : null}
+          <TilePill icon="alert-triangle" label="ดูคำแนะนำ" />
+        </Tile>
+      ) : b ? (
+        // นวดแล้ว (ครั้งที่ 1)
+        <Tile style={{ gap: space[3] }}>
+          <TileTitle title="นวดแล้ว" meta={b.clinic} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[2] }}>
+            <View>
+              <Text variant="bodyXs" tone="secondary">
+                {b.date === 'วันนี้' ? 'วันนี้' : 'เวลา'}
+              </Text>
+              <Text variant="titleXl">{b.time}</Text>
+            </View>
+            {b.date !== 'วันนี้' ? <DateBlock date={b.date} /> : null}
           </View>
-        </View>
+        </Tile>
+      ) : (
+        // ยังไม่ได้จอง → แนะนำที่ใกล้ที่สุด (มีแพทย์แผนไทย + บัตรทอง + คิวว่าง) จองได้เลย หรือดูที่อื่น
+        <Tile style={{ gap: space[3] }} onPress={() => onBook(near.name)} accessibilityLabel={`จองที่ ${near.name}`}>
+          <TileTitle title="แนะนำใกล้คุณ" meta={`${near.km} กม.`} />
+          <View style={{ gap: 2 }}>
+            <Text variant="titleSm" numberOfLines={2}>
+              {near.name}
+            </Text>
+            {near.slots[0] ? (
+              <Text variant="bodyXs" tone="secondary">
+                ว่าง {near.slots.slice(0, 3).join(' · ')}
+              </Text>
+            ) : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <View style={{ flex: 1 }}>
+              <TilePill icon="calendar" label="จองที่นี่" />
+            </View>
+            {mapBtn}
+          </View>
+        </Tile>
+      )}
 
-        <View style={{ width: halfW, gap: BENTO_GAP }}>
-          {/* ควรพบแพทย์ก่อน → แนวทาง · นอกนั้น = แผนการรักษา แบบเดียวกับหลังนวด (ยังไม่นวด = 0 ครั้ง จุดเทาทั้งคอร์ส) */}
-          {d.red ? (
-            <Tile style={{ gap: space[1] }}>
-              <TileTitle title="แนวทาง" />
-              <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
-            </Tile>
+      {/* 2) แผนการรักษา | ผลประเมิน */}
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+        {d.red ? (
+          <Tile style={{ width: halfW, gap: space[1] }}>
+            <TileTitle title="แนวทาง" />
+            <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
+          </Tile>
+        ) : (
+          <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} note={d.caution} />
+        )}
+        <View pointerEvents="none">
+          {served && d.after !== undefined ? (
+            <PainScoreCard value={d.after} before={d.pain} stageLabel="หลังนวด" title="ผลครั้งที่ 1" strongTitle padding={TILE_PAD} chart width={halfW} />
           ) : (
-            <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} note={d.caution} />
-          )}
-
-          {d.red ? (
-            // ควรพบแพทย์ก่อน → ทางไปต่อ: โรงพยาบาลใกล้คุณ (นำทาง) หรือดูทั้งหมด
-            <Tile style={{ flex: 1, gap: space[2] }} onPress={() => onPlaces('doctor')} accessibilityLabel="พบแพทย์ใกล้คุณ">
-              <View style={{ gap: 2 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[2] }}>
-                  <Text variant="labelMd">พบแพทย์ใกล้คุณ</Text>
-                  <Text variant="labelMd" color={colors.brand.primary}>
-                    ดูทั้งหมด
-                  </Text>
-                </View>
-                <Text variant="bodySm" numberOfLines={2}>
-                  {hospital.name}
-                </Text>
-                <Text variant="bodyXs" tone="tertiary">
-                  {hospital.km} กม.
-                </Text>
-              </View>
-              <Pressable accessibilityRole="button" accessibilityLabel={`นำทางไป ${hospital.name}`} onPress={() => openMap(hospital)}>
-                <TilePill icon="navigation" label="นำทาง" />
-              </Pressable>
-            </Tile>
-          ) : (
-            <>
-              {/* ดูแลตัวเอง ระหว่างรอนัด */}
-              <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
-              {/* ก่อนมานวด */}
-              {(
-                <Tile style={{ flex: 1, gap: space[2] }}>
-                  <TileTitle title="ก่อนมานวด" />
-                  {prep.map((it) => (
-                    <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-                      <Icon name="check-circle" size="xs" color={colors.brand.primary} />
-                      <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
-                        {it}
-                      </Text>
-                    </View>
-                  ))}
-                </Tile>
-              )}
-            </>
+            <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           )}
         </View>
       </View>
+
+      {/* 3) แถวล่าง */}
+      {d.red ? (
+        // ควรพบแพทย์ก่อน → โรงพยาบาลใกล้คุณ (นำทาง) หรือดูทั้งหมด
+        <Tile style={{ gap: space[3] }} onPress={() => onPlaces('doctor')} accessibilityLabel="พบแพทย์ใกล้คุณ">
+          <TileTitle title="พบแพทย์ใกล้คุณ" meta={`${hospital.km} กม.`} />
+          <Text variant="titleSm" numberOfLines={2}>
+            {hospital.name}
+          </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`นำทางไป ${hospital.name}`} onPress={() => openMap(hospital)}>
+            <TilePill icon="navigation" label="นำทาง" />
+          </Pressable>
+        </Tile>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+          <View style={{ width: halfW }}>
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+          </View>
+          <Tile style={{ width: halfW, gap: space[2] }}>
+            <TileTitle title="ก่อนมานวด" />
+            {prep.map((it) => (
+              <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+                <Icon name="check-circle" size="xs" color={colors.brand.primary} />
+                <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
+                  {it}
+                </Text>
+              </View>
+            ))}
+          </Tile>
+        </View>
+      )}
 
       {/* แถวล่าง: นวดแล้วเท่านั้น → ติดตามผลหลังนวด (ประเมินอาการซ้ำ = ปุ่มม่วง) */}
       {served ? (
