@@ -956,7 +956,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     let caseId: string | undefined;
     const title = t.draftId ? latest.current.drafts.find((d) => d.id === t.draftId)?.title : 'นวดเพื่อสุขภาพ';
     if (t.draftId) caseId = clinicCloseVisit({ draftId: t.draftId }, e?.painAfter, opts);
-    else if (t.looseId && t.course && t.patientId && bridgedCase.current[t.patientId] && casesRef.current.some((c) => c.id === bridgedCase.current[t.patientId!])) {
+    else if (t.looseId && t.course && t.patientId && caseFor(t.patientId)) {
       // นัดตามคอร์ส → ครั้งใหม่ของเรื่องเดิม (ไม่ใช่เรื่องใหม่ทุกครั้ง)
       caseId = clinicCloseVisit({ caseId: bridgedCase.current[t.patientId] }, e?.painAfter, { ...opts, bill: false });
       setLooseBookings((all) => all.filter((b) => b.id !== t.looseId));
@@ -1007,11 +1007,26 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   /* ---------- นัดที่คลินิกลงเองตามแผน (ทุกบัญชี) ----------
    * แถวใน cloud ของผู้ป่วยคนนี้ที่ไม่ได้จองจากแอป = นัดครั้งถัดไปตามแผน → ผูกกับเรื่องที่รักษาของผู้ป่วยคนนั้น
    * นัดที่ใกล้ที่สุด = นัดครั้งถัดไปของเรื่อง (การ์ดนัดครั้งที่ N) · ที่เหลือ = รายการนัดตามแผน · เช็กอิน/คิว/ผล/บิล ใช้ทางเดียวกับนัดตัวอย่าง (caseLinks) */
+  /**
+   * เรื่องที่รักษาอยู่ของผู้ป่วยคนนี้ (1 การรักษา = 1 แท็บ) — นัด/แผนที่คลินิกลงให้ต้องเข้าเรื่องนี้ ไม่สร้างแท็บใหม่
+   * จำไว้ใน bridgedCase · ไม่มี (เข้าสู่ระบบใหม่/ข้อมูลเก่า) → เรื่องที่ได้จากคลินิกล่าสุดที่ยังไม่ครบคอร์ส (ครบแล้ว = ไม่ผูก)
+   */
+  const caseFor = (pid?: string) => {
+    if (!pid) return undefined;
+    const mine = casesRef.current.filter((c) => promotedRef.current.some((p) => p.id === c.id));
+    const cur = bridgedCase.current[pid];
+    if (cur && casesRef.current.some((c) => c.id === cur)) return cur;
+    // ครบคอร์สแล้ว = จบเรื่องนั้น → นัดใหม่จากคลินิกเป็นเรื่องใหม่ได้
+    const c = [...mine].reverse().find((x) => x.course.done < x.course.total);
+    if (!c) return undefined;
+    bridgedCase.current[pid] = c.id;
+    return c.id;
+  };
   const syncPlanned = React.useRef(() => {});
   syncPlanned.current = () => {
     if (!isCloud()) return;
     const me = patientOf().id;
-    const caseId = bridgedCase.current[me];
+    const caseId = caseFor(me);
     if (!caseId) return;
     void fetchPatientRows(me).then((rows) => {
       if (!rows) return;
@@ -1030,6 +1045,16 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       }
     });
   };
+  // แท็บที่สร้างผิดจากนัดที่คลินิกลงให้ (ทั้งที่มีเรื่องที่รักษาอยู่แล้ว) → รวมเข้าเรื่องเดิม: เอาแท็บออก แล้วดึงเป็นนัดตามแผนของเรื่องนั้น
+  React.useEffect(() => {
+    if (!isCloud()) return;
+    const stray = looseBookings.filter((b) => b.id.startsWith('lc-'));
+    if (!stray.length || !caseFor(patientOf().id)) return;
+    for (const [k, t] of Object.entries(bridgeRefs.current)) if (t.looseId && stray.some((b) => b.id === t.looseId)) delete bridgeRefs.current[k];
+    setLooseBookings((all) => all.filter((b) => !b.id.startsWith('lc-')));
+    setTimeout(() => syncPlanned.current(), 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [looseBookings, promoted]);
   // เปิดแอป / เปลี่ยนบัญชี → ดึงนัดตามแผนที่คลินิกลงไว้ระหว่างปิดแอป
   React.useEffect(() => {
     const t = setTimeout(() => syncPlanned.current(), 800);
@@ -1161,7 +1186,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         continue;
       }
       // นัดที่แอปยังไม่รู้จัก (คลินิกลงเองตามแผน) → อยู่ในเรื่องที่รักษาเดิม (1 การรักษา = 1 แท็บ) ดึงนัดของผู้ป่วยใหม่ แล้วแจ้งเตือน
-      if (e.type === 'approved' && !bridgeRefs.current[e.ref] && bridgedCase.current[patientOf().id]) {
+      if (e.type === 'approved' && !bridgeRefs.current[e.ref] && caseFor(patientOf().id)) {
         const ref = e.ref;
         setTimeout(() => {
           syncPlanned.current();
@@ -1173,14 +1198,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         continue;
       }
       if (e.type === 'plan') {
-        const caseId = bridgedCase.current[e.patientId];
+        const caseId = caseFor(e.patientId);
         if (caseId) applyPlan(caseId, e);
         else pendingPlan.current[e.patientId] = e;
         continue;
       }
       if (e.type === 'visit') {
         // นวดครั้งต่อไปตามแผน → ครั้งใหม่ของเรื่องนั้น (คะแนนหลังนวดของคลินิก + บิล)
-        const caseId = bridgedCase.current[e.patientId];
+        const caseId = caseFor(e.patientId);
         if (caseId) clinicCloseVisit({ caseId }, e.painAfter);
         continue;
       }
