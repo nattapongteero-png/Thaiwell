@@ -3787,6 +3787,25 @@ function DraftBento({
   const booked = !!b && !d.red && !served;
   const { profile } = useJourney();
 
+  // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
+  const avoid = d.caution ? d.caution.split(' · ') : [];
+  const listCard = (title: string, icon: 'x-circle' | 'check-circle', color: string, items: string[]) =>
+    items.length ? (
+      <Tile key={title} style={{ gap: space[2] }}>
+        <TileTitle title={title} />
+        {items.map((it) => (
+          <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
+            <View style={{ marginTop: 3 }}>
+              <Icon name={icon} size="xs" color={color} />
+            </View>
+            <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
+              {it}
+            </Text>
+          </View>
+        ))}
+      </Tile>
+    ) : null;
+
   // จองแล้ว → โครงเดียวกับหลังรักษา (HomeBento): นัดเต็มแถว → แผนการรักษา | ผลประเมิน (สูงเท่ากัน) → ดูแลตัวเอง | ติดต่อคลินิก
   if (booked && b) {
     return (
@@ -3794,24 +3813,27 @@ function DraftBento({
         {tabs}
         <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-          <PlanTile width={halfW} plan="นวดราชสำนัก" done={0} total={6} values={[]} note={d.caution} />
+          <PlanTile width={halfW} plan="นวดราชสำนัก" done={0} total={6} values={[]} />
           <View pointerEvents="none">
             <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
             <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
-          <Tile style={{ width: halfW, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
-            <TileTitle title="ติดต่อคลินิก" />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-              <Icon name="phone" size="xs" color={colors.brand.primary} />
-              <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-                {clinicPhone(b.clinic)}
-              </Text>
-            </View>
-          </Tile>
+          <View style={{ width: halfW, gap: BENTO_GAP }}>
+            <Tile style={{ gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
+              <TileTitle title="ติดต่อคลินิก" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+                <Icon name="phone" size="xs" color={colors.brand.primary} />
+                <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
+                  {clinicPhone(b.clinic)}
+                </Text>
+              </View>
+            </Tile>
+            {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
+          </View>
         </View>
       </View>
     );
@@ -3927,31 +3949,8 @@ function DraftBento({
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
-            {[
-              { title: 'ไม่ต้องการ', icon: 'x-circle' as const, color: colors.status.danger.fg, items: d.caution ? d.caution.split(' · ') : [] },
-              {
-                title: 'ก่อนมานวด',
-                icon: 'check-circle' as const,
-                color: colors.brand.primary,
-                items: [...prep, ...procedureGates(profile).filter((g) => !g.allowed).map((g) => `งด${g.procedure}ครั้งนี้`)],
-              },
-            ]
-              .filter((sec) => sec.items.length)
-              .map((sec) => (
-                <Tile key={sec.title} style={{ gap: space[2] }}>
-                  <TileTitle title={sec.title} />
-                  {sec.items.map((it) => (
-                    <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
-                      <View style={{ marginTop: 3 }}>
-                        <Icon name={sec.icon} size="xs" color={sec.color} />
-                      </View>
-                      <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
-                        {it}
-                      </Text>
-                    </View>
-                  ))}
-                </Tile>
-              ))}
+            {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
+            {listCard('ก่อนมานวด', 'check-circle', colors.brand.primary, [...prep, ...procedureGates(profile).filter((g) => !g.allowed).map((g) => `งด${g.procedure}ครั้งนี้`)])}
           </View>
         </View>
       )}
@@ -4295,7 +4294,7 @@ function PlannedSheet({ visible, onClose, tc, visits }: { visible: boolean; onCl
  * การ์ดแผนการรักษา (ใช้ทั้งก่อนและหลังนวดครั้งแรก): จำนวนครั้ง/ทั้งคอร์ส + กราฟแนวโน้มความปวด · รูปแบบนวดขวาบน
  * note = ข้อควรระวังจากผลประเมิน (ถ้ามี)
  */
-function PlanTile({ width, plan, done, total, values, note, onPress }: { width: number; plan: string; done: number; total: number; values: (number | undefined)[]; note?: string; onPress?: () => void }) {
+function PlanTile({ width, plan, done, total, values, onPress }: { width: number; plan: string; done: number; total: number; values: (number | undefined)[]; onPress?: () => void }) {
   const { colors } = useTheme();
   return (
     <Tile style={{ width, gap: space[2] }} onPress={onPress} accessibilityLabel={`แผนการรักษา ${done} จาก ${total} ครั้ง${onPress ? ' ดูรายละเอียดการรักษา' : ''}`}>
@@ -4314,11 +4313,6 @@ function PlanTile({ width, plan, done, total, values, note, onPress }: { width: 
           {total > done ? `· เหลือ ${total - done}` : '· ครบแล้ว'}
         </Text>
       </View>
-      {note ? (
-        <Text variant="caption" color={colors.status.warning.fg} numberOfLines={2} style={{ marginTop: -space[2] }}>
-          {note}
-        </Text>
-      ) : null}
       {/* แนวโน้มความปวดหลังนวดทั้งคอร์ส: เต็มพื้นที่ที่เหลือ ชิดขอบซ้าย-ขวา-ล่าง · นวดแล้ว = สีตามระดับปวด · ยังไม่ถึง = เทา */}
       <View style={{ flex: 1, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD, marginTop: -space[2] }}>
         <CourseTrend values={values} total={total} />
