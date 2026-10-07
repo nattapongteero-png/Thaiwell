@@ -105,6 +105,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
   // ชื่อบริการตามที่ผู้ป่วยเห็น (ไม่มีระยะเวลา) · คลินิกใช้รหัส serviceId เป็นหลัก
   const service = (request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1).split(' · ')[0];
   const complaint = it?.complaint ?? patient.complaint;
+  const { data: old } = await cloud.from('tw_patients').select('profile').eq('id', patient.id).maybeSingle();
   const { error: pe } = await cloud.from('tw_patients').upsert({
     id: patient.id,
     name: patient.name,
@@ -112,7 +113,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     gender: patient.gender,
     age: patient.age,
     // บัญชีจริง: ผูกกับบัญชี + ข้อมูลตามบัตรประชาชน (คลินิกลงทะเบียนให้ตรงคน)
-    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null, profile: { avatar: patient.avatar } } : {}),
+    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null, profile: { ...((old?.profile as object) ?? {}), avatar: patient.avatar } } : {}),
   });
   if (pe) throw pe;
   const { error } = await cloud.from('tw_appointments').insert({
@@ -187,7 +188,10 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
   if (s !== p) {
     // คลินิกส่งเช็กอินกลับ (รหัส QR ไม่ผ่าน) → ไม่ใช่การยืนยันนัดใหม่
     if (s === 'confirmed' && p === 'checked_in' && (row.note ?? '').startsWith('checkin-rejected')) out.push({ id: id('ckno'), at, type: 'checkinRejected', ref: row.id, reason: (row.note ?? '').replace(/^checkin-rejected:\s*/, '') });
-    else if (s === 'confirmed') out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true });
+    else if (s === 'confirmed') {
+      const as = (row as CloudRow & { assessment?: { source?: string; course?: { name: string; no: number; total: number } } }).assessment;
+      out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true, byClinic: as?.source === 'clinic', patientId: row.patient_id, course: as?.course });
+    }
     else if (s === 'rejected') out.push({ id: id('no'), at, type: 'rejected', ref: row.id, reason: row.note ?? '' });
     else if (s === 'called') out.push({ id: id('call'), at, type: 'queue', ref: row.id, queue: row.queue_no ?? '', called: true });
     else if (s === 'in_service') out.push({ id: id('start'), at, type: 'started', ref: row.id });
@@ -240,6 +244,19 @@ export function startAccountSync(seen: Record<string, CloudRow>) {
 export function stopAccountSync() {
   gateOpen = false;
   rows.clear();
+}
+/** คอร์สการรักษาที่คลินิกเปิดให้ (คลินิกเขียนไว้ใน tw_patients.profile.course) */
+export interface ClinicCourse {
+  name: string;
+  service: string;
+  total: number;
+  used: number;
+  startedOn: string;
+  expiresOn: string;
+}
+export async function fetchMyCourse(userId: string): Promise<ClinicCourse | null> {
+  const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
+  return ((data?.profile as { course?: ClinicCourse } | null)?.course as ClinicCourse | undefined) ?? null;
 }
 /** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
 export async function fetchMyHn(userId: string): Promise<string | null> {

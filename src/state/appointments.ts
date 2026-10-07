@@ -54,7 +54,7 @@ export function useAllAppointments() {
   return [
     ...cases.filter((c) => c.appointment.date !== '-').map((c) => ({ key: `c:${c.id}`, topic: `รักษา${c.short}`, clinic: caseClinic(c), date: c.appointment.today ? 'วันนี้' : c.appointment.date, time: c.appointment.time })),
     ...drafts.filter((d) => d.booking).map((d) => ({ key: `d:${d.id}`, topic: d.title, clinic: d.booking!.clinic, date: d.booking!.date, time: d.booking!.time })),
-    ...looseBookings.map((b) => ({ key: `l:${b.id}`, topic: 'นัดเรื่องใหม่', clinic: b.clinic, date: b.date, time: b.time })),
+    ...looseBookings.map((b) => ({ key: `l:${b.id}`, topic: b.course ? `คอร์ส${b.course.name}` : 'นัดเรื่องใหม่', clinic: b.clinic, date: b.date, time: b.time })),
   ];
 }
 const BASE_PREP = ['งดอาหารหนักก่อนนวด 30 นาที', 'ใส่เสื้อผ้าหลวมสบาย'];
@@ -121,9 +121,11 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
     queue: booking.date === 'วันนี้' ? booking.queue : undefined,
     therapist: booking.therapist,
     service: booking.service,
-    visit: 'ครั้งแรก',
+    // นัดตามคอร์สที่คลินิกลงให้
+    topic: booking.course ? `คอร์ส${booking.course.name}` : undefined,
+    visit: booking.course ? `ครั้งที่ ${booking.course.no} / ${booking.course.total}` : 'ครั้งแรก',
     prep: BASE_PREP,
-    assessed: false,
+    assessed: !!booking.course,
     red: false,
     pending: booking.status === 'pending',
     stage: booking.stage,

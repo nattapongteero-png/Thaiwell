@@ -82,7 +82,8 @@ export interface ClinicRequest {
 
 export type ClinicEvent =
   /** cloud = เลขคิวมาจากคลินิกตอนเช็กอิน (แอปไม่ออกเลขคิวเอง) */
-  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean }
+  /** byClinic = คลินิกลงนัดเอง (นัดตามคอร์ส) ไม่ได้มาจากคำขอจองในแอป */
+  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean; byClinic?: boolean; patientId?: string; course?: { name: string; no: number; total: number } }
   | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
   /** cloud = คลินิกเป็นคนออกบิล (แอปไม่จำลองบิล) · record = ผลการรักษาที่คลินิกบันทึก */
   | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number; cloud?: boolean; record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string } }

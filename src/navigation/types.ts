@@ -34,6 +34,7 @@ export type RootStackParamList = {
   Notifications: undefined;
   /** บิล/ใบเสร็จจากคลินิก */
   Bills: undefined;
+  Course: undefined;
   Bill: { id: string };
   // ผู้รับบริการ — หลังรับบริการ
   PostAssessment: { caseId?: string; draftId?: string; looseId?: string } | undefined;
