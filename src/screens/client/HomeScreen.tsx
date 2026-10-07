@@ -127,7 +127,7 @@ import { PainPicker } from './home/PainPicker';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
-import { afterOf } from './home/TreatmentDetailBody';
+import { afterOf, sessionRecord } from './home/TreatmentDetailBody';
 import { preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
@@ -3298,37 +3298,43 @@ function ReviewCard({
 }
 
 /**
- * ผลการรักษาของเรื่องหนึ่ง (แชท → "ดูผลการรักษา") — ตอบคำถาม "รักษาแล้วได้ผลไหม" ตามลำดับที่ผู้ใช้อยากรู้
- * 1) ภาพรวมทั้งคอร์ส: ก่อนครั้งแรก → หลังครั้งล่าสุด + กราฟแนวโน้ม (จุดเทา = ครั้งที่ยังไม่ถึง)
- * 2) ครั้งล่าสุด (คะแนนของคลินิก) · อาการตอนนี้ (ติดตามผล/ประเมินก่อนนวด — ผลคงอยู่ไหม)
- * 3) แต่ละครั้ง (ล่าสุดก่อน) → ดูรายละเอียดทั้งหมด
- * ไม่ใส่: ท่ายืด (มีตัวเลือกแยก) · จุดที่นวด · ผู้ให้บริการ (อยู่ในรายละเอียด)
+ * ผลการรักษาของเรื่องหนึ่ง (แชท → "ดูผลการรักษา") — คะแนนปวดอยู่ที่เดียว ไม่ซ้ำกันหลายการ์ด
+ * 1) ผลการรักษา: ก่อนครั้งแรก → ล่าสุด + อาการตอนนี้ (ผลคงอยู่ไหม) · กราฟเมื่อนวดแล้ว 2 ครั้งขึ้นไป
+ * 2) ครั้งล่าสุด: ทำอะไรไป + คำแนะนำจากคลินิก (บันทึกการรักษา) → ดูรายละเอียดทั้งหมด
+ * 3) แต่ละครั้ง: เฉพาะเมื่อมีมากกว่า 1 ครั้ง
  */
 export function HistoryBento({ tc, onAll }: { tc: TreatmentCase; onAll?: () => void; onSelfCare?: (groupId?: string) => void }) {
   const { colors } = useTheme();
   const { followUps, caseToday } = useJourney();
-  const [width, setWidth] = React.useState(0);
-  const halfW = (width - BENTO_GAP) / 2;
   const first = tc.visits[0];
-  const last = tc.visits[tc.visits.length - 1];
-  // อาการตอนนี้: ประเมินก่อนนวดวันนี้ > ผลติดตามหลังนวดครั้งล่าสุด (เฉลี่ยทุกจุด) · ไม่มี = ยังไม่ได้บอก
+  const lastIdx = tc.visits.length - 1;
+  const last = tc.visits[lastIdx];
+  // อาการตอนนี้: ประเมินก่อนนวดวันนี้ > ผลติดตามหลังนวดครั้งล่าสุด (เฉลี่ยทุกจุด)
   const latestSession = tc.pending[0];
   const fu = latestSession ? followUps.find((f) => f.sessionId === latestSession.id) : undefined;
   const fuPain = fu?.areas.length ? Math.round(fu.areas.reduce((n, a) => n + a.painAfter, 0) / fu.areas.length) : undefined;
   const now = caseToday[tc.id]?.pain ?? fuPain;
   const remain = tc.course.total - tc.course.done;
-  // ชุดเดียวกับหน้าแรก: ครั้งล่าสุดที่ยังไม่ประเมินหลังนวด = ยังไม่มีคะแนน → ล่าสุดที่มีคะแนนคือครั้งก่อนหน้า
   const trend = trendValues(tc);
   const latest = [...trend].reverse().find((v) => v !== undefined) ?? first.painBefore;
-  if (!width) return <View style={{ alignSelf: 'stretch' }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))} />;
+  const scored = trend.filter((v) => v !== undefined).length;
+  const rec = sessionRecord(tc, lastIdx);
   const big = (v: number) => (
     <Text variant="displayXl" style={{ fontSize: 32, lineHeight: 42 }} color={painColorOf(v)}>
       {v}
     </Text>
   );
+  const line = (icon: React.ComponentProps<typeof Icon>['name'], text: string) => (
+    <View key={text} style={{ flexDirection: 'row', gap: space[2], alignItems: 'flex-start' }}>
+      <Icon name={icon} size="xs" color={colors.text.tertiary} />
+      <Text variant="bodySm" style={{ flex: 1 }}>
+        {text}
+      </Text>
+    </View>
+  );
   return (
-    <View style={{ alignSelf: 'stretch', gap: BENTO_GAP }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
-      {/* 1) ภาพรวมทั้งคอร์ส */}
+    <View style={{ alignSelf: 'stretch', gap: BENTO_GAP }}>
+      {/* 1) ผลการรักษา */}
       <Tile style={{ gap: space[2] }}>
         <TileTitle title="ตั้งแต่เริ่มรักษา" meta={`${tc.course.done}/${tc.course.total} ครั้ง${remain > 0 ? ` · เหลือ ${remain}` : ''}`} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
@@ -3342,82 +3348,62 @@ export function HistoryBento({ tc, onAll }: { tc: TreatmentCase; onAll?: () => v
             <DeltaPill before={first.painBefore} after={latest} />
           </View>
         </View>
-        <View style={{ height: 96, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD }}>
-          <CourseTrend values={trend} total={tc.course.total} />
-        </View>
+        {now !== undefined && now !== latest ? (
+          <Text variant="bodySm" tone="secondary">
+            ตอนนี้ <Text variant="labelMd" color={painColorOf(now)}>{now}/10</Text> · {now < latest ? `ดีขึ้นอีก ${latest - now}` : `ปวดกลับมา +${now - latest}`}
+          </Text>
+        ) : now !== undefined ? (
+          <Text variant="bodySm" tone="secondary">
+            ตอนนี้ผลยังคงอยู่
+          </Text>
+        ) : null}
+        {scored >= 2 ? (
+          <View style={{ height: 96, marginHorizontal: -TILE_PAD, marginBottom: -TILE_PAD }}>
+            <CourseTrend values={trend} total={tc.course.total} />
+          </View>
+        ) : null}
       </Tile>
 
-      {/* 2) ครั้งล่าสุด · อาการตอนนี้ */}
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <Tile style={{ width: halfW, gap: space[1] }}>
-          <TileTitle title="ครั้งล่าสุด" meta={last.date} />
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
-            <Text variant="titleXl">
-              {last.painBefore} → {last.selfPain ?? '–'}
-            </Text>
-            <Text variant="labelSm" tone="secondary">
-              /10
-            </Text>
-          </View>
-          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-            ก่อน → หลังนวด
-          </Text>
-        </Tile>
-        <Tile style={{ width: halfW, gap: space[1] }}>
-          <TileTitle title="อาการตอนนี้" />
-          {now !== undefined ? (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space[1] }}>
-                <Text variant="titleXl" color={painColorOf(now)}>
-                  {now}
-                </Text>
-                <Text variant="labelSm" tone="secondary">
-                  /10
-                </Text>
-              </View>
-              {/* เทียบหลังนวดครั้งล่าสุด: ผลคงอยู่ไหม */}
-              <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                {now <= last.painAfter ? 'ผลยังคงอยู่' : `ปวดกลับมา +${now - last.painAfter}`}
-              </Text>
-            </>
-          ) : (
-            <Text variant="bodyXs" tone="secondary">
-              ยังไม่ได้บอกอาการหลังนวด
-            </Text>
-          )}
-        </Tile>
-      </View>
-
-      {/* 3) แต่ละครั้ง (ล่าสุดก่อน) */}
+      {/* 2) ครั้งล่าสุด: ทำอะไรไป · คำแนะนำ */}
       <Tile style={{ gap: space[2] }} onPress={onAll} accessibilityLabel={onAll ? 'ดูรายละเอียดการรักษาทั้งหมด' : undefined}>
-        <TileTitle title="แต่ละครั้ง" />
-        {[...tc.visits].reverse().map((v, k) => {
-          const no = tc.visits.length - k;
-          const va = afterOf(tc, no - 1);
-          const d = va === undefined ? null : v.painBefore - va;
-          return (
-            <View key={`${no}-${v.date}`} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-              <Text variant="bodySm" style={{ width: 64 }}>
-                ครั้งที่ {no}
-              </Text>
-              <Text variant="bodyXs" tone="tertiary" style={{ flex: 1 }} numberOfLines={1}>
-                {v.date}
-              </Text>
-              <Text variant="labelSm">
-                {v.painBefore} → <Text variant="labelSm" color={va === undefined ? colors.text.tertiary : painColorOf(va)}>{va ?? '–'}</Text>
-              </Text>
-              <Text variant="bodyXs" tone={d !== null && d > 0 ? undefined : 'tertiary'} color={d !== null && d > 0 ? colors.brand.primary : undefined} style={{ width: 28, textAlign: 'right' }}>
-                {d === null ? '' : d > 0 ? `-${d}` : d === 0 ? '0' : `+${-d}`}
-              </Text>
-            </View>
-          );
-        })}
+        <TileTitle title={`ครั้งที่ ${lastIdx + 1}`} meta={last.date} />
+        {rec.diagnoses?.length ? line('clipboard', rec.diagnoses.join(', ')) : null}
+        {line('activity', rec.techniques.join(' · '))}
+        {rec.advice.slice(0, 2).map((a) => line('check', a))}
         {onAll ? (
           <Text variant="labelSm" color={colors.brand.primary}>
             ดูรายละเอียดทั้งหมด
           </Text>
         ) : null}
       </Tile>
+
+      {/* 3) แต่ละครั้ง (ล่าสุดก่อน) — มีครั้งเดียว = ซ้ำกับด้านบน ไม่แสดง */}
+      {tc.visits.length > 1 ? (
+        <Tile style={{ gap: space[2] }}>
+          <TileTitle title="แต่ละครั้ง" />
+          {[...tc.visits].reverse().map((v, k) => {
+            const no = tc.visits.length - k;
+            const va = afterOf(tc, no - 1);
+            const d = va === undefined ? null : v.painBefore - va;
+            return (
+              <View key={`${no}-${v.date}`} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+                <Text variant="bodySm" style={{ width: 64 }}>
+                  ครั้งที่ {no}
+                </Text>
+                <Text variant="bodyXs" tone="tertiary" style={{ flex: 1 }} numberOfLines={1}>
+                  {v.date}
+                </Text>
+                <Text variant="labelSm">
+                  {v.painBefore} → <Text variant="labelSm" color={va === undefined ? colors.text.tertiary : painColorOf(va)}>{va ?? '–'}</Text>
+                </Text>
+                <Text variant="bodyXs" tone={d !== null && d > 0 ? undefined : 'tertiary'} color={d !== null && d > 0 ? colors.brand.primary : undefined} style={{ width: 28, textAlign: 'right' }}>
+                  {d === null ? '' : d > 0 ? `-${d}` : d === 0 ? '0' : `+${-d}`}
+                </Text>
+              </View>
+            );
+          })}
+        </Tile>
+      ) : null}
     </View>
   );
 }
