@@ -72,8 +72,8 @@ import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
-import { guideFor } from '../../data/treatmentGuides';
-import { ALL_RADIATE_OPTIONS, RADIATE_SEP, radiateAnswers, radiateFor, radiateForAll, radiateList, radiatePins } from '../../data/radiation';
+import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
+import { ALL_RADIATE_OPTIONS, NO_RADIATE, RADIATE_SEP, radiateAnswers, radiateFor, radiateForAll, radiateList, radiatePins } from '../../data/radiation';
 import { evaluateSafety } from '../../services/safetyEngine';
 import { needsReview } from '../../services/followUpService';
 import { useNav } from '../../navigation/types';
@@ -885,6 +885,14 @@ export function HomeScreen() {
     if (!fromStep && assess.step === 'radiate' && patch?.radiate) {
       const syms = Object.keys(assess.sel).filter((k) => !HOME_CONTENT.related.includes(k));
       const list = [...radiateList(assess.radiate), patch.radiate];
+      // บริเวณถัดไปอยู่ในแนวร้าวที่ตอบแล้ว (เช่น หลังร้าวลงขา → ไม่ถามว่าขาร้าวไหม) = อาการเดียวกัน ข้ามไป
+      const all = radiateForAll(syms);
+      while (all[list.length]) {
+        const k = guideKeyOf(all[list.length].symptom);
+        const covered = radiateAnswers(syms, list.join(RADIATE_SEP)).some((a) => k && a.option?.covers?.includes(k));
+        if (!covered) break;
+        list.push(NO_RADIATE);
+      }
       patch = { ...patch, radiate: list.join(RADIATE_SEP) };
       if (radiateForAll(syms).length > list.length) {
         const p2 = patch;

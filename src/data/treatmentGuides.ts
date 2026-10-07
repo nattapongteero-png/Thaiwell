@@ -210,6 +210,8 @@ const guideOf = (symptom: string) => {
   const key = MATCH.find(([w]) => symptom.includes(w))?.[1];
   return GUIDES.find((g) => g.key === key);
 };
+/** คีย์แนวทางของอาการ (ใช้ตรวจว่าอยู่ในแนวร้าวของอีกจุดไหม) */
+export const guideKeyOf = (symptom: string) => guideOf(symptom)?.key;
 const sideOf = (symptom: string): Side => (symptom.endsWith('ซ้าย') ? 'L' : symptom.endsWith('ขวา') ? 'R' : 'both');
 const pinsOf = (p: PointDef, side: Side): BodyPin[] => (!p.R ? p.L : side === 'L' ? p.L : side === 'R' ? p.R : [...p.L, ...p.R]);
 
