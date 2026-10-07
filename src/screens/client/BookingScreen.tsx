@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AppBar, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
+import { AppBar, BottomSheet, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -34,6 +34,81 @@ export const THERAPISTS = [
 const CLINIC = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 
 const WEEKDAY_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const MONTH_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+/**
+ * ปฏิทินรายเดือน (เลือกวันล่วงหน้าไกลกว่าแถบวัน) — ช่วงตามที่หมอลงตาราง · วันมีคิว = จุด · ไม่มี/ผ่านไปแล้ว = กดไม่ได้
+ */
+function CalendarSheet({ visible, onClose, open, last, value, onPick }: { visible: boolean; onClose: () => void; open: Set<number>; last: number; value: number | null; onPick: (offset: number) => void }) {
+  const { colors } = useTheme();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastDate = new Date(today);
+  lastDate.setDate(today.getDate() + Math.max(0, last));
+  const months = (lastDate.getFullYear() - today.getFullYear()) * 12 + lastDate.getMonth() - today.getMonth();
+  const [m, setM] = React.useState(0);
+  React.useEffect(() => {
+    if (!visible) return;
+    // เปิดที่เดือนของวันที่เลือกไว้
+    if (value === null) return setM(0);
+    const v = new Date(today);
+    v.setDate(today.getDate() + value);
+    setM((v.getFullYear() - today.getFullYear()) * 12 + v.getMonth() - today.getMonth());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+  const first = new Date(today.getFullYear(), today.getMonth() + m, 1);
+  const count = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const cells: (number | null)[] = [...Array.from({ length: first.getDay() }, () => null), ...Array.from({ length: count }, (_, i) => i + 1)];
+  const offsetOf = (dnum: number) => Math.round((new Date(first.getFullYear(), first.getMonth(), dnum).getTime() - today.getTime()) / 86400000);
+  const navBtn = (icon: 'chevron-left' | 'chevron-right', disabled: boolean, onPress: () => void, label: string) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.sunken, opacity: disabled ? 0.35 : 1 }}>
+      <Icon name={icon} size="sm" />
+    </Pressable>
+  );
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="เลือกวัน">
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        {navBtn('chevron-left', m <= 0, () => setM(m - 1), 'เดือนก่อน')}
+        <Text variant="titleSm">
+          {MONTH_FULL[first.getMonth()]} {first.getFullYear() + 543}
+        </Text>
+        {navBtn('chevron-right', m >= months, () => setM(m + 1), 'เดือนถัดไป')}
+      </View>
+      <View style={{ flexDirection: 'row' }}>
+        {WEEKDAY_SHORT.map((w) => (
+          <Text key={w} variant="caption" tone="tertiary" style={{ flex: 1, textAlign: 'center' }}>
+            {w}
+          </Text>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {cells.map((dnum, i) => {
+          if (dnum === null) return <View key={`e${i}`} style={{ width: `${100 / 7}%`, height: 48 }} />;
+          const off = offsetOf(dnum);
+          const can = open.has(off);
+          const on = value === off;
+          return (
+            <View key={dnum} style={{ width: `${100 / 7}%`, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: on, disabled: !can }}
+                accessibilityLabel={`${dnum} ${MONTH_FULL[first.getMonth()]}${can ? '' : ' ไม่มีคิว'}`}
+                disabled={!can}
+                onPress={() => onPick(off)}
+                style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text.primary : 'transparent', opacity: can ? 1 : 0.3 }}
+              >
+                <Text variant="labelMd" color={on ? colors.text.inverse : off === 0 ? colors.brand.primary : colors.text.primary}>
+                  {dnum}
+                </Text>
+                {can && !on ? <View style={{ position: 'absolute', bottom: 5, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand.primary }} /> : null}
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+    </BottomSheet>
+  );
+}
 
 type BookingParams = { clinic?: string; therapist?: string; day?: string; time?: string; service?: ServiceId; caseId?: string; draftId?: string; looseId?: string };
 /** เรื่องที่จอง: ใบการรักษา / ใบร่าง / นัดเรื่องใหม่ที่มีอยู่ (เลื่อน) / เรื่องใหม่ (นัดเพิ่ม) */
@@ -144,7 +219,21 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     if (who !== ANY_THERAPIST && !free.some((x) => x.id === who)) setWho(preferred && free.some((x) => x.id === preferred) ? preferred : ANY_THERAPIST);
   };
   // วันที่มีในตาราง (วันนี้ → วันสุดท้ายที่มีคิว) · เวลาของวันที่เลือก
-  const days = Array.from({ length: anySlots.length ? Math.max(...anySlots.map((f) => f.day)) + 1 : 0 }, (_, i) => i);
+  // แถบวัน = 14 วันแรก (จองส่วนใหญ่) · ไกลกว่านั้นเลือกจากปฏิทิน (หมอลงตารางเองกี่วันก็ได้) → เลือกแล้วแถบยาวถึงวันนั้น
+  const lastDay = anySlots.length ? Math.max(...anySlots.map((f) => f.day)) : -1;
+  const days = Array.from({ length: lastDay < 0 ? 0 : Math.max(Math.min(lastDay, 13), day ?? 0) + 1 }, (_, i) => i);
+  const openDays = new Set(anySlots.map((f) => f.day));
+  const [calOpen, setCalOpen] = React.useState(false);
+  const stripRef = React.useRef<ScrollView>(null);
+  const DAY_W = 56;
+  const [stripX, setStripX] = React.useState(0);
+  // เดือนเหนือแถบวัน = เดือนของวันแรกที่เห็น (เลื่อนข้ามเดือนแล้วเปลี่ยนตาม)
+  const monthOf = (offset: number) => {
+    const dt = new Date();
+    dt.setDate(dt.getDate() + offset);
+    return `${MONTH_FULL[dt.getMonth()]} ${dt.getFullYear() + 543}`;
+  };
+  const firstSeen = Math.max(0, Math.floor(stripX / (DAY_W + space[2])));
   const timesOf = (d: number) => [...new Set(anySlots.filter((f) => f.day === d).map((f) => f.time))].sort();
   // เลือกผู้ให้บริการ → เลื่อนการ์ดที่เลือกมาชิดซ้าย (แบบแถบเลือกเรื่อง) · เลือกให้อัตโนมัติก็เลื่อนตาม
   const whoRef = React.useRef<ScrollView>(null);
@@ -360,14 +449,43 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
 
           {/* วัน → เวลา → ผู้ให้บริการ */}
           <View style={{ gap: space[3] }}>
-            <Text variant="labelLg">วันและเวลา</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text variant="labelLg">วันและเวลา</Text>
+                {days.length ? (
+                  <Text variant="bodyXs" tone="secondary">
+                    {monthOf(firstSeen)}
+                  </Text>
+                ) : null}
+              </View>
+              {/* หมอลงตารางไกลกว่าแถบวัน → เลือกจากปฏิทิน */}
+              {lastDay >= 0 ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="เลือกวันจากปฏิทิน" onPress={() => setCalOpen(true)} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space[3], height: 34, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border.subtle, backgroundColor: colors.surface.default }}>
+                  <Icon name="calendar" size="xs" color={colors.text.primary} />
+                  <Text variant="labelSm">ปฏิทิน</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <CalendarSheet
+              visible={calOpen}
+              onClose={() => setCalOpen(false)}
+              open={openDays}
+              last={lastDay}
+              value={day}
+              onPick={(d) => {
+                setCalOpen(false);
+                pickDay(d);
+                // แถบวันเลื่อนไปที่วันที่เลือก
+                setTimeout(() => stripRef.current?.scrollTo({ x: Math.max(0, d * (DAY_W + space[2]) - DAY_W), animated: true }), 120);
+              }}
+            />
             {staff.length ? (
               <>
                 {/* ① วัน: ไม่มีคิวว่าง = กดไม่ได้ */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[2], paddingHorizontal: space[4] }}>
+                <ScrollView ref={stripRef} horizontal showsHorizontalScrollIndicator={false} onScroll={(e) => setStripX(e.nativeEvent.contentOffset.x)} scrollEventThrottle={64} style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[2], paddingHorizontal: space[4] }}>
                   {days.map((d) => {
                     const on = day === d;
-                    const open = anySlots.some((f) => f.day === d);
+                    const open = openDays.has(d);
                     const date = new Date();
                     date.setDate(date.getDate() + d);
                     return (
@@ -378,7 +496,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                         accessibilityLabel={`${dayLabel(d)}${open ? '' : ' เต็ม'}`}
                         disabled={!open}
                         onPress={() => pickDay(d)}
-                        style={{ width: 56, paddingVertical: space[2], borderRadius: 16, alignItems: 'center', gap: 2, backgroundColor: on ? colors.text.primary : colors.surface.default, borderWidth: 1, borderColor: on ? colors.text.primary : colors.border.subtle, opacity: open ? 1 : 0.4 }}
+                        style={{ width: DAY_W, paddingVertical: space[2], borderRadius: 16, alignItems: 'center', gap: 2, backgroundColor: on ? colors.text.primary : colors.surface.default, borderWidth: 1, borderColor: on ? colors.text.primary : colors.border.subtle, opacity: open ? 1 : 0.4 }}
                       >
                         <Text variant="caption" color={on ? 'rgba(255,255,255,0.75)' : colors.text.secondary}>
                           {d === 0 ? 'วันนี้' : WEEKDAY_SHORT[date.getDay()]}
