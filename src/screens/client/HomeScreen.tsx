@@ -1454,7 +1454,9 @@ export function HomeScreen() {
     bodyRef.current?.face('front');
     setActiveId(id);
     setHistoryOpen(false);
+    // แชทเดิม → ไปที่ข้อความล่าสุด (รอข้อความเก่าแสดงครบก่อน · วัดซ้ำเผื่อการ์ด/รูปโหลดช้า)
     scrollToThread();
+    for (const ms of [250, 600, 1100]) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), ms);
   };
   /** แตะหัวข้อในสรุปการประเมิน → เลื่อนไปที่คำถามนั้น (done → ผลแนวทางการรักษา) */
   const jumpTo = (step: AssessStep) => {
