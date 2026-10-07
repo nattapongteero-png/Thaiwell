@@ -384,6 +384,33 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
   };
 }
 
+/** ก่อน → หลัง (สองกล่อง) + บรรทัดสรุปการเปลี่ยนแปลง — ใช้ทั้งรายครั้งและครั้งที่ประเมินก่อนนวดแล้ว */
+function PainCompare({ from, to, note }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note: { text: string; good?: boolean } }) {
+  const { colors } = useTheme();
+  const box = (label: string, v: number | undefined, empty?: string) => (
+    <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
+      <Text variant="bodyXs" tone="secondary">{label}</Text>
+      {v === undefined ? (
+        <Text variant="bodyMd" tone="tertiary" style={{ lineHeight: 36 }}>{empty ?? '–'}</Text>
+      ) : (
+        <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: painColor(v) }}>{v}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
+      )}
+    </View>
+  );
+  return (
+    <View style={{ gap: space[2] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+        {box(from.label, from.v)}
+        <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
+        {box(to.label, to.v, to.empty)}
+      </View>
+      <Text variant="labelSm" color={note.good ? colors.brand.primary : colors.text.secondary}>
+        {note.text}
+      </Text>
+    </View>
+  );
+}
+
 /** ครั้งถัดไปที่ประเมินก่อนนวดแล้วแต่ยังไม่นวด — ก่อนนวด (วันนี้) · หลังนวด = ยังไม่มี · เทียบหลังนวดครั้งก่อน */
 function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
   const { colors } = useTheme();
@@ -392,12 +419,6 @@ function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
   if (!t) return null;
   const prev = afterOf(tc, tc.visits.length - 1) ?? tc.visits[tc.visits.length - 1].painAfter;
   const d = t.pain - prev;
-  const box = (label: string, v: number | undefined) => (
-    <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
-      <Text variant="bodyXs" tone="secondary">{label}</Text>
-      <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: v === undefined ? colors.text.tertiary : painColor(v) }}>{v ?? '–'}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
-    </View>
-  );
   return (
     <View style={{ gap: space[3] }}>
       <View style={{ gap: 2 }}>
@@ -409,14 +430,12 @@ function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
           ประเมินก่อนนวดแล้ว · ยังไม่นวด
         </Text>
       </View>
-      <View style={{ flexDirection: 'row', gap: space[2] }}>
-        {box('ก่อนนวด', t.pain)}
-        {box('หลังนวด', undefined)}
-        {box('หลังครั้งก่อน', prev)}
-      </View>
-      <Text variant="bodyXs" tone="tertiary">
-        {d > 0 ? `ปวดกลับมา +${d} จากหลังนวดครั้งก่อน` : d < 0 ? `ดีขึ้นอีก ${-d} จากหลังนวดครั้งก่อน` : 'ผลจากครั้งก่อนยังคงอยู่'}
-      </Text>
+      {/* หลังนวดครั้งก่อน → วันนี้ก่อนนวด: ผลจากครั้งก่อนยังอยู่ไหม */}
+      <PainCompare
+        from={{ label: `หลังนวดครั้งที่ ${tc.visits.length}`, v: prev }}
+        to={{ label: 'วันนี้ก่อนนวด', v: t.pain }}
+        note={d > 0 ? { text: `ปวดกลับมา +${d}` } : d < 0 ? { text: `ดีขึ้นอีก ${-d}`, good: true } : { text: 'ผลจากครั้งก่อนยังคงอยู่', good: true }}
+      />
       {t.adverse || t.risk ? (
         <Section icon="clipboard" tint="#2F6FA3" title="แจ้งก่อนนวด">
           {t.adverse ? <Info k="หลังนวดครั้งก่อน" v={t.adverse} /> : null}
@@ -433,7 +452,6 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
   const r = sessionRecord(tc, index);
   const vAfter = afterOf(tc, index);
   const d = vAfter === undefined ? 0 : v.painBefore - vAfter;
-  const prev = index > 0 ? tc.visits[index - 1] : null;
   const dx = dxCode(tc.condition);
   // หัตถการที่ทำ → รหัส ICD-9-CM (ไม่ซ้ำ)
   const procs = [...new Set(r.techniques.map((t) => procCode(t)?.code).filter(Boolean) as string[])];
@@ -450,27 +468,12 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
         </Text>
       </View>
 
-      {/* ผลครั้งนี้ */}
-      <View style={{ flexDirection: 'row', gap: space[2] }}>
-        <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
-          <Text variant="bodyXs" tone="secondary">ก่อนนวด</Text>
-          <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: painColor(v.painBefore) }}>{v.painBefore}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
-        </View>
-        <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
-          <Text variant="bodyXs" tone="secondary">หลังนวด</Text>
-          <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: vAfter === undefined ? colors.text.tertiary : painColor(vAfter) }}>{vAfter ?? '–'}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
-        </View>
-        <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: d > 0 ? colors.brand.subtle : colors.surface.sunken }}>
-          <Text variant="bodyXs" tone="secondary">ครั้งนี้</Text>
-          <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: d > 0 ? colors.brand.primary : colors.text.secondary }}>{d > 0 ? `↘${d}` : '–'}</Text>
-        </View>
-      </View>
-      {prev && vAfter !== undefined ? (
-        <Text variant="bodyXs" tone="tertiary">
-          เทียบครั้งก่อน ({prev.date}): หลังนวด {prev.painAfter} → {vAfter}
-        </Text>
-      ) : null}
-
+      {/* ผลครั้งนี้: ก่อน → หลังนวด · ลดลงกี่คะแนน */}
+      <PainCompare
+        from={{ label: 'ก่อนนวด', v: v.painBefore }}
+        to={{ label: 'หลังนวด', v: vAfter, empty: 'ยังไม่ประเมิน' }}
+        note={vAfter === undefined ? { text: 'ประเมินหลังนวดเพื่อดูผลครั้งนี้' } : d > 0 ? { text: `ปวดลดลง ${d} คะแนน`, good: true } : d < 0 ? { text: `ปวดเพิ่มขึ้น ${-d} คะแนน` } : { text: 'ปวดเท่าเดิม' }}
+      />
       {/* วินิจฉัย (แพทย์แผนไทยบันทึกในหลังบ้าน) + รหัส ICD-10 ชุดเดียวกับหลังบ้าน */}
       <Section icon="clipboard" tint="#2F6FA3" title="วินิจฉัย">
         <Text variant="bodyMd">{r.diagnoses?.join(' · ') ?? tc.condition}</Text>
