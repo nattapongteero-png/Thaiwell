@@ -169,3 +169,16 @@ export function preVisitOpensOn(dateLabel: string): string | null {
   const open = new Date(y, m - 1, d - PREVISIT_OPEN_DAYS);
   return isoToLabel(`${open.getFullYear()}-${String(open.getMonth() + 1).padStart(2, '0')}-${String(open.getDate()).padStart(2, '0')}`);
 }
+
+/**
+ * นัดครั้งแรก: ประเมินไว้ก่อนช่วงเปิด (เช่น ประเมินวันนี้ แต่นัดสัปดาห์หน้า) → ถึงช่วงก่อนนัดต้องยืนยันอาการสั้น ๆ อีกครั้ง
+ * ประเมิน/ยืนยันภายในช่วงแล้ว = ไม่ต้อง · ไม่รู้วันที่ประเมิน (ข้อมูลเก่า) = ไม่บังคับ
+ */
+export function needsConfirm(dateLabel: string | undefined, assessedOn?: string, confirmedOn?: string): boolean {
+  if (!dateLabel || dateLabel === '-' || !assessedOn) return false;
+  if (preVisitOpensOn(dateLabel)) return false;
+  const [y, m, d] = labelToISO(dateLabel).split('-').map(Number);
+  const o = new Date(y, m - 1, d - PREVISIT_OPEN_DAYS);
+  const openISO = `${o.getFullYear()}-${String(o.getMonth() + 1).padStart(2, '0')}-${String(o.getDate()).padStart(2, '0')}`;
+  return assessedOn < openISO && !(confirmedOn && confirmedOn >= openISO);
+}

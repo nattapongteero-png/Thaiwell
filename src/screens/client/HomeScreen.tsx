@@ -18,6 +18,7 @@ import {
   PainScoreCard,
   DeltaPill,
   ReplyChips,
+  ScaleSelector,
   useDockHeight,
   useHideTabs,
   useTabAccessory,
@@ -64,7 +65,8 @@ import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
-import { ASSESS_LOCK_TEXT, assessLock, caseClinic, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
+import { ASSESS_LOCK_TEXT, assessLock, caseClinic, needsConfirm, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
+import { isoToLabel, todayISO } from '../../services/clinicBridge';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
@@ -1031,6 +1033,8 @@ export function HomeScreen() {
         pressure: after.pressure,
         avoid: after.avoid,
         radiate: after.radiate,
+        assessedOn: todayISO(),
+        confirmedOn: undefined,
         // ประเมินซ้ำเรื่องเดิม → เก็บรอบก่อนไว้ (ไม่ลบ) ให้เห็นว่าเปลี่ยนจากอะไร
         history: old ? [...(old.history ?? []), { at: nowTimeText(), pain: old.pain, symptoms: old.symptoms, caution: old.caution }] : undefined,
         guide: (() => {
@@ -2593,6 +2597,7 @@ export function HomeScreen() {
                     onRedFlag={() => nav.navigate('RedFlag', { reason: `ผลประเมิน${selDraft.title}` })}
                     onFollowUp={() => nav.navigate('FollowUp')}
                     onSelfCare={(groupId) => nav.navigate('SelfCare', groupId ? { groupId } : undefined)}
+                    onReassess={() => reassessDraft(selDraft)}
                   />
                 ) : caseIdx >= cases.length ? null : (
                 <HomeBento
@@ -3639,6 +3644,8 @@ function FirstVisitCard({
   onOpen,
   onAssess,
   minutes,
+  assessStep = 'ประเมินอาการก่อนมา',
+  assessLabel = 'ประเมินอาการ',
 }: {
   booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed' };
   /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
@@ -3649,6 +3656,9 @@ function FirstVisitCard({
   onAssess?: () => void;
   /** ระยะเวลาบริการ (เช่น 60 นาที) */
   minutes?: string;
+  /** ข้อความขั้น/ปุ่มของ onAssess (ค่าเริ่มต้น = ประเมินอาการก่อนมา) */
+  assessStep?: string;
+  assessLabel?: string;
 }) {
   const { colors } = useTheme();
   const today = b.date === 'วันนี้';
@@ -3680,15 +3690,15 @@ function FirstVisitCard({
       </View>
       <View style={{ gap: space[2] }}>
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
-        {needAssess ? <StepRow text="ประเมินอาการก่อนมา" /> : null}
+        {needAssess ? <StepRow text={assessStep} /> : null}
         {steps}
         <StepRow done={!!b.queue} text={b.queue ? `ได้คิว ${b.queue}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
       </View>
       {needAssess ? (
         // ยังไม่เคยประเมิน: ประเมินก่อน (คัดกรองความปลอดภัย) · วันนัด = ยังเช็กอินไม่ได้จนกว่าจะประเมิน
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="ประเมินอาการ" onPress={onAssess} style={{ flex: 1 }}>
-            <TilePill icon="edit-3" label="ประเมินอาการ" />
+          <Pressable accessibilityRole="button" accessibilityLabel={assessLabel} onPress={onAssess} style={{ flex: 1 }}>
+            <TilePill icon="edit-3" label={assessLabel} />
           </Pressable>
           {today ? (
             <NavIconButton clinic={b.clinic} />
@@ -3969,7 +3979,10 @@ function DraftBento({
   onSelfCare,
   onPlaces,
   onOpen,
+  onReassess,
 }: {
+  /** ประเมินเรื่องนี้ใหม่ทั้งชุด (อาการเปลี่ยนบริเวณ) */
+  onReassess: () => void;
   width: number;
   draft: DraftCase;
   tabs: React.ReactNode;
@@ -3994,6 +4007,9 @@ function DraftBento({
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
   const [guideOpen, setGuideOpen] = React.useState(false);
+  // ประเมินไว้นานก่อนนัดครั้งแรก → ถึงช่วงก่อนนัด ยืนยันอาการสั้น ๆ ก่อน (แล้วจึงเช็กอินได้)
+  const confirm = !!b && booked && needsConfirm(b.date, d.assessedOn, d.confirmedOn);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
   const avoid = d.caution ? d.caution.split(' · ') : [];
@@ -4020,10 +4036,14 @@ function DraftBento({
       <View style={{ gap: BENTO_GAP }}>
         {tabs}
         <SafetySheet visible={guideOpen} card={null} onClose={() => setGuideOpen(false)} onHospital={() => (setGuideOpen(false), onPlaces('doctor'))} />
+        <ConfirmSheet visible={confirmOpen} draft={d} onClose={() => setConfirmOpen(false)} onReassess={() => (setConfirmOpen(false), onReassess())} />
         <FirstVisitCard
           booking={b}
           onCheckIn={onCheckIn}
           onOpen={onOpen}
+          onAssess={confirm ? () => setConfirmOpen(true) : undefined}
+          assessStep={`ยืนยันอาการก่อนนวด · ประเมินไว้ ${d.assessedOn ? isoToLabelSafe(d.assessedOn) : ''}`}
+          assessLabel="ยืนยันอาการ"
           steps={
             <>
               {/* เลือกบริการเองไม่ตรงผลประเมิน → เตือน (ไม่บังคับ: แตะการ์ด = เปลี่ยนบริการ หรือกดใช้แผนเดิม) */}
@@ -4624,6 +4644,54 @@ function SafetyTile({ width, extra, onPress }: { width: number; /** ข้อจ
         {amber ? 'ผู้ให้บริการจะปรับให้วันนัด' : 'ไม่พบข้อห้ามจากข้อมูลที่ให้มา'}
       </Text>
     </Tile>
+  );
+}
+
+const isoToLabelSafe = (iso: string) => {
+  try {
+    return isoToLabel(iso);
+  } catch {
+    return iso;
+  }
+};
+const CONFIRM_SAME = ['เหมือนเดิม', 'ดีขึ้น', 'แย่ลง', 'ปวดที่ใหม่'];
+
+/**
+ * ยืนยันอาการก่อนนัดครั้งแรก (ประเมินไว้นานก่อนนัด) — 3 ข้อสั้น ไม่ต้องประเมินใหม่ทั้งชุด
+ * เหมือนเดิม/ดีขึ้น/แย่ลง → ใช้แนวทางเดิม ส่งระดับปวดล่าสุดให้ผู้ให้บริการ · ปวดที่ใหม่ → ประเมินใหม่ทั้งชุด · ข้อห้ามใหม่ (ไข้/บาดเจ็บ) → ควรพบแพทย์ก่อน
+ */
+function ConfirmSheet({ visible, draft: d, onClose, onReassess }: { visible: boolean; draft: DraftCase; onClose: () => void; onReassess: () => void }) {
+  const { upsertDraft, notifyClinic, log } = useJourney();
+  const [same, setSame] = React.useState<string | undefined>();
+  const [pain, setPain] = React.useState<number | undefined>();
+  const [risk, setRisk] = React.useState<string | undefined>();
+  const moved = same === 'ปวดที่ใหม่';
+  const ready = moved || (!!same && pain !== undefined && !!risk);
+  const submit = () => {
+    if (moved) return onReassess();
+    const red = preVisitRed('ไม่มี', risk);
+    upsertDraft({ ...d, prevPain: d.pain, pain: pain!, red: d.red || red, confirmedOn: todayISO() });
+    const text = `${d.title} · อาการ${same} · ปวด ${d.pain} → ${pain}/10${risk && risk !== 'ไม่มี' ? ` · ${risk}` : ''}`;
+    notifyClinic(red ? 'ยืนยันอาการก่อนนวด: ควรพบแพทย์ก่อน' : 'ผู้ป่วยยืนยันอาการก่อนนวด', text);
+    log('ผู้รับบริการ → ผู้ให้บริการ', `ยืนยันอาการก่อนนวด ${text}`);
+    onClose();
+  };
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="ยืนยันอาการก่อนนวด" footer={<Button label={moved ? 'ประเมินใหม่' : 'ยืนยัน'} disabled={!ready} onPress={submit} />}>
+      <Panel title={`เทียบกับตอนประเมิน (ปวด ${d.pain}/10)`}>
+        <ReplyChips options={CONFIRM_SAME} selected={same} onPick={setSame} />
+      </Panel>
+      {moved ? null : (
+        <>
+          <Panel title="วันนี้ปวดระดับไหน">
+            <ScaleSelector value={pain} onChange={setPain} compareValue={d.pain} compareLabel="ตอนประเมิน" minLabel="ไม่ปวด" maxLabel="ปวดมาก" />
+          </Panel>
+          <Panel title="ช่วงนี้มีข้อใดต่อไปนี้ไหม">
+            <ReplyChips options={FU_RISK} selected={risk} onPick={setRisk} />
+          </Panel>
+        </>
+      )}
+    </BottomSheet>
   );
 }
 

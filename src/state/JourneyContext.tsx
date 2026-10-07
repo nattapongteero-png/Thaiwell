@@ -140,6 +140,9 @@ export interface DraftCase {
   guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string };
   /** ผลประเมินรอบก่อน ๆ (ประเมินซ้ำ = รอบใหม่ ไม่ลบของเดิม) — at = วันเวลาที่ประเมินรอบนั้นถูกแทน */
   history?: { at: string; pain: number; symptoms: string[]; caution?: string }[];
+  /** วันที่ประเมิน (ISO) · วันที่ยืนยันอาการก่อนนัด (ISO) — ประเมินไว้นานก่อนนัด → ยืนยันอีกครั้งก่อนนวด */
+  assessedOn?: string;
+  confirmedOn?: string;
   radiate?: string;
   /** ผู้ใช้เลือกคงบริการที่จองไว้ แม้ไม่ตรงผลประเมิน (ไม่บังคับเปลี่ยน · ไม่เตือนซ้ำ) */
   keepService?: boolean;
