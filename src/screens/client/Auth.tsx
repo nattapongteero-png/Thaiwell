@@ -60,11 +60,24 @@ export function AuthScreen() {
   const signup = mode === 'สมัครบัญชี';
 
   const nav = useNav();
-  const { resumed } = useJourney();
+  const { resumed, account } = useJourney();
+  /** บัญชีเดิมในเครื่องแต่การเข้าสู่ระบบหลุด → เข้าใหม่แล้วกลับหน้าแรกพร้อมข้อมูลเดิม (ไม่ล้าง) */
+  const [relogin, setRelogin] = React.useState(false);
+  const home = () => nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
   // เข้าสู่ระบบค้างไว้ในเครื่อง → เข้าแอปเลย · มีข้อมูลในแอปที่จำไว้ → กลับหน้าแรกพร้อมข้อมูลเดิม (ไม่ล้าง)
   React.useEffect(() => {
     if (resumed) {
-      nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
+      // บัญชีจริง: ต้องยังเข้าสู่ระบบอยู่ (ไม่งั้นอ่านข้อมูลคลินิก/นัดจากหลังบ้านไม่ได้เลย)
+      if (!account?.userId) return home();
+      void currentUser()
+        .then((u) => {
+          if (u?.id === account.userId) return home();
+          setEmail(account.email ?? '');
+          setRelogin(true);
+          setError('การเข้าสู่ระบบหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง');
+        })
+        .catch(() => home())
+        .finally(() => setChecking(false));
       return;
     }
     void currentUser()
@@ -83,7 +96,12 @@ export function AuthScreen() {
         const r = await signUp(email, password);
         if (r.needsConfirm) setSent(true);
         else if (r.user) enter(r.user);
-      } else enter(await signIn(email, password));
+      } else {
+        const u = await signIn(email, password);
+        // บัญชีเดิม → กลับหน้าแรกพร้อมข้อมูลในเครื่อง · คนอื่น → เริ่มใหม่ตามปกติ
+        if (relogin && u.id === account?.userId) home();
+        else enter(u);
+      }
     } catch (e) {
       setError(thaiError(e));
     } finally {
