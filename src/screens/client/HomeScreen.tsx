@@ -163,6 +163,8 @@ const draftLabel = (d: DraftCase) => {
 };
 /** บริเวณที่ปวด (บริเวณหลักก่อน) — จากแนวทาง (รวมซ้าย/ขวา) · ไม่มี = ตามอาการที่เลือก */
 const draftRegions = (d: DraftCase) => (d.guide?.areas?.length ? d.guide.areas.map((a) => a.region ?? a.symptom) : d.symptoms);
+/** สีโปร่ง (พื้นป้าย) จากสี rgb()/hex */
+const tint = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(', 'rgba(').replace(')', `,${a})`) : c.startsWith('#') && c.length === 7 ? `${c}${Math.round(a * 255).toString(16).padStart(2, '0')}` : c);
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
 /** ข้อมูลหน้าแรกเริ่มที่ 60% ของจอ (ขั้นแรก: เห็นหุ่นเกือบทั้งตัว หมุนได้) → ปัดขึ้น = แผ่นข้อมูลขึ้นมาบังหุ่น (ขั้นที่สอง) */
@@ -2515,14 +2517,26 @@ export function HomeScreen() {
         // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
         <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
           {modelTag.items.map((it, i) => {
-            // บริเวณหลัก (ปวดมากที่สุด) = ป้ายทึบสีเข้ม · บริเวณรอง = ป้ายขาว (มีหลายบริเวณเท่านั้น)
+            // บริเวณหลัก (ปวดมากที่สุด) = พื้นสีอ่อน + ขอบสีตามระดับปวด (ไม่ใช้สีทึบ จะดูเหมือนปุ่ม) · บริเวณรอง = ป้ายขาว
             const main = i === 0 && modelTag.items.length > 1;
             return (
-              <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: main ? 34 : 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: main ? colors.text.primary : colors.surface.default, ...elevation[1] }}>
+              <View
+                key={it}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: space[1],
+                  height: main ? 34 : 30,
+                  paddingHorizontal: space[3],
+                  borderRadius: radius.full,
+                  backgroundColor: main ? tint(modelTag.color, 0.16) : colors.surface.default,
+                  borderWidth: main ? 1.5 : 0,
+                  borderColor: modelTag.color,
+                  ...(main ? null : elevation[1]),
+                }}
+              >
                 <View style={{ width: main ? 10 : 8, height: main ? 10 : 8, borderRadius: 5, backgroundColor: modelTag.color }} />
-                <Text variant={main ? 'labelMd' : 'labelSm'} color={main ? colors.text.inverse : undefined}>
-                  {it}
-                </Text>
+                <Text variant={main ? 'labelMd' : 'labelSm'}>{it}</Text>
               </View>
             );
           })}
@@ -3718,7 +3732,10 @@ function FirstVisitCard({
   minutes,
   assessStep = 'ประเมินอาการก่อนมา',
   assessLabel = 'ประเมินอาการ',
+  onReassess,
 }: {
+  /** ประเมินอีกครั้ง (ยังไม่ถึงวันนัด/ยังไม่เช็กอิน) — ปุ่มรองต่อจากสถานะนัด */
+  onReassess?: () => void;
   booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed' };
   /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
   steps?: React.ReactNode;
@@ -3781,9 +3798,16 @@ function FirstVisitCard({
           )}
         </View>
       ) : pending ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen}>
-          <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen} style={{ flex: 1 }}>
+            <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
+          </Pressable>
+          {onReassess ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="ประเมินอีกครั้ง" onPress={onReassess} style={{ flex: 1 }}>
+              <TilePill icon="edit-3" label="ประเมินอีกครั้ง" dark={false} />
+            </Pressable>
+          ) : null}
+        </View>
       ) : today ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
           {/* เช็กอินแล้ว (ได้คิว) → ดูคิว */}
@@ -3793,9 +3817,16 @@ function FirstVisitCard({
           <NavIconButton clinic={b.clinic} />
         </View>
       ) : (
-        <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen}>
-          <TilePill icon="file-text" label="รายละเอียด" dark={false} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen} style={{ flex: 1 }}>
+            <TilePill icon="file-text" label="รายละเอียด" dark={false} />
+          </Pressable>
+          {onReassess ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="ประเมินอีกครั้ง" onPress={onReassess} style={{ flex: 1 }}>
+              <TilePill icon="edit-3" label="ประเมินอีกครั้ง" dark={false} />
+            </Pressable>
+          ) : null}
+        </View>
       )}
     </Tile>
   );
@@ -4114,6 +4145,8 @@ function DraftBento({
           onCheckIn={onCheckIn}
           onOpen={onOpen}
           onAssess={confirm ? () => setConfirmOpen(true) : undefined}
+          // แก้ผลประเมินได้จนถึงเช็กอิน (กดจากการ์ดได้เลย ไม่ต้องหาใน ThaiWell AI)
+          onReassess={!confirm && !assessLock(b) ? onReassess : undefined}
           assessStep={`ยืนยันอาการก่อนนวด · ประเมินไว้ ${d.assessedOn ? isoToLabelSafe(d.assessedOn) : ''}`}
           assessLabel="ยืนยันอาการ"
           steps={
