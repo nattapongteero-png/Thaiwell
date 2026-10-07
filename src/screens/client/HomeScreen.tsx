@@ -70,7 +70,7 @@ import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor } from '../../data/treatmentGuides';
 import { ALL_RADIATE_OPTIONS, radiateFor, radiateOption, radiatePins } from '../../data/radiation';
-import { evaluateSafety, procedureGates } from '../../services/safetyEngine';
+import { evaluateSafety } from '../../services/safetyEngine';
 import { needsReview } from '../../services/followUpService';
 import { useNav } from '../../navigation/types';
 import { ALL_SYMPTOMS, CHIP_PINS, HOME_CONTENT } from '../../data/homeContent';
@@ -485,7 +485,8 @@ export function HomeScreen() {
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
   const modelTag = (() => {
     if (started || chatHome) return null;
-    if (selDraft) return { title: `${selDraft.symptoms.join(' ') || selDraft.title} · ปวด ${selDraft.pain}/10`, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จากผลประเมิน', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    // ยังไม่ได้รักษา: บอกแค่จุดที่ปวด (ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ)
+    if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     if (selCase && cases.length) {
       const lv = tcase.visits[tcase.visits.length - 1];
       const t = caseToday[tcase.id];
@@ -987,6 +988,10 @@ export function HomeScreen() {
         pressure: after.pressure,
         avoid: after.avoid,
         radiate: after.radiate,
+        guide: (() => {
+          const g = results.find((r) => r.card?.type === 'guideline')?.card;
+          return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods } : old?.guide;
+        })(),
       });
       setActiveDraftId(id);
       // หน้าแรกเปิดที่ใบนี้
@@ -3840,7 +3845,6 @@ function DraftBento({
   const near = nearestClinic();
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
-  const { profile } = useJourney();
 
   // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
   const avoid = d.caution ? d.caution.split(' · ') : [];
@@ -3869,7 +3873,7 @@ function DraftBento({
         <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
         <TherapistTile name={b.therapist} width={width} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-          <PlanTile width={halfW} plan="นวดราชสำนัก" done={0} total={6} values={[]} />
+          <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} />
           <View pointerEvents="none">
             <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           </View>
@@ -3982,7 +3986,11 @@ function DraftBento({
             <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
           </Tile>
         ) : (
-          <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} />
+          served ? (
+            <PlanTile width={halfW} plan="นวดราชสำนัก" done={1} total={6} values={d.after !== undefined ? [d.after] : []} />
+          ) : (
+            <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} />
+          )
         )}
         <View pointerEvents="none">
           {served && d.after !== undefined ? (
@@ -4020,7 +4028,6 @@ function DraftBento({
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
-            {listCard('ก่อนมานวด', 'check-circle', colors.brand.primary, [...prep, ...procedureGates(profile).filter((g) => !g.allowed).map((g) => `งด${g.procedure}ครั้งนี้`)])}
           </View>
         </View>
       )}
@@ -4369,6 +4376,35 @@ function PlannedSheet({ visible, onClose, tc, visits }: { visible: boolean; onCl
  * การ์ดแผนการรักษา (ใช้ทั้งก่อนและหลังนวดครั้งแรก): จำนวนครั้ง/ทั้งคอร์ส + กราฟแนวโน้มความปวด · รูปแบบนวดขวาบน
  * note = ข้อควรระวังจากผลประเมิน (ถ้ามี)
  */
+/**
+ * แนวทางที่แนะนำ (ยังไม่ได้รักษา) — จากผลประเมินของ AI · ไม่ใช่แผนของแพทย์ จึงไม่มีจำนวนครั้ง
+ * จำนวนครั้ง/ความถี่ แพทย์กำหนดหลังตรวจที่คลินิก (มาเป็นแผนการรักษาภายหลัง)
+ */
+function GuideTile({ width, guide, symptoms }: { width: number; guide?: { condition?: string; methods: string[] }; symptoms: string[] }) {
+  const { colors } = useTheme();
+  // 2 ข้อแรก (สูงเท่าการ์ดผลประเมินข้าง ๆ) · รายละเอียดเต็มอยู่ในแชท
+  const methods = (guide?.methods ?? []).slice(0, 2).map((m) => m.replace(/\s*\d+(?:[–-]\d+)?\s*(?:นาที|วินาที).*$/, '')); // ตัดเวลา (ดูเต็มในแชท)
+  return (
+    <Tile style={{ width, gap: space[2] }}>
+      <TileTitle title="แนวทางที่แนะนำ" />
+      <Text variant="titleSm" numberOfLines={2}>
+        {guide?.condition ?? (symptoms.join(' ') || 'ตามผลประเมิน')}
+      </Text>
+      {methods.map((m) => (
+        <View key={m} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
+          <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: 8, backgroundColor: colors.brand.primary }} />
+          <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={1}>
+            {m}
+          </Text>
+        </View>
+      ))}
+      <Text variant="caption" tone="tertiary" style={{ marginTop: 'auto' }}>
+        แพทย์วางแผนจำนวนครั้งหลังตรวจ
+      </Text>
+    </Tile>
+  );
+}
+
 function PlanTile({ width, plan, done, total, values, onPress }: { width: number; plan: string; done: number; total: number; values: (number | undefined)[]; onPress?: () => void }) {
   const { colors } = useTheme();
   return (
