@@ -4477,7 +4477,8 @@ function HomeBento({
   const nextNo = Math.min(tc.course.total, tc.course.done + 1);
   const finished = tc.course.done >= tc.course.total && !hasNext;
   // บิลของเรื่องนี้: รอชำระก่อน · ไม่มี = ใบเสร็จล่าสุด
-  const bill = bills.find((b) => b.caseId === tc.id && b.status === 'pending') ?? bills.find((b) => b.caseId === tc.id);
+  // ครั้งถัดไปเริ่มแล้ว (ประเมินก่อนนวดแล้ว) → ใบเสร็จครั้งก่อนไม่ต้องอยู่หน้าแรก (ดูได้ที่การชำระเงิน) · บิลค้างชำระยังแสดงเสมอ
+  const bill = bills.find((b) => b.caseId === tc.id && b.status === 'pending') ?? (caseToday[tc.id] ? undefined : bills.find((b) => b.caseId === tc.id));
   const preDone = !!today;
   // ประเมินหลังนวดครั้งล่าสุดแล้วหรือยัง: บอกความรู้สึกหลังนวด / ส่งผลติดตาม / ประเมินก่อนนวดครั้งถัดไป (ถามอาการหลังนวดครั้งก่อนแล้ว)
   const needPost = last.selfPain === undefined;
