@@ -32,6 +32,7 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
   const hasNext = tc.appointment.date !== '-';
   // คอร์สจากคลินิก (บัญชีจริง): ชื่อ · ใช้ไป/ทั้งหมด · หมดอายุ — ไม่มี = คอร์สในแอป
   const { clinicCourse, plannedVisits } = useJourney();
+  const planned = plannedVisits[tc.id] ?? [];
   const total = clinicCourse?.total ?? tc.course.total;
   const used = Math.min(total, clinicCourse?.used ?? tc.course.done);
   // นัดที่คลินิกลงไว้แล้ว (นัดตามแผน) · ไม่มี = นัดครั้งถัดไปนัดเดียว
@@ -87,6 +88,32 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
           {booked ? <Legend color="#E8B23A" text={`จองไว้ ${booked}`} /> : null}
           <Legend color={colors.border.default} text={`ว่าง ${total - used - booked}`} />
         </View>
+        {/* นัดตามแผนที่คลินิกลงไว้ (ครั้งถัดไปทั้งหมด) — อยู่กับคอร์สเพราะเป็นเรื่องเดียวกัน */}
+        {planned.length ? (
+          <View style={{ gap: space[2], paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle }}>
+            <Text variant="labelMd">นัดตามแผน</Text>
+            {planned.map((v, i) => (
+              <View key={v.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: i === 0 ? colors.brand.primary : colors.surface.default, borderWidth: i === 0 ? 0 : 1, borderColor: colors.border.subtle }}>
+                  <Text variant="labelSm" color={i === 0 ? '#FFFFFF' : colors.text.secondary}>
+                    {tc.visits.length + 1 + i}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodySm" style={{ fontWeight: '600' }}>
+                    {v.date} · {v.time}
+                  </Text>
+                  {v.therapist ? (
+                    <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+                      {v.therapist}
+                    </Text>
+                  ) : null}
+                </View>
+                {i === 0 ? <Chip text="นัดถัดไป" tone="good" /> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
       </Section>
 
       {/* แผนการรักษาที่แพทย์อนุมัติในหลังบ้าน */}
