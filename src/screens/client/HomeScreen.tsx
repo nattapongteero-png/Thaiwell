@@ -167,7 +167,7 @@ const draftRegions = (d: DraftCase) => (d.guide?.areas?.length ? d.guide.areas.m
 const tint = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(', 'rgba(').replace(')', `,${a})`) : c.startsWith('#') && c.length === 7 ? `${c}${Math.round(a * 255).toString(16).padStart(2, '0')}` : c);
 /** ข้ออาการร้าวที่กำลังถาม (ปวดหลายที่ = ถามทีละบริเวณที่มีรูปแบบการร้าว) */
 const radiateNow = (symptoms: string[], radiate?: string) => radiateForAll(symptoms)[radiateList(radiate).length] ?? radiateFor(symptoms);
-/** ชา / อ่อนแรง ร่วมด้วย (ถามทุกบริเวณ ไม่ว่าจะมีรูปแบบการร้าวไหม) — CPG หน้า 139: อาการทางเส้นประสาท */
+/** ชา / อ่อนแรง ร่วมด้วย (ถามทุกบริเวณ) — ⚠️ ตีความจาก CPG หน้า 139 ข้อ 3.1 "ปวดเกี่ยวกับระบบประสาท" (CPG ไม่ได้เขียนคำว่าชา/อ่อนแรงตรง ๆ) · รอแพทย์แผนไทยยืนยันเกณฑ์ */
 const NUMB = 'ชาบริเวณที่ปวด';
 const WEAK = 'แขนหรือขาอ่อนแรง';
 const BENTO_GAP = 12;
@@ -960,8 +960,8 @@ export function HomeScreen() {
       const period = after.risk === 'มีประจำเดือน';
       const roHit = [
         ...ros.map((o) => ({ id: o.level === 'red' ? 'RF-NERVE' : 'CA-NERVE', title: o.note ?? o.label, evidence: o.label, source: o.source ?? 'CPG หน้า 139' })),
-        ...(weak ? [{ id: 'RF-WEAK', title: 'อ่อนแรง อาการทางเส้นประสาท ควรพบแพทย์ก่อน', evidence: WEAK, source: 'CPG หน้า 139' }] : []),
-        ...(numb && !weak ? [{ id: 'CA-NUMB', title: 'มีอาการชา แพทย์ตรวจก่อนนวด', evidence: NUMB, source: 'CPG หน้า 139' }] : []),
+        ...(weak ? [{ id: 'RF-WEAK', title: 'อ่อนแรง อาการทางเส้นประสาท ควรพบแพทย์ก่อน', evidence: WEAK, source: 'ตีความจาก CPG หน้า 139 ข้อ 3.1 (รอแพทย์ยืนยัน)' }] : []),
+        ...(numb && !weak ? [{ id: 'CA-NUMB', title: 'มีอาการชา แพทย์ตรวจก่อนนวด', evidence: NUMB, source: 'ตีความจาก CPG หน้า 139 ข้อ 3.1 (รอแพทย์ยืนยัน)' }] : []),
         ...(contagious ? [{ id: 'RF-INFECT', title: 'โรคติดต่อ ควรรอหายก่อนนวด', evidence: after.risk!, source: 'แบบคัดกรองคลินิก' }] : []),
         ...(period ? [{ id: 'CA-PERIOD', title: 'มีประจำเดือน งดนวดท้อง', evidence: after.risk!, source: 'แบบคัดกรองคลินิก' }] : []),
       ];
