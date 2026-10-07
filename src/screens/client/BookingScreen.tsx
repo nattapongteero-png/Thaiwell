@@ -62,7 +62,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     // นัดเรื่องใหม่ที่จองไว้แล้ว → เลือก = เลื่อนนัดนั้น
     ...looseBookings.map((b) => ({ key: `l:${b.id}`, looseId: b.id, title: `นัดเรื่องใหม่ ${b.date} ${b.time}`, sub: `เลื่อนนัดนี้ · ${b.clinic}` })),
     // เรื่องใหม่ (ยังไม่ได้เล่าอาการ) → นัดเพิ่มได้หลายนัด ไม่ทับนัดเดิม
-    { key: 'new', title: newPatient && !looseBookings.length ? 'ยังไม่ได้เล่าอาการ' : 'เรื่องใหม่', sub: 'ประเมินอาการทีหลัง' },
+    { key: 'new', title: newPatient && !looseBookings.length ? 'ยังไม่ได้เล่าอาการ' : 'เรื่องใหม่', sub: looseBookings.length ? 'นัดเพิ่ม · เล่าอาการกับ AI ทีหลัง' : 'จองก่อน เล่าอาการกับ AI ทีหลัง' },
   ];
   const fixed = !!(pre?.caseId || pre?.draftId || pre?.looseId);
   /**
@@ -283,7 +283,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
       ) : (
         <Panel icon="message-circle" tint={TINT.violet} title={loose ? 'นัดเรื่องใหม่' : 'ยังไม่ได้เล่าอาการ'}>
           <Text variant="bodySm" tone="secondary">
-            จองไว้ก่อนได้ เล่าอาการกับ AI ก่อนถึงนัด ผู้ให้บริการจะเตรียมการนวดได้ตรงจุด
+            เล่าอาการกับ AI ก่อนถึงนัด ให้นวดได้ตรงจุด
           </Text>
         </Panel>
       )}
