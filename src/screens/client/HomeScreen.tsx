@@ -2514,12 +2514,18 @@ export function HomeScreen() {
       {modelTag ? (
         // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
         <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
-          {modelTag.items.map((it, i) => (
-            <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />
-              <Text variant={i ? 'labelSm' : 'labelMd'}>{it}</Text>
-            </View>
-          ))}
+          {modelTag.items.map((it, i) => {
+            // บริเวณหลัก (ปวดมากที่สุด) = ป้ายทึบสีเข้ม · บริเวณรอง = ป้ายขาว (มีหลายบริเวณเท่านั้น)
+            const main = i === 0 && modelTag.items.length > 1;
+            return (
+              <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: main ? 34 : 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: main ? colors.text.primary : colors.surface.default, ...elevation[1] }}>
+                <View style={{ width: main ? 10 : 8, height: main ? 10 : 8, borderRadius: 5, backgroundColor: modelTag.color }} />
+                <Text variant={main ? 'labelMd' : 'labelSm'} color={main ? colors.text.inverse : undefined}>
+                  {it}
+                </Text>
+              </View>
+            );
+          })}
           {modelTag.note ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
               {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
