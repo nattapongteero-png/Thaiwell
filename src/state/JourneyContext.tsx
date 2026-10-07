@@ -516,6 +516,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const casesRef = React.useRef<TreatmentCase[]>([]);
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
   const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>(() => saved('caseToday', {}));
+  const caseTodayRef = React.useRef(caseToday);
+  caseTodayRef.current = caseToday;
   const [apptNotices, setApptNotices] = useState<ApptNotice[]>(() => saved('apptNotices', SAMPLE_NOTICES));
   const dismissNotice = useCallback((id: string) => setApptNotices((all) => all.map((n) => (n.id === id ? { ...n, read: true } : n))), []);
   const markAllNoticesRead = useCallback(() => setApptNotices((all) => all.map((n) => ({ ...n, read: true }))), []);
@@ -660,6 +662,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         return { ...m, [id]: { today: date === 'วันนี้', date, time: next.time, clinic: cur?.clinic ?? '', therapist: next.therapist, queue: same ? cur.queue : undefined, stage: same ? cur.stage : undefined } };
       });
       setCancelledAppts((ids) => ids.filter((x) => x !== id));
+      // นัดตามคอร์สวันนี้/พรุ่งนี้ ยังไม่ได้ประเมิน → เตือนให้ประเมินก่อนมา (ครั้งเดียวต่อนัด)
+      const soon = date === 'วันนี้' || date === 'พรุ่งนี้';
+      if (soon && !caseTodayRef.current[id])
+        setApptNotices((ns) =>
+          ns.some((n) => n.id === `n-pre-${next.ref}`)
+            ? ns
+            : [{ id: `n-pre-${next.ref}`, caseId: id, kind: 'reminder', text: `ประเมินอาการก่อนมานวด${next.course ? ` ครั้งที่ ${next.course.no}/${next.course.total}` : ''} (${date} ${next.time}) · ผู้ให้บริการจะใช้ผลนี้วางการรักษาครั้งนี้`, at: nowAtLabel() }, ...ns],
+        );
     }
   };
   const bookCase = useCallback((caseId: string, appt: CaseAppt, service: string) => {
@@ -824,6 +834,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       ...(tc ? { complaint: tc.short, areas: tc.areas.map((x) => x.symptom) } : {}),
       pain: v.pain,
       summary: `ประเมินก่อนนวด: ปวด ${v.pain}/10${v.adverse ? ` · หลังนวดครั้งก่อน ${v.adverse}` : ''}${v.risk && v.risk !== 'ไม่มี' ? ` · ${v.risk}` : ''}${v.red ? ' · ควรพบแพทย์ก่อนนวด' : ''}`,
+      // คำตอบแบบคัดกรองก่อนนวดครบทุกข้อ → คลินิกแสดงเป็นแบบคัดกรองของนัดนี้
+      previsit: { adverse: v.adverse, risk: v.risk, red: !!v.red },
       screening: { fever: /ไข้/.test(v.risk ?? ''), recentSurgery: /บาดเจ็บ|ผ่าตัด/.test(v.risk ?? '') },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

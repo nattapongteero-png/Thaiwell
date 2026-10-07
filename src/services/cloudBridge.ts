@@ -154,6 +154,8 @@ export interface ReassessPatch {
   summary?: string;
   screening?: Record<string, boolean | number | undefined>;
   guide?: import('./clinicBridge').AppGuide;
+  /** แบบคัดกรองก่อนนวดของครั้งนี้ (นัดตามคอร์ส) */
+  previsit?: { adverse?: string; risk?: string; red?: boolean };
 }
 /**
  * ประเมินใหม่ก่อนเช็กอิน → รอบใหม่ (รอบเดิมเก็บไว้ใน rounds ไม่ทับ) · เช็กอินแล้ว/เริ่มรับบริการ = ไม่รับ (คืน false)
