@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AppBar, Badge, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
+import { AppBar, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -316,7 +316,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                 on={service === sv.value}
                 title={sv.label}
                 sub={[sv.style, sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
-                badge={sv.value === recommended && hasRecommendation ? 'ตามผลประเมิน' : undefined}
+                badge={sv.value === recommended && hasRecommendation ? 'แนะนำ' : undefined}
                 onPress={() => pickService(sv.value)}
                 last={i === services.length - 1}
               />
@@ -419,10 +419,12 @@ function Choice({ on, title, sub, onPress, last, badge }: { on: boolean; title: 
             </Text>
           ) : null}
         </View>
-        {/* ป้ายทึบ (แถวที่เลือกพื้นเขียวอ่อน ป้ายพื้นอ่อนจะกลืนไป) */}
+        {/* ป้ายคำ + กรอบ (พื้นขาว ไม่กลืนกับแถวที่เลือกซึ่งพื้นเขียวอ่อน) */}
         {badge ? (
-          <View style={{ alignSelf: 'center' }}>
-            <Badge label={badge} tone="brand" icon="star" solid />
+          <View style={{ alignSelf: 'center', paddingHorizontal: space[2], height: 24, justifyContent: 'center', borderRadius: radius.full, borderWidth: 1, borderColor: colors.brand.primary, backgroundColor: colors.surface.default }}>
+            <Text variant="labelSm" color={colors.brand.primary}>
+              {badge}
+            </Text>
           </View>
         ) : null}
       </View>
