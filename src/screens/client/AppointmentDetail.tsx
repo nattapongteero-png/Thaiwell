@@ -1,6 +1,6 @@
 import React from 'react';
 import { kmText } from '../../services/location';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, useWindowDimensions } from 'react-native';
 import { AppBar, Button, Icon, IconBox, InfoRow, Panel, Screen, TINT, Text, useHideTabs, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { serviceMismatch, useAppointment } from '../../state/appointments';
@@ -8,6 +8,7 @@ import { NotFoundScreen } from './NotFound';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { readAvailability } from '../../services/clinicBridge';
+import { TherapistCard, findTherapist } from './places/TherapistCard';
 import { PLACES, callClinic, clinicPhone, openMap } from './PlacesScreen';
 
 /**
@@ -20,6 +21,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   const target = route.params ?? {};
   // โหลดข้อมูลของหน้า (ครั้งแรก) → skeleton
   const loading = useScreenData(`appt-${target.caseId ?? target.draftId ?? target.looseId ?? 'loose'}`);
+  const { width: winW } = useWindowDimensions();
   const nav = useNav();
   const { colors } = useTheme();
   useHideTabs(true);
@@ -136,7 +138,10 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
           ) : null}
         </View>
         {/* วันนัดหลังเช็กอิน (รวมหน้าดูคิวไว้ที่นี่): รออีกกี่คิว → ถึงคิว (เด่น) → กำลังรับบริการ */}
-        {appt.today && (appt.queue || appt.stage) ? (
+        {/* กำลังรับบริการ → การ์ดผู้ให้บริการพร้อมป้ายสถานะ (แทนแถบข้อความ + ชื่อซ้ำ) */}
+        {appt.today && appt.stage === 'in_service' && appt.therapist ? (
+          <TherapistCard t={findTherapist(appt.therapist)} compact width={winW - space[4] * 4 - 2} status="กำลังรับบริการ" />
+        ) : appt.today && (appt.queue || appt.stage) ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[3], paddingVertical: space[2], borderRadius: 14, backgroundColor: appt.stage === 'called' || appt.stage === 'in_service' ? colors.brand.primary : colors.surface.sunken }}>
             <Icon name={appt.stage === 'in_service' ? 'activity' : appt.stage === 'called' ? 'bell' : 'clock'} size="sm" color={appt.stage === 'called' || appt.stage === 'in_service' ? '#FFFFFF' : colors.text.secondary} />
             <Text variant="labelMd" color={appt.stage === 'called' || appt.stage === 'in_service' ? '#FFFFFF' : colors.text.secondary} style={{ flex: 1 }}>
@@ -186,7 +191,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
       ) : null}
 
       <Panel icon="clipboard" tint={TINT.green} title="ข้อมูลนัด">
-        <InfoRow k="ผู้ให้บริการ" v={appt.therapist} />
+        {appt.today && appt.stage === 'in_service' ? null : <InfoRow k="ผู้ให้บริการ" v={appt.therapist} />}
         <InfoRow k="บริการ" v={appt.service} />
         <InfoRow k="เรื่องที่นัด" v={appt.topic ?? 'ยังไม่ได้เล่าอาการ'} />
         <InfoRow k="ครั้งที่" v={appt.visit.replace('ครั้งที่ ', '')} />

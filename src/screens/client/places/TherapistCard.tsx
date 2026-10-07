@@ -2,7 +2,13 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, ProfileAvatar, Tag, Text, useTheme } from '../../../design-system';
 import { space } from '../../../design-system/tokens';
-import { dayLabel, type FreeSlot, type Therapist } from '../../../data/booking';
+import { THERAPIST_SCHEDULE, dayLabel, liveTherapists, type FreeSlot, type Therapist } from '../../../data/booking';
+
+/** ผู้ให้บริการจากชื่อในนัด: รายชื่อจริงจากคลินิก → รายชื่อตัวอย่าง → มีแค่ชื่อ (บทบาทเดาจากคำนำหน้า) */
+export const findTherapist = (name: string): Therapist => {
+  const all = [...(liveTherapists() ?? []), ...Object.values(THERAPIST_SCHEDULE).flat()];
+  return all.find((t) => t.name === name) ?? { id: name, name, role: /แพทย์|พท\./.test(name) ? 'แพทย์แผนไทย' : 'หมอนวด', free: [] };
+};
 
 export const THERAPIST_CARD_W = 248;
 const CARD_W = THERAPIST_CARD_W;
@@ -16,7 +22,7 @@ type Sel = { day: string; time: string } | null;
  * t.free = ช่วงที่ลงตารางไว้ (กรองตามบริการมาแล้วจาก therapistsAt)
  * ⚠️ ต้นแบบ: ข้อมูลแนะนำตัวเป็นตัวอย่าง
  */
-export function TherapistCard({ t, selected, onPick, badge, compact, width }: { t: Therapist; selected?: Sel; onPick?: (day: string, time: string) => void; /** เช่น แนะนำ (จาก AI) */ badge?: string; /** ดูข้อมูลอย่างเดียว (หน้าคลินิก) — ไม่มีคิวให้เลือก */ compact?: boolean; /** ความกว้าง (ไม่ระบุ = ขนาดการ์ดในแถวเลือก) */ width?: number }) {
+export function TherapistCard({ t, selected, onPick, badge, compact, width, status }: { t: Therapist; selected?: Sel; onPick?: (day: string, time: string) => void; /** เช่น แนะนำ (จาก AI) */ badge?: string; /** ดูข้อมูลอย่างเดียว (หน้าคลินิก) — ไม่มีคิวให้เลือก */ compact?: boolean; /** ความกว้าง (ไม่ระบุ = ขนาดการ์ดในแถวเลือก) */ width?: number; /** สถานะวันนัด (เช่น กำลังรับบริการ) — ป้ายเขียวมุมขวา */ status?: string }) {
   const { colors } = useTheme();
   const doctor = t.role === 'แพทย์แผนไทย';
   return (
@@ -31,6 +37,13 @@ export function TherapistCard({ t, selected, onPick, badge, compact, width }: { 
             {doctor ? 'แพทย์แผนไทย · นวดเพื่อรักษา' : 'หมอนวด · นวดเพื่อสุขภาพ'}
           </Text>
         </View>
+        {status ? (
+          <View style={{ paddingHorizontal: space[2], height: 26, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.brand.primary }}>
+            <Text variant="labelSm" color="#FFFFFF">
+              {status}
+            </Text>
+          </View>
+        ) : null}
       </View>
       {/* ไม่มีข้อมูลแนะนำตัว (ชื่อจากนัดอย่างเดียว) → ไม่เว้นแถวว่าง */}
       {badge || t.years || t.focus?.length ? (

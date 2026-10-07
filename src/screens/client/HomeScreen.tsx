@@ -64,10 +64,10 @@ import { CHATS_KEY, useJourney, type DraftCase, type PlannedVisit } from '../../
 import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
-import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
+import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
 import { ASSESS_LOCK_TEXT, assessLock, caseClinic, needsConfirm, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { isoToLabel, readAvailability, todayISO } from '../../services/clinicBridge';
-import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
+import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findTherapist } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
@@ -178,14 +178,12 @@ const queueAhead = (queue?: string) => {
   const q = readAvailability()?.queue;
   return queue && q ? q.waiting.filter((x) => x < queue).length : null;
 };
-/** ขั้นตอนหลังเช็กอิน: ได้คิว (รออีก N) → ถึงคิว → กำลังรับบริการ */
+/** ขั้นตอนเช็กอิน: ได้คิว (รออีก N) — ถึงคิว/กำลังรับบริการ บอกที่ช่องคิว ปุ่ม และการ์ดผู้ให้บริการแล้ว ไม่ซ้ำเป็นขั้นตอน */
 function VisitStageSteps({ queue, stage, therapist }: { queue?: string; stage: VisitStage; therapist?: string }) {
   const ahead = queueAhead(queue);
   return (
     <>
       <StepRow done={!!queue} text={queue ? `ได้คิว ${queue}${!stage || stage === 'checked_in' ? (ahead ? ` · รออีก ${ahead} คิว` : ' · รอเรียกคิว') : ''}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
-      {stage === 'called' || stage === 'in_service' ? <StepRow done text="ถึงคิวแล้ว เชิญเข้ารับบริการ" /> : null}
-      {stage === 'in_service' ? <StepRow done text={`กำลังรับบริการ${therapist ? `กับ${therapist}` : ''}`} /> : null}
     </>
   );
 }
@@ -3768,16 +3766,10 @@ function CaseTabs({ cases, drafts, extras = [], value, onChange, onNew }: { case
   );
 }
 
-/** ผู้ให้บริการจากชื่อในนัด: รายชื่อจริงจากคลินิก → รายชื่อตัวอย่าง → มีแค่ชื่อ (บทบาทเดาจากคำนำหน้า) */
-const findTherapist = (name: string): Therapist => {
-  const all = [...(liveTherapists() ?? []), ...Object.values(THERAPIST_SCHEDULE).flat()];
-  return all.find((t) => t.name === name) ?? { id: name, name, role: /แพทย์|พท\./.test(name) ? 'แพทย์แผนไทย' : 'หมอนวด', free: [] };
-};
-
 /** การ์ดผู้ให้บริการของนัด — ตัวเดียวกับตอนเลือกในหน้าจอง (รูป ชื่อ บทบาท ประสบการณ์ ถนัด) ดูอย่างเดียว */
-function TherapistTile({ name, width }: { name?: string; width: number }) {
+function TherapistTile({ name, width, stage }: { name?: string; width: number; /** กำลังรับบริการ → ป้ายบนการ์ดผู้ให้บริการ (ไม่ซ้ำเป็นขั้นตอนในการ์ดนัด) */ stage?: VisitStage }) {
   if (!name || name === '-' || name === 'ไม่ระบุแพทย์') return null;
-  return <TherapistCard t={findTherapist(name)} compact width={width} />;
+  return <TherapistCard t={findTherapist(name)} compact width={width} status={stage === 'in_service' ? 'กำลังรับบริการ' : undefined} />;
 }
 
 /** จองไว้ก่อนประเมิน — แผ่นการ์ดแสดงเฉพาะข้อมูลนัดที่มี (นัด · ผู้ให้บริการ · บริการ) */
@@ -3902,7 +3894,7 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { widt
   return (
     <View style={{ gap: BENTO_GAP }}>
       <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} onAssess={onAssess} minutes={mins} steps={<StepRow text="งดอาหารหนัก 30 นาที · ใส่เสื้อผ้าหลวมสบาย" />} />
-      <TherapistTile name={b.therapist} width={width} />
+      <TherapistTile name={b.therapist} width={width} stage={b.date === 'วันนี้' ? b.stage : undefined} />
       {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา
        * ยังไม่เคยรักษาที่คลินิก (แพทย์ยังไม่ได้ตรวจ) = ยังไม่มีคอร์สจริง → ไม่แสดง แม้หลังบ้านจะส่งมา */}
       {b.course && clinicVisits.length ? (
@@ -4218,7 +4210,7 @@ function DraftBento({
             </>
           }
         />
-        <TherapistTile name={b.therapist} width={width} />
+        <TherapistTile name={b.therapist} width={width} stage={b.date === 'วันนี้' ? b.stage : undefined} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
           <SafetyTile width={halfW} extra={d.risk === 'มีประจำเดือน' ? ['งดนวดท้อง'] : undefined} onPress={() => setGuideOpen(true)} />
           <View pointerEvents="none">
@@ -4574,7 +4566,7 @@ function HomeBento({
       </Tile>
 
       {/* ผู้ให้บริการของนัดครั้งถัดไป (การ์ดเดียวกับตอนจอง) */}
-      {hasNext ? <TherapistTile name={caseAppts[tc.id]?.therapist || tc.therapist} width={width} /> : null}
+      {hasNext ? <TherapistTile name={caseAppts[tc.id]?.therapist || tc.therapist} width={width} stage={ap.today ? ap.stage : undefined} /> : null}
 
       {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
