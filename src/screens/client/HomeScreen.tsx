@@ -68,7 +68,7 @@ import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor } from '../../data/treatmentGuides';
 import { ALL_RADIATE_OPTIONS, radiateFor, radiateOption, radiatePins } from '../../data/radiation';
-import { evaluateSafety } from '../../services/safetyEngine';
+import { evaluateSafety, procedureGates } from '../../services/safetyEngine';
 import { needsReview } from '../../services/followUpService';
 import { useNav } from '../../navigation/types';
 import { ALL_SYMPTOMS, CHIP_PINS, HOME_CONTENT } from '../../data/homeContent';
@@ -3785,6 +3785,7 @@ function DraftBento({
   const near = nearestClinic();
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
+  const { profile } = useJourney();
 
   // จองแล้ว → โครงเดียวกับหลังรักษา (HomeBento): นัดเต็มแถว → แผนการรักษา | ผลประเมิน (สูงเท่ากัน) → ดูแลตัวเอง | ติดต่อคลินิก
   if (booked && b) {
@@ -3896,7 +3897,7 @@ function DraftBento({
             <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
           </Tile>
         ) : (
-          <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} note={d.caution} />
+          <PlanTile width={halfW} plan="นวดราชสำนัก" done={served ? 1 : 0} total={6} values={served && d.after !== undefined ? [d.after] : []} />
         )}
         <View pointerEvents="none">
           {served && d.after !== undefined ? (
@@ -3924,16 +3925,29 @@ function DraftBento({
           <View style={{ width: halfW }}>
             <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
-          <Tile style={{ width: halfW, gap: space[2] }}>
-            <TileTitle title="ก่อนมานวด" />
-            {prep.map((it) => (
-              <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-                <Icon name="check-circle" size="xs" color={colors.brand.primary} />
-                <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
-                  {it}
-                </Text>
-              </View>
-            ))}
+          {/* เตรียมตัวก่อนนวด: ข้อควรระวัง (ส่วนที่ไม่นวด/ต้องระวัง) · งดครั้งนี้ (หัตถการเสริม) · ก่อนมานวด — แบ่งด้วยหัวข้อ */}
+          <Tile style={{ width: halfW, gap: space[3] }}>
+            {[
+              { title: 'ข้อควรระวัง', icon: 'alert-triangle' as const, color: colors.status.warning.fg, items: d.caution ? d.caution.split(' · ') : [] },
+              { title: 'งดครั้งนี้', icon: 'slash' as const, color: colors.status.warning.fg, items: procedureGates(profile).filter((g) => !g.allowed).map((g) => g.procedure) },
+              { title: 'ก่อนมานวด', icon: 'check-circle' as const, color: colors.brand.primary, items: prep },
+            ]
+              .filter((sec) => sec.items.length)
+              .map((sec, i) => (
+                <View key={sec.title} style={{ gap: space[2], ...(i ? { paddingTop: space[3], borderTopWidth: 1, borderTopColor: colors.border.subtle } : null) }}>
+                  <TileTitle title={sec.title} />
+                  {sec.items.map((it) => (
+                    <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
+                      <View style={{ marginTop: 3 }}>
+                        <Icon name={sec.icon} size="xs" color={sec.color} />
+                      </View>
+                      <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
+                        {it}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
           </Tile>
         </View>
       )}
