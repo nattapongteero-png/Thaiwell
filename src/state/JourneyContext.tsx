@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { cloudAddendum, cloudReassess, cloudStatusOf, clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { cloudAddendum, cloudAfterPain, cloudReassess, cloudStatusOf, clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -968,7 +968,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       // ก่อนนวด = ประเมินก่อนนวดวันนี้ / หลังนวดครั้งก่อน · หลังนวด = คลินิกบันทึก (จำลอง)
       const painBefore = tc ? caseToday[tc.id]?.pain ?? tc.visits[tc.visits.length - 1].painAfter : d!.pain;
       // คะแนนจากหลังบ้าน (นวดเสร็จ) · ไม่มี = จำลอง
-      const painAfter = clinicPainAfter ?? Math.max(0, painBefore - 2);
+      // คลินิกข้ามการประเมินหลังนวด (ไม่บังคับ) → ไม่เดาคะแนนเอง ใช้เท่าก่อนนวด แล้วให้ผู้ใช้ประเมินเองในแอป
+      const painAfter = clinicPainAfter ?? (isCloud() ? painBefore : Math.max(0, painBefore - 2));
       const no = tc ? tc.visits.length + 1 : 1;
       if (tc) recordCaseVisit(tc.id, painBefore, painAfter);
       else promoteDraft(d!.id, painAfter, opts?.diagnosis);
@@ -992,6 +993,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // คะแนนหลังนวดของครั้งล่าสุด (นับจากจำนวนครั้ง ณ ตอนประเมิน → ครั้งใหม่ไม่รับค่าเก่า)
     const n = cases.find((c) => c.id === caseId)?.visits.length ?? 0;
     setSelfPains((m) => ({ ...m, [caseId]: { n, v: pain } }));
+    // นัดครั้งล่าสุดของเรื่องนี้ที่คลินิกบันทึกการรักษาแล้ว → ส่งคะแนนหลังนวดให้คลินิกใส่ในนัดนั้น
+    if (isCloud()) {
+      const done = ['recorded', 'billed', 'paid', 'closed'];
+      const ref = Object.keys(bridgeRefs.current)
+        .filter((k) => bridgeRefs.current[k].caseId === caseId && done.includes(cloudStatusOf(k) ?? ''))
+        .pop();
+      if (ref) void cloudAfterPain(ref, pain).catch(() => undefined);
+    }
   }, [cases]);
 
   const sendFollowUp = useCallback(

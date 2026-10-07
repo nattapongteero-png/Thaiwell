@@ -171,6 +171,15 @@ export async function cloudReassess(id: string, patch: ReassessPatch) {
   if (error) throw error;
   return !!data?.length;
 }
+/** ผู้ป่วยประเมินความปวดหลังนวดเองในแอป (คลินิกข้ามไว้) → ใส่ให้นัดครั้งนั้น */
+export async function cloudAfterPain(id: string, pain: number, note?: string) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status').eq('id', id).maybeSingle();
+  if (!cur || !['recorded', 'billed', 'paid', 'closed', 'in_service'].includes(cur.status as string)) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown>;
+  const { error } = await cloud.from('tw_appointments').update({ assessment: { ...old, after: { pain, at: new Date().toISOString(), ...(note ? { note } : {}) } } }).eq('id', id);
+  if (error) throw error;
+  return true;
+}
 /** หลังเช็กอิน: แจ้งอาการเพิ่ม (แปะไว้กับรอบเดิม ไม่แก้ผลประเมิน) */
 export async function cloudAddendum(id: string, text: string) {
   const { data: cur } = await cloud.from('tw_appointments').select('assessment,status').eq('id', id).maybeSingle();

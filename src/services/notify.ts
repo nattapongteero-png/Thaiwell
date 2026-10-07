@@ -46,7 +46,7 @@ export function noticeOf(e: ClinicEvent): [string, string] | null {
     case 'started':
       return ['เริ่มรับบริการแล้ว', 'ผู้ให้บริการกำลังดูแลคุณ'];
     case 'completed':
-      return ['ผลการรักษาวันนี้', `ปวด ${e.painBefore} → ${e.painAfter ?? '-'}${e.record?.advice ? ` · ${e.record.advice}` : ''}`];
+      return ['ผลการรักษาวันนี้', `${e.painAfter !== undefined ? `ปวด ${e.painBefore} → ${e.painAfter}` : 'บันทึกการรักษาแล้ว · ประเมินความปวดหลังนวดในแอปได้'}${e.record?.advice ? ` · ${e.record.advice}` : ''}`];
     case 'bill':
       return ['บิลรอชำระ', `${e.amount.toLocaleString()} บาท · ชำระในแอปได้เลย`];
     case 'receipt':
