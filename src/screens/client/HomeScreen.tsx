@@ -128,7 +128,7 @@ import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type Eleme
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
 import { afterOf, sessionRecord } from './home/TreatmentDetailBody';
-import { preVisitRed, preVisitSummary } from '../../data/preVisit';
+import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
 /** สัดส่วนกว้าง:สูงของกรอบหุ่น (Figma 232:583) */
@@ -1392,7 +1392,7 @@ export function HomeScreen() {
     const pct = Math.round(((before - after) / Math.max(1, before)) * 100);
     // งดนวดเฉพาะเกณฑ์ไม่รับเข้าการรักษาใน CPG_PCU หน้า 139: ไข้ (2.4.2) · หลังอุบัติเหตุภายใน 48 ชม. (3.3) · อาการทางระบบประสาท ชา/อ่อนแรง (3.1)
     // ไม่ใช้ระดับปวดเป็นเกณฑ์ห้ามนวด (เอกสารไม่มีเกณฑ์ตัวเลข — ปวดมากยังรักษาได้ตามปกติ)
-    const riskRed = risk === 'มีไข้' || risk === FU_RISK[2];
+    const riskRed = PRE_RED_RISK.includes(risk);
     const urgent = preVisitRed(opt, risk);
     const notBetter = opt === 'ปวดมากขึ้น' || all.some((a) => a.painAfter >= a.painBefore);
     // อาการวันนี้ = ก่อนนวดของครั้งถัดไป → การ์ดหน้าแรก/เช็กอิน/ผู้ให้บริการใช้ค่าเดียวกัน
@@ -1952,7 +1952,7 @@ export function HomeScreen() {
   /** ข้อห้ามใหม่ก่อนนวด: พิมพ์ตอบ (เช่น "ตัวร้อนนิดหน่อย") → เลือกจากตัวเลือก · ไม่เกี่ยว = ถามซ้ำ */
   const answerFuRiskByText = (text: string) =>
     aiReplyAsync(activeId, text, async () => {
-      const r = await extractAI<{ value: string | null }>(`ผู้ใช้ตอบว่าก่อนนวดครั้งถัดไปมีข้อห้ามใหม่ไหม เลือกจาก: ${FU_RISK.join(', ')} · ตัวร้อน/เป็นไข้ = มีไข้ · ล้ม/เคล็ด/บาดเจ็บภายใน 2 วัน = บาดเจ็บภายใน 2 วัน · บาดเจ็บนานกว่า 2 วัน = ไม่มี · ได้ยาใหม่ = เริ่มยาใหม่ · ปกติดี = ไม่มี · ไม่เกี่ยว = null`, text, {
+      const r = await extractAI<{ value: string | null }>(`ผู้ใช้ตอบว่าก่อนนวดครั้งถัดไปมีข้อห้ามใหม่ไหม เลือกจาก: ${FU_RISK.join(', ')} · ตัวร้อน/เป็นไข้ = มีไข้ · ล้ม/เคล็ด/บาดเจ็บภายใน 2 วัน = บาดเจ็บภายใน 2 วัน · บาดเจ็บนานกว่า 2 วัน = ไม่มี · ได้ยาใหม่ = เริ่มยาใหม่ · เพิ่งผ่าตัด = ผ่าตัดภายใน 1 เดือน · ท้อง = ตั้งครรภ์ · เป็นแผล/ผื่น = มีแผลหรือผื่นตรงที่ปวด · เป็นเมนส์ = มีประจำเดือน · ไข้หวัดใหญ่/โควิด/อีสุกอีใส/งูสวัด = โรคติดต่อ · ปกติดี = ไม่มี · ไม่เกี่ยว = null`, text, {
         type: 'object',
         properties: { value: { type: ['string', 'null'], enum: [...FU_RISK, null] } },
         required: ['value'],
