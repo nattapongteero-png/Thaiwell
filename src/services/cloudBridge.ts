@@ -256,6 +256,8 @@ export interface ClinicCourse {
   used: number;
   startedOn: string;
   expiresOn: string;
+  /** prepaid = จ่ายคอร์สล่วงหน้าแล้ว · perVisit = ชำระรายครั้งที่มารักษา */
+  billing?: 'prepaid' | 'perVisit';
 }
 /** ครั้งที่รักษาที่คลินิก (คลินิกบันทึก) */
 export interface ClinicVisit {

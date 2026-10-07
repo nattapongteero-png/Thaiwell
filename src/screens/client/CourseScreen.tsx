@@ -111,6 +111,7 @@ export function CourseScreen() {
             </View>
             <ProgressBar value={c.total ? c.used / c.total : 0} label={`รับบริการแล้ว ${c.used} จาก ${c.total} ครั้ง`} />
             <InfoRow k="บริการ" v={c.service} />
+            <InfoRow k="การชำระ" v={c.billing === 'prepaid' ? 'จ่ายคอร์สล่วงหน้าแล้ว · มาแต่ละครั้งหักเครดิต' : 'ชำระรายครั้งที่มารักษา (รวมหัตถการที่ทำเพิ่ม)'} />
             {c.startedOn ? <InfoRow k="เปิดคอร์ส" v={thaiDate(c.startedOn)} /> : null}
             {c.expiresOn ? <InfoRow k="ใช้ได้ถึง" v={thaiDate(c.expiresOn)} /> : null}
           </Panel>
