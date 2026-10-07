@@ -4576,25 +4576,48 @@ function HomeBento({
           values={trendValues(tc)}
           onPress={() => onHistory()}
         />
-        <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={() => onHistory(tc.visits.length - 1)}>
-          <View pointerEvents={needPost ? 'box-none' : 'none'}>
-            <PainScoreCard
-              // หลัง = คะแนนที่ผู้ใช้ประเมินหลังนวด · ยังไม่ประเมิน = ว่าง (–)
-              value={last.selfPain ?? last.painBefore}
-              missing={last.selfPain === undefined}
-              before={last.painBefore}
-              stageLabel="หลังนวด"
-              title={`ผลครั้งที่ ${tc.visits.length}`}
-              strongTitle
-              padding={TILE_PAD}
-              subtitle={last.date}
-              chart
-              width={halfW}
-              // ยังไม่ได้ประเมินหลังนวดครั้งนี้ → ปุ่มแทน pill เปอร์เซ็นต์ → แบบประเมินหลังนวด (วันนี้หรือย้อนหลังก็ได้)
-              action={needPost ? { label: 'ประเมินหลังนวด', onPress: () => nav.navigate('PostAssessment', { caseId: tc.id }) } : undefined}
-            />
-          </View>
-        </Pressable>
+        {/* ประเมินก่อนนวดครั้งถัดไปแล้ว (ยังไม่นวด) → การ์ดเป็นของครั้งนี้: ปวดวันนี้ เทียบหลังนวดครั้งก่อน · นวดเสร็จ (คลินิกบันทึก) → ผลครั้งนั้นตามเดิม */}
+        {today && hasNext ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`ครั้งที่ ${nextNo} วันนี้ปวด ${today.pain} ดูผลประเมินก่อนนวด`} onPress={onPreVisit}>
+            <View pointerEvents="none">
+              <PainScoreCard
+                value={today.pain}
+                stageLabel="ก่อนนวด"
+                title={`ครั้งที่ ${nextNo}`}
+                strongTitle
+                padding={TILE_PAD}
+                subtitle={(() => {
+                  const prev = (last.selfPain ?? last.painAfter);
+                  if (prev === undefined) return 'วันนี้';
+                  const d = today.pain - prev;
+                  return d > 0 ? `ปวดกลับมา +${d}` : d < 0 ? `ดีขึ้นอีก ${-d}` : 'ผลยังคงอยู่';
+                })()}
+                chart
+                width={halfW}
+              />
+            </View>
+          </Pressable>
+        ) : (
+          <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={() => onHistory(tc.visits.length - 1)}>
+            <View pointerEvents={needPost ? 'box-none' : 'none'}>
+              <PainScoreCard
+                // หลัง = คะแนนที่ผู้ใช้ประเมินหลังนวด · ยังไม่ประเมิน = ว่าง (–)
+                value={last.selfPain ?? last.painBefore}
+                missing={last.selfPain === undefined}
+                before={last.painBefore}
+                stageLabel="หลังนวด"
+                title={`ผลครั้งที่ ${tc.visits.length}`}
+                strongTitle
+                padding={TILE_PAD}
+                subtitle={last.date}
+                chart
+                width={halfW}
+                // ยังไม่ได้ประเมินหลังนวดครั้งนี้ → ปุ่มแทน pill เปอร์เซ็นต์ → แบบประเมินหลังนวด (วันนี้หรือย้อนหลังก็ได้)
+                action={needPost ? { label: 'ประเมินหลังนวด', onPress: () => nav.navigate('PostAssessment', { caseId: tc.id }) } : undefined}
+              />
+            </View>
+          </Pressable>
+        )}
       </View>
 
 
