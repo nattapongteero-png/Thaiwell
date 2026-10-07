@@ -48,13 +48,13 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
     lock === 'inService' ? (
       <Panel title="กำลังรับบริการ">
         <Text variant="bodySm" tone="secondary">
-          แก้ผลประเมินไม่ได้แล้ว · มีอาการอะไรเพิ่ม แจ้งผู้ให้บริการได้โดยตรง
+          ประเมินได้ ผลจะส่งถึงผู้ให้บริการเป็น “แจ้งเพิ่ม” ของนัดวันนี้ · มีอาการเร่งด่วน แจ้งผู้ให้บริการโดยตรง
         </Text>
       </Panel>
     ) : lock === 'checkedIn' ? (
       <Panel title="ผู้ให้บริการได้รับข้อมูลแล้ว">
         <Text variant="bodySm" tone="secondary">
-          เช็กอินแล้ว แก้ผลประเมินไม่ได้ · มีอะไรเพิ่มแจ้งได้ ผู้ให้บริการจะเห็นก่อนเริ่มนวด
+          เช็กอินแล้ว · ประเมินตอนนี้ได้ ผลจะส่งเป็น “แจ้งเพิ่ม” ของนัดวันนี้ (ไม่แทนผลก่อนเช็กอิน) · หรือพิมพ์อาการเพิ่มด้านล่าง
         </Text>
         {sent.map((t) => (
           <View key={t} style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}>
@@ -97,7 +97,7 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
             ) : tc.appointment.today ? (
               <Button label="เช็กอิน" iconLeft="maximize" onPress={() => nav.navigate('CheckIn', { caseId: tc.id })} />
             ) : null}
-            {locked ? null : <Button label="แก้ไขคำตอบ" variant="secondary" onPress={() => setEditing(true)} />}
+            <Button label={locked ? 'ประเมินอีกครั้ง (แจ้งผู้ให้บริการ)' : 'แก้ไขคำตอบ'} variant="secondary" onPress={() => setEditing(true)} />
           </>
         }
       >
@@ -142,13 +142,6 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
     );
   }
 
-  // เช็กอินแล้วยังไม่ได้ประเมิน → ประเมินไม่ได้แล้ว แจ้งอาการเพิ่มได้อย่างเดียว
-  if (locked)
-    return (
-      <Screen header={<AppBar title={`ก่อนนวดครั้งที่ ${no}`} onBack={() => nav.goBack()} />}>
-        {lockPanel}
-      </Screen>
-    );
   // แบบฟอร์ม 3 ข้อ
   return (
     <Screen

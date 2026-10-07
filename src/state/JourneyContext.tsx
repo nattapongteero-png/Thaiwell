@@ -789,11 +789,15 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     if (!isCloud()) return;
     const lock = assessLockOf(target);
     const fail = (text: string) => setApptNotices((all) => [{ id: `n-ra-${Date.now()}`, ...target, kind: 'reminder', text, at: nowAtLabel() }, ...all]);
-    if (lock === 'checkedIn' || lock === 'inService') {
-      fail(lock === 'inService' ? 'ส่งผลประเมินไม่ได้ · นัดนี้ถูกเรียกคิว/กำลังรับบริการแล้ว · แจ้งผู้ให้บริการโดยตรง' : 'ส่งผลประเมินไม่ได้ · เช็กอินแล้ว · ใช้ “แจ้งอาการเพิ่ม” แทน');
+    const ref = refOf(target);
+    // เช็กอิน/เรียกคิวแล้ว → ไม่แทนผลก่อนเช็กอิน แต่ส่งเป็น "แจ้งเพิ่ม" ของนัดวันนั้น (คลินิกเห็นในนัดนั้นทันที)
+    if ((lock === 'checkedIn' || lock === 'inService') && ref) {
+      const text = `ประเมินอีกครั้งหลังเช็กอิน · ${patch.summary ?? `ปวด ${patch.pain ?? '-'}/10`}`;
+      void cloudAddendum(ref, text)
+        .then((ok) => fail(ok ? 'ส่งผลประเมินให้ผู้ให้บริการแล้ว (แจ้งเพิ่มหลังเช็กอิน)' : 'ส่งผลประเมินไม่ได้ · ลองแจ้งผู้ให้บริการโดยตรง'))
+        .catch(() => fail('ส่งผลประเมินไม่สำเร็จ · ตรวจอินเทอร์เน็ตแล้วลองใหม่'));
       return;
     }
-    const ref = refOf(target);
     // ไม่พบนัดที่คลินิกลงไว้ → ส่งเป็นข้อความถึงคลินิกแทน (คลินิกยังเห็น)
     if (!ref) {
       sendNote('ผลประเมินก่อนนวดจากแอป', `${patientOf().name} · ${patch.summary ?? `ปวด ${patch.pain ?? '-'}/10`}`, patientOf().id, patientOf().name);

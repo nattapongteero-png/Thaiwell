@@ -886,6 +886,8 @@ export function HomeScreen() {
       // เช็กอินแล้ว/กำลังรับบริการ → ผลประเมินถูกล็อก (ไม่บันทึกทับ) · บอกชัดว่าทำอะไรได้
       const lockNow = toCase && !newPatient && !splitOff ? assessLock({ caseId: toCase.id }) : 'open';
       if (toCase && (lockNow === 'checkedIn' || lockNow === 'inService')) {
+        // ส่งเป็น "แจ้งเพิ่ม" ของนัดวันนี้ (ไม่แทนผลก่อนเช็กอิน)
+        setCaseToday(toCase.id, { pain: after.pain, risk: after.risk, red: level === 'red' });
         return [
           ...results,
           {
@@ -894,8 +896,8 @@ export function HomeScreen() {
             from: 'ai' as const,
             text:
               lockNow === 'inService'
-                ? `ตอนนี้กำลังรับบริการ${toCase.short}อยู่ค่ะ ผลประเมินแก้ไม่ได้แล้ว มีอาการอะไรเพิ่ม แจ้งผู้ให้บริการได้โดยตรงเลยนะคะ`
-                : `เช็กอินแล้วค่ะ ผู้ให้บริการได้รับผลประเมินก่อนนวดแล้ว จึงแก้ไม่ได้ ถ้ามีอาการเพิ่ม กด “แจ้งอาการเพิ่ม” ผู้ให้บริการจะเห็นก่อนเริ่มนวด`,
+                ? `ส่งผลประเมินนี้ให้ผู้ให้บริการแล้วค่ะ (แจ้งเพิ่มของนัดวันนี้) · ปวด ${after.pain}/10 · ถ้าอาการเร่งด่วน แจ้งผู้ให้บริการได้โดยตรงเลยนะคะ`
+                : `เช็กอินแล้วค่ะ ส่งผลประเมินนี้เป็น “แจ้งเพิ่ม” ของนัดวันนี้ให้ผู้ให้บริการแล้ว · ปวด ${after.pain}/10 · ผู้ให้บริการจะเห็นก่อนเริ่มนวด`,
             card: lockNow === 'checkedIn' ? ({ type: 'action', label: 'แจ้งอาการเพิ่ม', to: 'PreVisit' } as const) : undefined,
             source: 'AI Interview' as const,
             time: results[0]?.time,
