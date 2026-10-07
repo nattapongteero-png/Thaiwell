@@ -51,6 +51,8 @@ export const cloudOnline = () => online;
 
 /** แถวล่าสุดที่แอปเห็น — ใช้หาความเปลี่ยนแปลง และดูบิลตอนจ่าย */
 const rows = new Map<string, CloudRow>();
+/** สถานะล่าสุดของนัดใน cloud (ตามที่คลินิกทำจริง) */
+export const cloudStatusOf = (id: string) => rows.get(id)?.status;
 
 /* จำแถวที่เห็นล่าสุด → เปิดแอปใหม่ได้รับสิ่งที่คลินิกทำระหว่างปิดแอป (ไม่เล่นซ้ำของที่รับไปแล้ว) */
 export const SEEN_KEY = 'thaiwell.cloud.seen';

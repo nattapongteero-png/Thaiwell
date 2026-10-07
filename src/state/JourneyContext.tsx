@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { cloudAddendum, cloudReassess, clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { cloudAddendum, cloudReassess, cloudStatusOf, clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -773,6 +773,11 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       : target.draftId
         ? latest.current.drafts.find((d) => d.id === target.draftId)?.booking
         : latest.current.looseBookings.find((x) => x.id === target.looseId);
+    // สถานะจริงจากคลินิกมาก่อน (แอปอาจยังไม่ได้รับเหตุการณ์ว่าเช็กอิน/เรียกคิวแล้ว)
+    const ref = isCloud() ? refOf(target) : undefined;
+    const st = ref ? cloudStatusOf(ref) : undefined;
+    if (st === 'called' || st === 'in_service') return 'inService';
+    if (st === 'checked_in') return 'checkedIn';
     if (!b) return 'open';
     if (b.stage === 'called' || b.stage === 'in_service') return 'inService';
     if (b.stage === 'checked_in') return 'checkedIn';
@@ -783,9 +788,22 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const pushReassess = (target: { caseId?: string; draftId?: string; looseId?: string }, patch: Parameters<typeof cloudReassess>[1]) => {
     if (!isCloud()) return;
     const lock = assessLockOf(target);
-    if (lock === 'checkedIn' || lock === 'inService') return;
+    const fail = (text: string) => setApptNotices((all) => [{ id: `n-ra-${Date.now()}`, ...target, kind: 'reminder', text, at: nowAtLabel() }, ...all]);
+    if (lock === 'checkedIn' || lock === 'inService') {
+      fail(lock === 'inService' ? 'ส่งผลประเมินไม่ได้ · นัดนี้ถูกเรียกคิว/กำลังรับบริการแล้ว · แจ้งผู้ให้บริการโดยตรง' : 'ส่งผลประเมินไม่ได้ · เช็กอินแล้ว · ใช้ “แจ้งอาการเพิ่ม” แทน');
+      return;
+    }
     const ref = refOf(target);
-    if (ref) void cloudReassess(ref, patch).catch(() => undefined);
+    // ไม่พบนัดที่คลินิกลงไว้ → ส่งเป็นข้อความถึงคลินิกแทน (คลินิกยังเห็น)
+    if (!ref) {
+      sendNote('ผลประเมินก่อนนวดจากแอป', `${patientOf().name} · ${patch.summary ?? `ปวด ${patch.pain ?? '-'}/10`}`, patientOf().id, patientOf().name);
+      return;
+    }
+    void cloudReassess(ref, patch)
+      .then((ok) => {
+        if (!ok) fail('ส่งผลประเมินไม่ได้ · คลินิกเริ่มขั้นตอนของนัดนี้แล้ว (เช็กอิน/เรียกคิว) · แจ้งอาการเพิ่มได้ที่หน้านัด');
+      })
+      .catch(() => fail('ส่งผลประเมินไม่สำเร็จ · ตรวจอินเทอร์เน็ตแล้วลองใหม่'));
   };
   const addSymptomNote = useCallback(async (target: { caseId?: string; draftId?: string; looseId?: string }, text: string) => {
     const ref = refOf(target);
