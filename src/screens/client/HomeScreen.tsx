@@ -73,6 +73,7 @@ import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
+import { DANGER_SIGNS, associatedFor } from '../../data/associatedSymptoms';
 import { ALL_RADIATE_OPTIONS, NO_RADIATE, RADIATE_SEP, radiateAnswers, radiateFor, radiateForAll, radiateList, radiatePins } from '../../data/radiation';
 import { evaluateSafety } from '../../services/safetyEngine';
 import { needsReview } from '../../services/followUpService';
@@ -2811,6 +2812,8 @@ export function HomeScreen() {
                       assess={assess}
                       symptoms={symptomOptions}
                       related={HOME_CONTENT.related}
+                      relatedGroups={associatedFor(Object.keys(assess.sel).filter((k) => !HOME_CONTENT.related.includes(k)))}
+                      dangerSigns={DANGER_SIGNS}
                       selectedIn={selectedIn}
                       onChips={onChipsChange}
                       onPain={(v) => setAssess((a) => ({ ...a, pain: v }))}

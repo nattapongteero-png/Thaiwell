@@ -45,7 +45,13 @@ export function AssessWidget({
   onOther,
   radiate = [],
   onPickBody,
+  relatedGroups,
+  dangerSigns,
 }: {
+  /** อาการร่วมแบ่งตามบริเวณที่เลือก (ไม่ระบุ = รายการ related เดิม) */
+  relatedGroups?: { title: string; options: string[] }[];
+  /** สัญญาณอันตรายที่ถามทุกบริเวณ (ชา / อ่อนแรง) */
+  dangerSigns?: string[];
   /** เปิดหน้าเลือกจุดจากหุ่น (ตอบข้อนี้ด้วยการแตะบนหุ่น) */
   onPickBody?: () => void;
   /** ตัวเลือกอาการร้าว ของอาการที่ถามอยู่ */
@@ -120,17 +126,25 @@ export function AssessWidget({
         </View>
       );
     }
-    case 'related':
+    case 'related': {
+      // อาการร่วมเฉพาะบริเวณที่เลือก (แบ่งหัวข้อตามบริเวณ) + สัญญาณอันตรายถามทุกครั้ง · เลือกได้หลายข้อ แล้วกดถัดไป
+      const groups = relatedGroups ?? [{ title: '', options: related }];
+      const all = [...groups.flatMap((g) => g.options), ...(dangerSigns ?? [])];
+      const picked = selectedIn(all);
       return (
         <View style={{ gap: space[3] }}>
-          {onPickBody ? <PillButton label="ชี้จุดบนร่างกาย" icon="target" tone="light" onPress={onPickBody} /> : null}
-          <ChoiceSection
-            options={[...related, NONE]}
-            value={selectedIn(related)}
-            onChange={(next) => (next.includes(NONE) ? onNext(NONE) : pickFrom(related)(next))}
-          />
+          {groups.map((g) => (
+            <ChoiceSection key={g.title} title={g.title || undefined} options={g.options} value={selectedIn(g.options)} onChange={onChips(g.options)} />
+          ))}
+          {dangerSigns?.length ? <ChoiceSection title="สัญญาณที่ต้องระวัง" options={dangerSigns} value={selectedIn(dangerSigns)} onChange={onChips(dangerSigns)} /> : null}
+          {picked.length ? (
+            <PillButton label="ถัดไป" icon="arrow-right" onPress={() => onNext(picked.join(' · '))} />
+          ) : (
+            <PillButton label={NONE} tone="light" onPress={() => onNext(NONE)} />
+          )}
         </View>
       );
+    }
     case 'pain':
       // แตะตัวเลขครั้งเดียว = ส่งคำตอบ · คำตอบแสดงเป็นการ์ด Pain Score ฝั่งผู้ใช้
       return (

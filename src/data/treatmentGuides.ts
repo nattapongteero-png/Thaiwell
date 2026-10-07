@@ -212,6 +212,8 @@ const guideOf = (symptom: string) => {
 };
 /** คีย์แนวทางของอาการ (ใช้ตรวจว่าอยู่ในแนวร้าวของอีกจุดไหม) */
 export const guideKeyOf = (symptom: string) => guideOf(symptom)?.key;
+/** ชื่อบริเวณของอาการ (คอ บ่า · หลัง เอว ฯลฯ) */
+export const regionOf = (symptom: string) => { const k = guideOf(symptom)?.key; return (k && REGION[k]) || symptom.replace(/^ปวด/, ''); };
 const sideOf = (symptom: string): Side => (symptom.endsWith('ซ้าย') ? 'L' : symptom.endsWith('ขวา') ? 'R' : 'both');
 const pinsOf = (p: PointDef, side: Side): BodyPin[] => (!p.R ? p.L : side === 'L' ? p.L : side === 'R' ? p.R : [...p.L, ...p.R]);
 
