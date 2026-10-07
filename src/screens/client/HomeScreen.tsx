@@ -154,6 +154,8 @@ const LEFT_COLUMN = 179;
 const MERGE_OLD = 'รวมกับเรื่องเดิม';
 /** หลังเช็กอิน: แก้ผลประเมินไม่ได้ → ส่งข้อความเพิ่มถึงผู้ให้บริการ (ไม่แทนผลเดิม) */
 const ADD_NOTE_INTENT = 'แจ้งอาการเพิ่ม';
+/** ยังไม่ได้ประเมินหลังนวดครั้งล่าสุด → ตัวเลือกในแชท (เปิดแบบประเมินหลังนวด) */
+const POST_INTENT = 'ประเมินหลังนวด';
 /** แท็บนัดที่ยังไม่ประเมิน: ประเมินสำหรับนัดนี้ (ผูกกับนัด) — อีกทางคือประเมินเรื่องใหม่ (แท็บใหม่ ไม่ผูก) */
 const LOOSE_ASSESS_INTENT = 'ประเมินอาการสำหรับนัดนี้';
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
@@ -1221,7 +1223,9 @@ export function HomeScreen() {
       const lock = hasAppt ? assessLock(caseAppts[tcase.id] ?? tcase.appointment) : null;
       const notYet = hasAppt && !caseToday[tcase.id] ? preVisitOpensOn(tcase.appointment.date) : null;
       const pre = !hasAppt || notYet ? [] : !lock ? [CASE_INTENTS[0]] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
-      const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...pre, CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
+      // ยังไม่ได้บอกความรู้สึกหลังนวดครั้งล่าสุด → ให้ประเมินหลังนวดก่อน (อยู่บนสุด)
+      const post = tcase.visits[tcase.visits.length - 1]?.selfPain === undefined ? [POST_INTENT] : [];
+      const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...post, ...pre, CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
       const id = caseChats[tcase.id] ?? tcase.chatId;
       if (id && sessions.some((c) => c.id === id)) {
         setThread((t) => [...t.filter((m) => m.card?.type !== 'intents' || m !== t[t.length - 1]), item], id);
@@ -1616,6 +1620,11 @@ export function HomeScreen() {
       const lock = d ? assessLock(d.booking, d.stage === 'served') : null;
       if (lock) return aiReply(activeId, label, () => [aiText(ASSESS_LOCK_TEXT[lock])]);
       return d ? reassessDraft(d) : startAssess(label);
+    }
+    // ประเมินหลังนวด = แบบฟอร์ม (งานที่ต้องกรอก → หน้าเต็ม)
+    if (label === POST_INTENT) {
+      const tc = chatCase() ?? tcase;
+      return nav.navigate('PostAssessment', { caseId: tc.id });
     }
     // แชทของเรื่องที่รักษาอยู่
     if (CASE_INTENTS.includes(label)) {
@@ -4526,7 +4535,6 @@ function HomeBento({
         onPress={hasNext ? onOpen : undefined}
         accessibilityLabel={hasNext ? `นัดครั้งที่ ${nextNo} ${ap.today ? `วันนี้ ${ap.time} คิว ${ap.queue}` : `${ap.date} ${ap.time}`} ดูรายละเอียด` : `ครั้งที่ ${nextNo} ยังไม่มีนัด`}
       >
-        {hasNext ? null : <TileTitle title={finished ? 'ครบคอร์สแล้ว' : `ครั้งที่ ${nextNo}`} meta={cancelledAppts.includes(tcase.id) ? 'คลินิกยกเลิกนัด' : finished ? undefined : 'รอคลินิกนัดตามแผน'} />}
         {hasNext ? (
           <>
             {/* เมื่อไหร่ (ใหญ่) → ที่ไหน (ตัวเข้ม) · วันนี้ = คิวด้านขวา */}
@@ -4570,11 +4578,23 @@ function HomeBento({
             </View>
           </>
         ) : (
-          <>
-            {/* ยังไม่มีนัด: นวดครั้งล่าสุดแล้ว → คลินิกนัดครั้งถัดไปตามแผน (การประเมินมีแค่ก่อน/หลังนวด ไม่มีติดตามรายวัน) */}
-            <StepRow done text={`นวดครั้งที่ ${tc.visits.length} แล้ว · ${last.date}`} />
-            <StepRow text="คลินิกจะนัดครั้งถัดไป และแจ้งเตือนในแอป" />
-          </>
+          // ยังไม่มีนัด: แพทย์ยังไม่ลงนัดครั้งถัดไป → สถานะเป็นเนื้อหาหลัก (ตำแหน่งเดียวกับวัน-เวลาของการ์ดนัด) · ปุ่มโทรถามคลินิกได้
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: space[2] }}>
+            <View style={{ flex: 1 }}>
+              <Text variant="bodyXs" tone="secondary">
+                {finished ? `ครบ ${tc.course.total} ครั้ง` : `นัดครั้งที่ ${nextNo}/${tc.course.total}`}
+              </Text>
+              <Text variant="titleXl" numberOfLines={1} color={cancelledAppts.includes(tcase.id) ? colors.status.danger.fg : undefined}>
+                {finished ? 'ครบคอร์สแล้ว' : cancelledAppts.includes(tcase.id) ? 'คลินิกยกเลิกนัด' : 'รอคลินิกนัดตามแผน'}
+              </Text>
+              {finished ? null : (
+                <Text variant="bodyXs" tone="secondary">
+                  แจ้งเตือนในแอปเมื่อคลินิกลงนัด
+                </Text>
+              )}
+            </View>
+            <CallIconButton clinic={clinic} />
+          </View>
         )}
       </Tile>
 

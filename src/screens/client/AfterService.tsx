@@ -45,6 +45,7 @@ import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { NotFoundScreen } from './NotFound';
 import { sessionRecord } from './home/TreatmentDetailBody';
+import { PainPicker } from './home/PainPicker';
 import type { TreatmentCase } from '../../data/homeFeed';
 
 /* ============================================================ 15 POST-SERVICE ASSESSMENT */
@@ -65,31 +66,33 @@ export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basePain]);
   const [pain, setPain] = React.useState<number | undefined>();
-  const [stiff, setStiff] = React.useState<number | undefined>();
-  const [relax, setRelax] = React.useState<number | undefined>();
   const [sat, setSat] = React.useState<number | undefined>();
   const [adverse, setAdverse] = React.useState<string[]>(['ไม่มี']);
-  const complete = pain !== undefined && stiff !== undefined && relax !== undefined && sat !== undefined;
+  const complete = pain !== undefined && sat !== undefined;
   const hasAdverse = adverse.some((a) => a !== 'ไม่มี');
+  // ชา/อ่อนแรง = อาการทางระบบประสาท (เกณฑ์เดียวกับประเมินก่อนนวด) → ควรพบแพทย์
+  const red = adverse.includes('ชา/อ่อนแรง');
+  const no = tc ? tc.visits.length : 1;
 
   return (
     <Screen
-      header={<AppBar title="หลังนวดรู้สึกอย่างไร" onBack={() => nav.goBack()} />}
+      header={<AppBar title={`หลังนวดครั้งที่ ${no}`} onBack={() => nav.goBack()} />}
       footer={
         <Button
-          label={closed ? 'บันทึก' : 'ดูผลลัพธ์ของฉัน'}
+          label={closed ? 'ส่งผลประเมิน' : 'ดูผลลัพธ์ของฉัน'}
           iconRight={closed ? undefined : 'arrow-right'}
           disabled={!complete}
           onPress={() => {
-            setAfter({ pain: pain!, stiffness: stiff!, mobility: Math.min(5, before.mobility + 2), stress: Math.max(1, before.stress - 2), sleep: before.sleep });
-            log('ผู้รับบริการ', `บันทึกแบบประเมินหลังนวด · ปวด ${basePain} → ${pain}`);
+            setAfter({ pain: pain!, stiffness: before.stiffness, mobility: before.mobility, stress: before.stress, sleep: before.sleep });
+            const text = `ปวด ${basePain} → ${pain}/10 · พึงพอใจ ${sat! + 1}/5${hasAdverse ? ` · ${adverse.join(', ')}` : ''}`;
+            log('ผู้รับบริการ', `บันทึกแบบประเมินหลังนวด · ${text}`);
             // อาการผิดปกติหลังนวด → บันทึกแจ้งผู้ให้บริการ (ข้อความบนหน้านี้บอกว่าแจ้งแล้ว)
             if (hasAdverse) log('ระบบ → ผู้ให้บริการ', `แจ้งอาการผิดปกติหลังนวด: ${adverse.join(', ')}`);
             if (newPatient) setCareStage('served');
-            // คลินิกปิดแล้ว → เก็บเป็นความรู้สึกของผู้ใช้ แล้วกลับหน้าผลลัพธ์เดิม
+            // คลินิกปิดแล้ว → เก็บเป็นความรู้สึกของผู้ใช้ แล้วกลับหน้าเดิม
             if (closed && tc) {
               setVisitSelfPain(tc.id, pain!);
-              notifyClinic('ประเมินหลังนวดจากแอป', `${tc.short} ครั้งที่ ${tc.visits.length} · ปวด ${closed.painBefore} → ${pain}${hasAdverse ? ` · ${adverse.join(', ')}` : ''}`);
+              notifyClinic(red ? 'ประเมินหลังนวด: ชา/อ่อนแรง ควรพบแพทย์' : 'ประเมินหลังนวดจากแอป', `${tc.short} ครั้งที่ ${tc.visits.length} · ${text}`);
               return nav.goBack();
             }
             // ใบร่าง → นวดครั้งแรกแล้ว ผู้ให้บริการตั้งชื่อโรค → ใบการรักษา · ใบการรักษา → เพิ่มครั้งการรักษา · จองไว้ก่อนประเมิน → นัดนี้ใช้แล้ว
@@ -101,20 +104,13 @@ export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: 
         />
       }
     >
-      {/* การ์ดชุดเดียวกับหน้าอื่น (Panel) · ตัวเลือกแบบเดียวกับในแชท (ReplyChips) */}
-      <Panel title="เทียบกับก่อนนวด">
-        <ScaleSelector label="ความปวดตอนนี้" value={pain} onChange={setPain} compareValue={before.pain} minLabel="ไม่ปวด" maxLabel="ปวดมาก" />
-        <ScaleSelector label="ความตึงตอนนี้" value={stiff} onChange={setStiff} compareValue={before.stiffness} minLabel="ไม่ตึง" maxLabel="ตึงมาก" />
-      </Panel>
-      <Panel title="ความผ่อนคลาย">
-        <FaceScale value={relax} onChange={setRelax} labels={['ไม่เลย', 'น้อย', 'ปานกลาง', 'มาก', 'มากที่สุด']} />
-      </Panel>
-      <Panel title="ความพึงพอใจต่อบริการ">
-        <FaceScale value={sat} onChange={setSat} labels={['ไม่พอใจ', 'น้อย', 'ปานกลาง', 'พอใจ', 'พอใจมาก']} />
+      {/* ชุดเดียวกับประเมินก่อนนวด: ปวดเท่าไหร่ (เทียบก่อนนวด) → อาการผิดปกติ → ความพึงพอใจ */}
+      <Panel title="ตอนนี้ปวดเท่าไหร่">
+        <PainPicker value={pain} onChange={setPain} compareValue={basePain} compareLabel="ก่อนนวด" />
       </Panel>
       <Panel title="มีอาการผิดปกติหลังนวดไหม">
         <ReplyChips
-          options={['ไม่มี', 'ระบม/ช้ำ', 'เวียนศีรษะ', 'ปวดมากขึ้น', 'ชา']}
+          options={['ไม่มี', 'ระบม/ช้ำ', 'ปวดมากขึ้น', 'บวม', 'เวียนศีรษะ', 'ชา/อ่อนแรง']}
           selected={adverse}
           onPick={(o) =>
             setAdverse((cur) => (o === 'ไม่มี' ? ['ไม่มี'] : cur.includes(o) ? (cur.filter((x) => x !== o && x !== 'ไม่มี').length ? cur.filter((x) => x !== o && x !== 'ไม่มี') : ['ไม่มี']) : [...cur.filter((x) => x !== 'ไม่มี'), o]))
@@ -122,12 +118,15 @@ export function PostAssessmentScreen({ route }: { route?: { params?: { caseId?: 
         />
         {hasAdverse ? (
           <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'center' }}>
-            <Icon name="alert-triangle" size="xs" color={TINT.amber} />
+            <Icon name="alert-triangle" size="xs" color={red ? '#B42318' : TINT.amber} />
             <Text variant="bodySm" style={{ flex: 1 }}>
-              แจ้งผู้ให้บริการแล้ว ถ้าไม่ดีขึ้นใน 24 ชม. ควรพบแพทย์
+              {red ? 'ควรพบแพทย์ก่อนนวดครั้งถัดไป ส่งให้ผู้ให้บริการแล้ว' : 'ส่งให้ผู้ให้บริการแล้ว ถ้าไม่ดีขึ้นใน 24 ชม. ควรพบแพทย์'}
             </Text>
           </View>
         ) : null}
+      </Panel>
+      <Panel title="พอใจบริการครั้งนี้ไหม">
+        <FaceScale value={sat} onChange={setSat} labels={['ไม่พอใจ', 'น้อย', 'ปานกลาง', 'พอใจ', 'พอใจมาก']} />
       </Panel>
     </Screen>
   );
@@ -184,22 +183,19 @@ export function SessionResultScreen({ route }: { route?: { params?: { caseId?: s
       {/* สรุปตัวเลข (StatTile แบบเดียวกับโปรไฟล์/ประวัติ) */}
       <View style={{ flexDirection: 'row', gap: space[2] }}>
         <StatTile label="ความปวด" value={`${before.pain} → ${a.pain}`} unit="/10" color={a.pain < before.pain ? colors.brand.primary : a.pain > before.pain ? colors.status.danger.fg : undefined} />
-        <StatTile label="ความตึง" value={`${before.stiffness} → ${a.stiffness}`} unit="/10" color={a.stiffness < before.stiffness ? colors.brand.primary : undefined} />
       </View>
 
       <Panel title="เทียบก่อน–หลัง">
         <BeforeAfterBars
           data={[
             { label: 'ความปวด (0–10)', before: before.pain, after: a.pain },
-            { label: 'ความตึง (0–10)', before: before.stiffness, after: a.stiffness },
-            { label: 'การเคลื่อนไหว (1–5)', before: before.mobility, after: a.mobility, max: 5 },
           ]}
         />
       </Panel>
 
       <Panel title="สรุป" right={<Tag text="ผู้ให้บริการตรวจแล้ว" tone="good" />}>
         <Text variant="bodyMd">
-          {`ความปวด ${before.pain} → ${a.pain} ความตึง ${before.stiffness} → ${a.stiffness}`}
+          {`ความปวด ${before.pain} → ${a.pain}`}
           {diff >= 1 ? ' ตอบสนองต่อการนวดดี ทำท่ายืดที่บ้านต่อเนื่อง' : diff === 0 ? ' ผู้ให้บริการจะปรับแผนครั้งถัดไป' : ' แนะนำให้แพทย์ประเมินก่อนนวดครั้งถัดไป'}
         </Text>
       </Panel>
