@@ -3863,7 +3863,7 @@ function FirstVisitCard({
             </Pressable>
           ) : (
             <Pressable accessibilityRole="button" accessibilityLabel={b.stage === 'called' ? 'ถึงคิวแล้ว' : b.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={b.queue ? onOpen : onCheckIn} style={{ flex: 1 }}>
-              <TilePill icon={b.stage === 'called' ? 'bell' : b.queue ? 'eye' : 'maximize'} label={b.stage === 'called' ? 'ถึงคิวแล้ว' : b.queue ? 'ดูคิว' : 'เช็กอิน'} />
+              <TilePill icon={b.stage === 'called' ? 'bell' : b.queue ? 'users' : 'maximize'} label={b.stage === 'called' ? 'ถึงคิวแล้ว' : b.queue ? 'ดูคิว' : 'เช็กอิน'} />
             </Pressable>
           )}
           <NavIconButton clinic={b.clinic} />
@@ -4519,14 +4519,14 @@ function HomeBento({
                 ) : null
               ) : (
                 <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onPreVisit} style={{ flex: 1 }}>
-                  <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
+                  <TilePill icon={preDone ? 'file-text' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
                 </Pressable>
               )}
               {ap.today && preDone && !today?.red && ap.stage === 'in_service' ? null : ap.today && preDone && !today?.red ? (
                 <>
                   {/* เช็กอิน → ดูคิว → ถึงคิวแล้ว (กำลังรับบริการ = ไม่มีปุ่มนี้) */}
                   <Pressable accessibilityRole="button" accessibilityLabel={ap.stage === 'called' ? 'ถึงคิวแล้ว' : ap.queue ? 'ดูคิว' : 'เช็กอิน'} onPress={ap.queue ? onOpen : onCheckIn} style={{ flex: 1 }}>
-                    <TilePill icon={ap.stage === 'called' ? 'bell' : ap.queue ? 'eye' : 'maximize'} label={ap.stage === 'called' ? 'ถึงคิวแล้ว' : ap.queue ? 'ดูคิว' : 'เช็กอิน'} />
+                    <TilePill icon={ap.stage === 'called' ? 'bell' : ap.queue ? 'users' : 'maximize'} label={ap.stage === 'called' ? 'ถึงคิวแล้ว' : ap.queue ? 'ดูคิว' : 'เช็กอิน'} />
                   </Pressable>
                   <NavIconButton clinic={clinic} />
                 </>
@@ -4565,7 +4565,7 @@ function HomeBento({
         />
         {/* ประเมินก่อนนวดครั้งถัดไปแล้ว (ยังไม่นวด) → การ์ดเป็นของครั้งนี้: ปวดวันนี้ เทียบหลังนวดครั้งก่อน · นวดเสร็จ (คลินิกบันทึก) → ผลครั้งนั้นตามเดิม */}
         {today && hasNext ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={`ครั้งที่ ${nextNo} วันนี้ปวด ${today.pain} ดูผลประเมินก่อนนวด`} onPress={onPreVisit}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`ครั้งที่ ${nextNo} วันนี้ปวด ${today.pain} ดูผลประเมินก่อนนวด`} onPress={() => onHistory(tc.visits.length)}>
             <View pointerEvents="none">
               <PainScoreCard
                 value={today.pain}

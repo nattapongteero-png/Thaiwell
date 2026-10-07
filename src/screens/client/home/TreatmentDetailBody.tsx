@@ -21,6 +21,7 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
   const { colors } = useTheme();
   /** เปิดดูรายครั้ง (index ใน tc.visits) — เลือกจากแถบด้านบนที่เดียว (การ์ดด้านล่างเป็นสรุป ดูอย่างเดียว) */
   if (visit !== null && tc.visits[visit]) return <VisitDetail tc={tc} index={visit} />;
+  if (visit === tc.visits.length) return <PreVisitDetail tc={tc} />;
   const first = tc.visits[0];
   const last = tc.visits[tc.visits.length - 1];
   // ล่าสุดที่มีคะแนน (ครั้งล่าสุดยังไม่ประเมิน → ใช้ครั้งก่อนหน้า)
@@ -383,6 +384,49 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
   };
 }
 
+/** ครั้งถัดไปที่ประเมินก่อนนวดแล้วแต่ยังไม่นวด — ก่อนนวด (วันนี้) · หลังนวด = ยังไม่มี · เทียบหลังนวดครั้งก่อน */
+function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
+  const { colors } = useTheme();
+  const { caseToday } = useJourney();
+  const t = caseToday[tc.id];
+  if (!t) return null;
+  const prev = afterOf(tc, tc.visits.length - 1) ?? tc.visits[tc.visits.length - 1].painAfter;
+  const d = t.pain - prev;
+  const box = (label: string, v: number | undefined) => (
+    <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
+      <Text variant="bodyXs" tone="secondary">{label}</Text>
+      <Text style={{ fontFamily: fontFamily.bold, fontSize: 26, lineHeight: 36, color: v === undefined ? colors.text.tertiary : painColor(v) }}>{v ?? '–'}<Text variant="bodySm" tone="tertiary">/10</Text></Text>
+    </View>
+  );
+  return (
+    <View style={{ gap: space[3] }}>
+      <View style={{ gap: 2 }}>
+        <Text variant="bodyXs" tone="secondary">
+          ครั้งที่ {tc.visits.length + 1} · {tc.appointment.today ? 'วันนี้' : tc.appointment.date}
+        </Text>
+        <Text style={{ fontFamily: fontFamily.bold, fontSize: 22, lineHeight: 32, color: colors.text.primary }}>{tc.plan}</Text>
+        <Text variant="bodySm" tone="secondary">
+          ประเมินก่อนนวดแล้ว · ยังไม่นวด
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: space[2] }}>
+        {box('ก่อนนวด', t.pain)}
+        {box('หลังนวด', undefined)}
+        {box('หลังครั้งก่อน', prev)}
+      </View>
+      <Text variant="bodyXs" tone="tertiary">
+        {d > 0 ? `ปวดกลับมา +${d} จากหลังนวดครั้งก่อน` : d < 0 ? `ดีขึ้นอีก ${-d} จากหลังนวดครั้งก่อน` : 'ผลจากครั้งก่อนยังคงอยู่'}
+      </Text>
+      {t.adverse || t.risk ? (
+        <Section icon="clipboard" tint="#2F6FA3" title="แจ้งก่อนนวด">
+          {t.adverse ? <Info k="หลังนวดครั้งก่อน" v={t.adverse} /> : null}
+          {t.risk ? <Info k="ข้อห้ามใหม่" v={t.risk} /> : null}
+        </Section>
+      ) : null}
+    </View>
+  );
+}
+
 function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
   const { colors } = useTheme();
   const v = tc.visits[index];
@@ -479,7 +523,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
 }
 
 /** แถบเลือกครั้ง (เลื่อนแนวนอน) — ภาพรวม + ครั้งที่ 1…n (ล่าสุดอยู่ขวาสุด · เปิดมาเลื่อนให้เห็นครั้งล่าสุด) */
-export function VisitTabs({ count, dates, value, onChange, inset = space[5] }: { count: number; dates: string[]; value: number | null; onChange: (v: number | null) => void; /** ระยะขอบซ้ายขวาของภาชนะ (เลื่อนชิดขอบจอได้) */ inset?: number }) {
+export function VisitTabs({ count, dates, value, onChange, inset = space[5], next }: { count: number; dates: string[]; value: number | null; onChange: (v: number | null) => void; /** ครั้งถัดไปที่ประเมินก่อนนวดแล้ว (ยังไม่นวด) → แท็บต่อท้าย */ next?: string; /** ระยะขอบซ้ายขวาของภาชนะ (เลื่อนชิดขอบจอได้) */ inset?: number }) {
   const { colors } = useTheme();
   const ref = React.useRef<ScrollView>(null);
   const item = (key: string, label: string, sub: string | null, on: boolean, onPress: () => void) => (
@@ -505,6 +549,7 @@ export function VisitTabs({ count, dates, value, onChange, inset = space[5] }: {
     <ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -inset }} contentContainerStyle={{ gap: space[2], paddingHorizontal: inset }}>
       {item('all', 'ภาพรวม', 'ทุกครั้ง', value === null, () => onChange(null))}
       {Array.from({ length: count }, (_, i) => item(`v${i}`, `ครั้งที่ ${i + 1}`, dates[i], value === i, () => onChange(i)))}
+      {next ? item('next', `ครั้งที่ ${count + 1}`, next, value === count, () => onChange(count)) : null}
     </ScrollView>
   );
 }

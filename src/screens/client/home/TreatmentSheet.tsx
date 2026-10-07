@@ -7,17 +7,21 @@ import { type TreatmentCase } from '../../../data/homeFeed';
 import { TreatmentDetailBody, VisitTabs } from './TreatmentDetailBody';
 import { SYMPTOM_GROUPS } from '../../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../../data/stretchMotion';
+import { useJourney } from '../../../state/JourneyContext';
 
 /**
  * รายละเอียดการรักษา (bottom sheet จากแชท) — แทนการพาไปหน้ารายการประวัติ
  * สรุป (ดีขึ้นกี่ % · คอร์ส) → กราฟปวดก่อน/หลังทุกครั้ง → รายครั้ง → บริเวณที่รักษา · ผู้ให้บริการ · นัดถัดไป → ดูแลตัวเอง
  */
 export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { tc: TreatmentCase | null; visible: boolean; onClose: () => void; /** เปิดที่แท็บครั้งนั้น (การ์ดผลครั้งที่ N) · null = ภาพรวม (การ์ดแผนการรักษา) */ initialVisit?: number | null }) {
+  const { caseToday } = useJourney();
   const [visit, setVisit] = React.useState<number | null>(initialVisit);
   React.useEffect(() => {
     if (visible) setVisit(initialVisit);
   }, [visible, tc?.id, initialVisit]);
   if (!tc) return null;
+  // ประเมินก่อนนวดครั้งถัดไปแล้ว (ยังไม่นวด) → มีแท็บครั้งนั้นต่อท้าย
+  const next = caseToday[tc.id] ? (tc.appointment.today ? 'วันนี้' : tc.appointment.date) : undefined;
   return (
     <BottomSheet
       visible={visible}
@@ -27,7 +31,7 @@ export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { 
       subtitle={tc.short}
       heightRatio={0.9}
       // แถบเลือกครั้งค้างอยู่ใต้หัว (ไม่เลื่อนไปกับเนื้อหา)
-      header={<VisitTabs count={tc.visits.length} dates={tc.visits.map((v) => v.date)} value={visit} onChange={setVisit} />}
+      header={<VisitTabs count={tc.visits.length} dates={tc.visits.map((v) => v.date)} value={visit} onChange={setVisit} next={next} />}
     >
       <TreatmentDetailBody tc={tc} visit={visit} />
     </BottomSheet>
