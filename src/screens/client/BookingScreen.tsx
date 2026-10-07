@@ -195,7 +195,11 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
       {!fixed && pickable.length > 1 ? (
         <Panel title="จองให้เรื่องไหน" flush>
           {pickable.map((t, i) => (
-            <Choice key={t.key} on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === pickable.length - 1} />
+            <React.Fragment key={t.key}>
+              {/* เรื่องใหม่ (ยังไม่ได้ประเมิน) แยกจากเรื่องที่ประเมินแล้วด้วยแถบคั่น — ทางสำรอง ไม่ใช่ตัวเลือกแรก */}
+              {t.key === 'new' && i > 0 ? <View style={{ height: space[2], backgroundColor: colors.surface.sunken }} /> : null}
+              <Choice on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === pickable.length - 1 || pickable[i + 1]?.key === 'new'} />
+            </React.Fragment>
           ))}
         </Panel>
       ) : null}
