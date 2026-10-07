@@ -123,6 +123,7 @@ import { BodyPicker, type BodySelection } from './home/BodyPicker';
 import { BookingEditSheet } from './home/BookingEditSheet';
 import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
 import { SafetySheet } from './home/SafetySheet';
+import { CourseSheet } from './CourseScreen';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
@@ -2727,7 +2728,7 @@ export function HomeScreen() {
                     onPlace={(id) => nav.navigate('PlaceDetail', { id })}
                     onPlaces={() => nav.navigate('ClientTabs', { screen: 'Places' })}
                     onElement={() => nav.navigate('ElementQuiz')}
-                    onStretch={(groupId) => nav.navigate('SelfCare', { groupId })}
+                    onStretch={(groupId) => setSheetStretch(groupId)}
                   />
                 ) : homeLoading ? (
                   <BentoSkeleton width={bentoW} />
@@ -2748,7 +2749,8 @@ export function HomeScreen() {
                     onCheckIn={() => nav.navigate('CheckIn', { draftId: selDraft.id })}
                     onRedFlag={() => nav.navigate('RedFlag', { reason: `ผลประเมิน${selDraft.title}` })}
                     onFollowUp={() => nav.navigate('FollowUp')}
-                    onSelfCare={(groupId) => nav.navigate('SelfCare', groupId ? { groupId } : undefined)}
+                    // ท่ายืดของเรื่องนี้ = ดูข้อมูล → sheet (แบบเดียวกับในแชท) · ไม่ระบุเรื่อง = หน้ารวมท่า
+                    onSelfCare={(groupId) => (groupId ? setSheetStretch(groupId) : nav.navigate('SelfCare'))}
                     onReassess={() => reassessDraft(selDraft)}
                   />
                 ) : caseIdx >= cases.length ? null : (
@@ -2764,7 +2766,7 @@ export function HomeScreen() {
                     setSheetCaseId(tcase.id);
                   }}
                   onFollowUp={followCaseChat}
-                  onSelfCare={(groupId) => nav.navigate('SelfCare', groupId ? { groupId } : undefined)}
+                  onSelfCare={(groupId) => (groupId ? setSheetStretch(groupId) : nav.navigate('SelfCare'))}
                   onEdit={() => nav.navigate('Booking', { caseId: tcase.id, clinic: caseClinic(tcase) })}
                   onOpen={() => nav.navigate('AppointmentDetail', { caseId: tcase.id })}
                   onBook={() => nav.navigate('Booking', { caseId: tcase.id, clinic: caseClinic(tcase) })}
@@ -3901,15 +3903,17 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { widt
   const mins = b.service.split(' · ')[1];
   const nav = useNav();
   const { clinicCourse, clinicVisits } = useJourney();
+  const [courseOpen, setCourseOpen] = React.useState(false);
   // ยังไม่เคยประเมิน: ประเมินในการ์ดนัด (ปุ่มหลัก) · ชื่อบริการอยู่ที่แท็บแล้ว ระยะเวลาอยู่ในการ์ดนัด
   return (
     <View style={{ gap: BENTO_GAP }}>
+      <CourseSheet visible={courseOpen} onClose={() => setCourseOpen(false)} />
       <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} onAssess={onAssess} minutes={mins} steps={<StepRow text="งดอาหารหนัก 30 นาที · ใส่เสื้อผ้าหลวมสบาย" />} />
       <TherapistTile name={b.therapist} width={width} stage={b.date === 'วันนี้' ? b.stage : undefined} />
       {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา
        * ยังไม่เคยรักษาที่คลินิก (แพทย์ยังไม่ได้ตรวจ) = ยังไม่มีคอร์สจริง → ไม่แสดง แม้หลังบ้านจะส่งมา */}
       {b.course && clinicVisits.length ? (
-        <Tile onPress={() => nav.navigate('Course')} accessibilityLabel="ดูคอร์สและประวัติการรักษา" style={{ gap: space[1] }}>
+        <Tile onPress={() => setCourseOpen(true)} accessibilityLabel="ดูคอร์สการรักษา" style={{ gap: space[1] }}>
           <TileTitle title="คอร์สการรักษา" meta={`ครั้งที่ ${b.course.no}/${b.course.total}`} />
           <Text variant="bodySm" numberOfLines={2}>
             {clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : b.course.name}

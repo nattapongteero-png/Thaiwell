@@ -22,7 +22,9 @@ export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { 
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title={`รักษา${tc.short}`}
+      // หัวข้อบอกว่าเป็นหน้าอะไร · ชื่อเรื่องเป็นบรรทัดรอง
+      title="แผนและผลการรักษา"
+      subtitle={tc.short}
       heightRatio={0.9}
       // แถบเลือกครั้งค้างอยู่ใต้หัว (ไม่เลื่อนไปกับเนื้อหา)
       header={<VisitTabs count={tc.visits.length} dates={tc.visits.map((v) => v.date)} value={visit} onChange={setVisit} />}

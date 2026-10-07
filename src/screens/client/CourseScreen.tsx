@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { AppBar, Icon, IconBox, InfoRow, Panel, ProgressBar, Screen, StatTile, TINT, Tag, Text, useTheme } from '../../design-system';
+import { AppBar, BottomSheet, Icon, IconBox, InfoRow, Panel, ProgressBar, Screen, StatTile, TINT, Tag, Text, useTheme } from '../../design-system';
 import { space } from '../../design-system/tokens';
 import { useJourney, type LooseBooking } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -20,6 +20,26 @@ const STAGE: Record<string, string> = { checked_in: 'เช็กอินแล
  */
 export function CourseScreen() {
   const nav = useNav();
+  return (
+    <Screen header={<AppBar title="การรักษาของฉัน" onBack={() => nav.goBack()} />}>
+      <CourseBody />
+    </Screen>
+  );
+}
+
+/** คอร์สการรักษาแบบ bottom sheet (การ์ดคอร์สในหน้าแรก = ดูข้อมูล → sheet) · แตะนัด = ปิด sheet แล้วไปหน้ารายละเอียดนัด */
+export function CourseSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="คอร์สการรักษา" heightRatio={0.9}>
+      <CourseBody onLeave={onClose} />
+    </BottomSheet>
+  );
+}
+
+/** เนื้อหาคอร์ส + นัด + ประวัติ (ใช้ทั้งหน้า "การรักษาของฉัน" และ sheet) · onLeave = ก่อนออกไปหน้าอื่น (ปิด sheet) */
+export function CourseBody({ onLeave }: { onLeave?: () => void }) {
+  const nav0 = useNav();
+  const nav = { navigate: ((...a: Parameters<typeof nav0.navigate>) => (onLeave?.(), nav0.navigate(...a))) as typeof nav0.navigate };
   const { colors } = useTheme();
   const { clinicCourse: c, clinicVisits, looseBookings, plannedVisits, cases } = useJourney();
   // นัดตามแผนที่คลินิกลงไว้ล่วงหน้า (ของการรักษาที่ทำอยู่) — เรียงตามวัน · นัดแรก = นัดถัดไป
@@ -141,7 +161,7 @@ export function CourseScreen() {
     </Panel>
   ) : null;
   return (
-    <Screen header={<AppBar title="คอร์สและประวัติการรักษา" onBack={() => nav.goBack()} />}>
+    <View style={{ gap: space[4] }}>
       {c ? (
         <>
           <Panel title={c.name} right={<Tag text={left ? `เหลือ ${left} ครั้ง` : 'ครบคอร์สแล้ว'} tone={left ? 'good' : undefined} />}>
@@ -183,6 +203,6 @@ export function CourseScreen() {
           </Text>
         </View>
       )}
-    </Screen>
+    </View>
   );
 }

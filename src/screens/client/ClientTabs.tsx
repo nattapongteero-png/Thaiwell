@@ -220,7 +220,7 @@ export function ProfileScreen() {
 
       <Panel title="การตั้งค่า" flush>
         {/* คอร์สที่คลินิกเปิดให้ + นัดตามคอร์ส (บัญชีจริง) */}
-        {account?.userId ? <RowLink icon="calendar" tint={TINT.green} title="คอร์สและประวัติการรักษา" sub={clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : clinicVisits.length ? `รักษาแล้ว ${clinicVisits.length} ครั้ง` : 'ยังไม่มีคอร์ส'} onPress={() => nav.navigate('Course')} /> : null}
+        {account?.userId ? <RowLink icon="calendar" tint={TINT.green} title="การรักษาของฉัน" sub={clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : clinicVisits.length ? `รักษาแล้ว ${clinicVisits.length} ครั้ง` : 'ยังไม่มีคอร์ส'} onPress={() => nav.navigate('Course')} /> : null}
         {/* บิลจากคลินิก (จ่ายในแอป) + ใบเสร็จ */}
         <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
