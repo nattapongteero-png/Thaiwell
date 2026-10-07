@@ -3208,28 +3208,22 @@ function TilePill({ icon, label, dark = true }: { icon: React.ComponentProps<typ
 }
 
 /** วันที่นัดชิดขวา รูปแบบเดียวกับคิว: "พฤ. 9 ต.ค." → ป้าย พฤ. + ค่า 9 ต.ค. · คำอื่น (พรุ่งนี้) → ป้าย วัน */
-const WEEKDAY: Record<string, string> = { 'อา.': 'วันอาทิตย์', 'จ.': 'วันจันทร์', 'อ.': 'วันอังคาร', 'พ.': 'วันพุธ', 'พฤ.': 'วันพฤหัสบดี', 'ศ.': 'วันศุกร์', 'ส.': 'วันเสาร์' };
 /**
- * หัวการ์ดนัด — ลำดับที่ผู้ใช้อยากรู้: เมื่อไหร่ (วัน + เวลา ใหญ่สุด) → ที่ไหน (ชื่อคลินิก ตัวเข้ม) → นัดครั้งที่เท่าไหร่ (ป้ายเล็ก)
- * วันนี้: เวลาใหญ่ + คิวด้านขวา
+ * หัวการ์ดนัด — ป้ายเล็ก "นัดครั้งที่ n/n" → วัน + เวลาต่อกัน (ใหญ่สุด) → ชื่อคลินิก (ตัวเข้ม)
+ * วันนี้: "วันนี้ · 10:30" + คิวด้านขวา
  */
 function ApptHeader({ label, date, time, clinic, today, extra, right }: { label: string; date: string; time: string; clinic?: string; today: boolean; extra?: string; right?: React.ReactNode }) {
   const { colors } = useTheme();
-  const m = date.match(/^(\S+\.)\s+(.+)$/);
-  const day = today ? 'วันนี้' : m ? WEEKDAY[m[1]] ?? m[1] : '';
   return (
     <View style={{ gap: space[2] }}>
-      <Text variant="labelSm" tone="secondary">
-        {label}
-      </Text>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: space[2] }}>
         <View style={{ flexShrink: 1 }}>
           <Text variant="bodyXs" tone="secondary">
-            {day}
+            {label}
             {extra ? ` · ${extra}` : ''}
           </Text>
           <Text variant="titleXl" numberOfLines={1}>
-            {today ? time : `${m ? m[2] : date} · ${time}`}
+            {today ? 'วันนี้' : date} · {time}
           </Text>
         </View>
         {right}
