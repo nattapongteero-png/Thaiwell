@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AppBar, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
+import { AppBar, Badge, Button, Icon, InfoRow, Panel, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -315,7 +315,8 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                 key={sv.value}
                 on={service === sv.value}
                 title={sv.label}
-                sub={[sv.style, sv.value === recommended && hasRecommendation ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
+                sub={[sv.style, sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
+                badge={sv.value === recommended && hasRecommendation ? 'ตามผลประเมิน' : undefined}
                 onPress={() => pickService(sv.value)}
                 last={i === services.length - 1}
               />
@@ -402,7 +403,7 @@ export function BookingDoneScreen({ route }: { route: { params: { date: string; 
 }
 
 /** ตัวเลือกแบบแถวในการ์ด (เลือกได้ 1) — วงกลมเลือก · ชื่อ · รายละเอียด */
-function Choice({ on, title, sub, onPress, last }: { on: boolean; title: string; sub?: string; onPress: () => void; last?: boolean }) {
+function Choice({ on, title, sub, onPress, last, badge }: { on: boolean; title: string; sub?: string; onPress: () => void; last?: boolean; /** ป้ายมุมขวา (เช่น บริการที่แนะนำ) */ badge?: string }) {
   const { colors } = useTheme();
   return (
     <Pressable accessibilityRole="radio" accessibilityState={{ checked: on }} onPress={onPress} style={({ pressed }) => ({ backgroundColor: on ? colors.brand.subtle : pressed ? colors.surface.sunken : 'transparent' })}>
@@ -418,6 +419,7 @@ function Choice({ on, title, sub, onPress, last }: { on: boolean; title: string;
             </Text>
           ) : null}
         </View>
+        {badge ? <Badge label={badge} tone="brand" /> : null}
       </View>
     </Pressable>
   );
