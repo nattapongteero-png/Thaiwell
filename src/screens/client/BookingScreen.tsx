@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AppBar, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
+import { AppBar, BottomSheet, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -39,8 +39,8 @@ const MONTH_FULL = ['มกราคม', 'กุมภาพันธ์', 'ม
 const MONTH_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 /**
- * ปฏิทินบนหน้าจอง (ที่เดียวที่เลือกวัน) → เวลาของวันนั้นขึ้นด้านล่าง → ผู้ให้บริการ
- * ดูแบบ สัปดาห์ / เดือน (สลับได้) · ‹ › = สัปดาห์/เดือน ก่อน-ถัดไป · แตะหัว "ตุลาคม 2569 ▾" = เลือกเดือน/ปี
+ * ปฏิทินบนหน้าจอง (วางบนหน้า ไม่อยู่ในการ์ด · ที่เดียวที่เลือกวัน) → เวลาของวันนั้นขึ้นด้านล่าง → ผู้ให้บริการ
+ * สัปดาห์ / เดือน (สลับได้) · ปัดซ้ายขวาเปลี่ยนสัปดาห์/เดือน (ไม่มีลูกศร) · แตะหัว "ตุลาคม 2569 ▾" = bottom sheet เลือกเดือน/ปี
  * ช่วงตามที่หมอลงตาราง · วันมีคิว = จุด · ไม่มีคิว/ผ่านไปแล้ว = จางกดไม่ได้ · วันนี้ = ตัวเลขสีแบรนด์ · เลือก = วงกลมเขียว
  */
 function InlineCalendar({ counts, last, value, onPick }: { /** วัน (offset) → จำนวนรอบว่าง */ counts: Map<number, number>; last: number; value: number | null; onPick: (offset: number) => void }) {
@@ -58,43 +58,74 @@ function InlineCalendar({ counts, last, value, onPick }: { /** วัน (offset
   const monthIdx = (dt: Date) => (dt.getFullYear() - today.getFullYear()) * 12 + dt.getMonth() - today.getMonth();
   // สัปดาห์ (อา.–ส.) นับจากสัปดาห์นี้
   const weekIdx = (off: number) => Math.floor((off + today.getDay()) / 7);
-  const maxM = monthIdx(lastDate);
-  const maxW = weekIdx(Math.max(0, last));
+  const maxM = Math.max(0, monthIdx(lastDate));
+  const maxW = Math.max(0, weekIdx(Math.max(0, last)));
   const firstOpen = [...counts.keys()].sort((x, y) => x - y)[0];
   const start = value ?? firstOpen ?? 0;
   const [view, setView] = React.useState<'week' | 'month'>('week');
-  const [picking, setPicking] = React.useState(false);
-  const [m, setM] = React.useState(() => monthIdx(dateOf(start)));
-  const [w, setW] = React.useState(() => weekIdx(start));
+  const [page, setPage] = React.useState(() => weekIdx(start));
+  const [sheet, setSheet] = React.useState(false);
   const [year, setYear] = React.useState(today.getFullYear());
+  const [width, setWidth] = React.useState(0);
+  const pager = React.useRef<ScrollView>(null);
   const cellW = `${100 / 7}%` as const;
-
-  // ช่องวันของมุมมองนี้ (null = ช่องว่างก่อนวันที่ 1)
-  const monthFirst = new Date(today.getFullYear(), today.getMonth() + m, 1);
-  const weekStart = dateOf(w * 7 - today.getDay());
-  const cells: (Date | null)[] =
-    view === 'week'
-      ? Array.from({ length: 7 }, (_, i) => dateOf(w * 7 - today.getDay() + i))
-      : [
-          ...Array.from({ length: monthFirst.getDay() }, () => null),
-          ...Array.from({ length: new Date(monthFirst.getFullYear(), monthFirst.getMonth() + 1, 0).getDate() }, (_, i) => new Date(monthFirst.getFullYear(), monthFirst.getMonth(), i + 1)),
-        ];
-  // หัว: เดือนของมุมมอง (สัปดาห์ = เดือนของวันแรกในสัปดาห์ที่ยังไม่ผ่าน)
-  const headDate = view === 'week' ? (weekStart < today ? today : weekStart) : monthFirst;
-
+  const pages = view === 'week' ? maxW + 1 : maxM + 1;
+  const weekStart = (wi: number) => dateOf(wi * 7 - today.getDay());
+  const monthFirst = (mi: number) => new Date(today.getFullYear(), today.getMonth() + mi, 1);
+  // หัว: เดือนของหน้าที่เห็น (สัปดาห์ = วันแรกในสัปดาห์ที่ยังไม่ผ่าน)
+  const headDate = view === 'week' ? (weekStart(page) < today ? today : weekStart(page)) : monthFirst(page);
+  const goTo = (p: number, animated = true) => {
+    setPage(p);
+    if (width) pager.current?.scrollTo({ x: p * width, animated });
+  };
+  // ไปหน้าตามขนาดจริงเมื่อวัดความกว้างได้/สลับมุมมอง
+  React.useEffect(() => {
+    if (width) pager.current?.scrollTo({ x: page * width, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width, view]);
   const switchView = (v: 'week' | 'month') => {
     if (v === view) return;
-    if (v === 'month') setM(monthIdx(headDate));
-    // เดือน → สัปดาห์: สัปดาห์ของวันที่เลือก (ถ้าอยู่ในเดือนนี้) ไม่งั้นสัปดาห์แรกของเดือน
-    else setW(value !== null && monthIdx(dateOf(value)) === m ? weekIdx(value) : Math.max(0, weekIdx(offOf(monthFirst))));
+    // สลับแล้วยังอยู่ช่วงเดิม: สัปดาห์ → เดือนของสัปดาห์นั้น · เดือน → สัปดาห์ของวันที่เลือก (ในเดือนนี้) ไม่งั้นสัปดาห์แรกของเดือน
+    const p = v === 'month' ? monthIdx(headDate) : value !== null && monthIdx(dateOf(value)) === page ? weekIdx(value) : Math.max(0, weekIdx(offOf(monthFirst(page))));
+    setPage(p);
     setView(v);
-    setPicking(false);
   };
-  const iconBtn = (icon: 'chevron-left' | 'chevron-right', disabled: boolean, onPress: () => void, label: string) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={8} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.25 : 1 }}>
-      <Icon name={icon} size="sm" color={colors.text.primary} />
-    </Pressable>
+  const pickMonth = (idx: number) => {
+    setSheet(false);
+    goTo(view === 'month' ? idx : Math.max(0, weekIdx(offOf(monthFirst(idx)))));
+  };
+  const grid = (cells: (Date | null)[]) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 2 }}>
+      {cells.map((dt, i) => {
+        if (!dt) return <View key={`e${i}`} style={{ width: cellW, height: 46 }} />;
+        const off = offOf(dt);
+        const can = (counts.get(off) ?? 0) > 0;
+        const on = value === off;
+        return (
+          <View key={off} style={{ width: cellW, height: 46, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: on, disabled: !can }}
+              accessibilityLabel={`${dt.getDate()} ${MONTH_FULL[dt.getMonth()]}${can ? '' : ' ไม่มีคิว'}`}
+              disabled={!can}
+              onPress={() => onPick(off)}
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.brand.primary : 'transparent' }}
+            >
+              <Text variant={can || off === 0 ? 'labelMd' : 'bodyMd'} color={on ? '#FFFFFF' : off === 0 ? colors.brand.primary : can ? colors.text.primary : colors.text.tertiary} style={can || on ? undefined : { opacity: 0.45 }}>
+                {dt.getDate()}
+              </Text>
+              {can && !on ? <View style={{ position: 'absolute', bottom: 4, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand.primary }} /> : null}
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
   );
+  const cellsOf = (p: number): (Date | null)[] => {
+    if (view === 'week') return Array.from({ length: 7 }, (_, i) => dateOf(p * 7 - today.getDay() + i));
+    const f = monthFirst(p);
+    return [...Array.from({ length: f.getDay() }, () => null), ...Array.from({ length: new Date(f.getFullYear(), f.getMonth() + 1, 0).getDate() }, (_, i) => new Date(f.getFullYear(), f.getMonth(), i + 1))];
+  };
   const seg = (v: 'week' | 'month', label: string) => (
     <Pressable key={v} accessibilityRole="tab" accessibilityState={{ selected: view === v }} onPress={() => switchView(v)} style={{ paddingHorizontal: space[3], height: 30, borderRadius: radius.full, justifyContent: 'center', backgroundColor: view === v ? colors.surface.default : 'transparent' }}>
       <Text variant="labelSm" color={view === v ? colors.text.primary : colors.text.secondary}>
@@ -102,104 +133,84 @@ function InlineCalendar({ counts, last, value, onPick }: { /** วัน (offset
       </Text>
     </Pressable>
   );
-  const lastYear = lastDate.getFullYear();
+  const yearBtn = (icon: 'chevron-left' | 'chevron-right', disabled: boolean, onPress: () => void, label: string) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.sunken, opacity: disabled ? 0.3 : 1 }}>
+      <Icon name={icon} size="sm" color={colors.text.primary} />
+    </Pressable>
+  );
   return (
-    <View style={{ gap: space[3], padding: space[4], borderRadius: 24, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
-      {/* หัว: เดือน/ปี (แตะเลือก) · สัปดาห์|เดือน */}
+    <View style={{ gap: space[3] }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
+      {/* หัว: เดือน/ปี (แตะ = เลือกเดือน) · สัปดาห์|เดือน */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="เลือกเดือนและปี" onPress={() => (setYear(headDate.getFullYear()), setPicking(!picking))} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text variant="titleSm">{picking ? `${year + 543}` : `${MONTH_FULL[headDate.getMonth()]} ${headDate.getFullYear() + 543}`}</Text>
-          <Icon name={picking ? 'chevron-up' : 'chevron-down'} size="xs" color={colors.brand.primary} />
+        <Pressable accessibilityRole="button" accessibilityLabel="เลือกเดือน" onPress={() => (setYear(headDate.getFullYear()), setSheet(true))} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text variant="titleSm">
+            {MONTH_FULL[headDate.getMonth()]} {headDate.getFullYear() + 543}
+          </Text>
+          <Icon name="chevron-down" size="xs" color={colors.brand.primary} />
         </Pressable>
         <View style={{ flexDirection: 'row', padding: 3, borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
           {seg('week', 'สัปดาห์')}
           {seg('month', 'เดือน')}
         </View>
       </View>
+      <View style={{ flexDirection: 'row' }}>
+        {WEEKDAY_SHORT.map((wd) => (
+          <Text key={wd} variant="caption" tone="tertiary" style={{ width: cellW, textAlign: 'center' }}>
+            {wd}
+          </Text>
+        ))}
+      </View>
+      {/* ปัดซ้ายขวา = สัปดาห์/เดือน ก่อน-ถัดไป */}
+      {width ? (
+        <ScrollView
+          key={view}
+          ref={pager}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          style={{ width }}
+          contentOffset={{ x: page * width, y: 0 }}
+          onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+        >
+          {Array.from({ length: pages }, (_, p) => (
+            <View key={p} style={{ width }}>
+              {grid(cellsOf(p))}
+            </View>
+          ))}
+        </ScrollView>
+      ) : null}
 
-      {picking ? (
-        // เลือกเดือน/ปี: เดือนที่หมอยังไม่ลงตาราง = กดไม่ได้
-        <>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            {iconBtn('chevron-left', year <= today.getFullYear(), () => setYear(year - 1), 'ปีก่อน')}
-            <Text variant="labelMd" tone="secondary">
-              ปี {year + 543}
-            </Text>
-            {iconBtn('chevron-right', year >= lastYear, () => setYear(year + 1), 'ปีถัดไป')}
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: space[2] }}>
-            {MONTH_SHORT.map((label, mi) => {
-              const idx = (year - today.getFullYear()) * 12 + mi - today.getMonth();
-              const can = idx >= 0 && idx <= maxM;
-              const on = idx === monthIdx(headDate);
-              return (
-                <View key={label} style={{ width: '33.33%', alignItems: 'center' }}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on, disabled: !can }}
-                    accessibilityLabel={`${MONTH_FULL[mi]} ${year + 543}`}
-                    disabled={!can}
-                    onPress={() => {
-                      const f = new Date(today.getFullYear(), today.getMonth() + idx, 1);
-                      setM(idx);
-                      setW(Math.max(0, weekIdx(offOf(f))));
-                      setPicking(false);
-                    }}
-                    style={{ width: '88%', height: 44, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text.primary : colors.surface.sunken, opacity: can ? 1 : 0.35 }}
-                  >
-                    <Text variant="labelMd" color={on ? colors.text.inverse : colors.text.primary}>
-                      {label}
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        </>
-      ) : (
-        <>
-          {/* ‹ วันในสัปดาห์ › — ลูกศรเลื่อนทีละสัปดาห์/เดือน */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            {view === 'week' ? iconBtn('chevron-left', w <= 0, () => setW(w - 1), 'สัปดาห์ก่อน') : iconBtn('chevron-left', m <= 0, () => setM(m - 1), 'เดือนก่อน')}
-            <Text variant="labelSm" tone="secondary">
-              {view === 'week' ? `${weekStart.getDate()} ${MONTH_SHORT[weekStart.getMonth()]} – ${dateOf(w * 7 - today.getDay() + 6).getDate()} ${MONTH_SHORT[dateOf(w * 7 - today.getDay() + 6).getMonth()]}` : `${counts.size ? [...counts.keys()].filter((k) => monthIdx(dateOf(k)) === m).length : 0} วันที่ว่าง`}
-            </Text>
-            {view === 'week' ? iconBtn('chevron-right', w >= maxW, () => setW(w + 1), 'สัปดาห์ถัดไป') : iconBtn('chevron-right', m >= maxM, () => setM(m + 1), 'เดือนถัดไป')}
-          </View>
-          <View style={{ flexDirection: 'row' }}>
-            {WEEKDAY_SHORT.map((wd) => (
-              <Text key={wd} variant="caption" tone="tertiary" style={{ width: cellW, textAlign: 'center' }}>
-                {wd}
-              </Text>
-            ))}
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 2 }}>
-            {cells.map((dt, i) => {
-              if (!dt) return <View key={`e${i}`} style={{ width: cellW, height: 46 }} />;
-              const off = offOf(dt);
-              const can = (counts.get(off) ?? 0) > 0;
-              const on = value === off;
-              return (
-                <View key={off} style={{ width: cellW, height: 46, alignItems: 'center', justifyContent: 'center' }}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on, disabled: !can }}
-                    accessibilityLabel={`${dt.getDate()} ${MONTH_FULL[dt.getMonth()]}${can ? '' : ' ไม่มีคิว'}`}
-                    disabled={!can}
-                    onPress={() => onPick(off)}
-                    style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.brand.primary : 'transparent' }}
-                  >
-                    <Text variant={can || off === 0 ? 'labelMd' : 'bodyMd'} color={on ? '#FFFFFF' : off === 0 ? colors.brand.primary : can ? colors.text.primary : colors.text.tertiary} style={can || on ? undefined : { opacity: 0.45 }}>
-                      {dt.getDate()}
-                    </Text>
-                    {can && !on ? <View style={{ position: 'absolute', bottom: 4, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.brand.primary }} /> : null}
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        </>
-      )}
+      {/* เลือกเดือน (bottom sheet) · เปลี่ยนปีได้ · เดือนที่หมอยังไม่ลงตาราง = กดไม่ได้ */}
+      <BottomSheet visible={sheet} onClose={() => setSheet(false)} title="เลือกเดือน" heightRatio={0.55}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {yearBtn('chevron-left', year <= today.getFullYear(), () => setYear(year - 1), 'ปีก่อน')}
+          <Text variant="titleMd">{year + 543}</Text>
+          {yearBtn('chevron-right', year >= lastDate.getFullYear(), () => setYear(year + 1), 'ปีถัดไป')}
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: space[3] }}>
+          {MONTH_SHORT.map((label, mi) => {
+            const idx = (year - today.getFullYear()) * 12 + mi - today.getMonth();
+            const can = idx >= 0 && idx <= maxM;
+            const on = idx === monthIdx(headDate);
+            return (
+              <View key={label} style={{ width: '33.33%', alignItems: 'center' }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on, disabled: !can }}
+                  accessibilityLabel={`${MONTH_FULL[mi]} ${year + 543}`}
+                  disabled={!can}
+                  onPress={() => pickMonth(idx)}
+                  style={{ width: '90%', height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.brand.primary : colors.surface.sunken, opacity: can ? 1 : 0.35 }}
+                >
+                  <Text variant="labelMd" color={on ? '#FFFFFF' : colors.text.primary}>
+                    {label}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+      </BottomSheet>
     </View>
   );
 }
