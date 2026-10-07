@@ -80,13 +80,17 @@ export function AssessWidget({
       const common = symptoms.filter((x) => HOME_CONTENT.symptoms.includes(x));
       const others = symptoms.filter((x) => !HOME_CONTENT.symptoms.includes(x));
       // ปวดหลายที่พร้อมกันได้ → แตะเลือก/ยกเลิกได้หลายข้อ แล้วกดถัดไป (ไม่ส่งทันทีที่แตะข้อแรก)
-      const picked = selectedIn(symptoms);
+      // รายการทั้งร่างกาย: เลือกแล้วอยู่ที่เดิม (ขึ้นสถานะเลือก) แตะซ้ำ = ยกเลิก — ไม่ย้ายขึ้นไปเป็น chip ด้านบน
+      const groupLabels = SYMPTOM_GROUPS.flatMap((g) => g.items.map(([l]) => l));
+      const extraOnly = others.filter((x) => !groupLabels.includes(x));
+      const picked = selectedIn([...new Set([...symptoms, ...groupLabels])]);
       return (
         <View style={{ gap: space[3] }}>
           {/* ตำแหน่งที่พบบ่อย (ตัวเลือกด่วน) · ที่เลือกจากรายการทั้งร่างกาย/แตะหุ่นแยกไว้ด้านล่าง ไม่ปนกับ "ที่พบได้บ่อย" */}
           {onPickBody ? <PillButton label="ชี้จุดบนร่างกาย" icon="target" tone="light" onPress={onPickBody} /> : null}
           <ChoiceSection title="ที่พบได้บ่อย" options={common} value={selectedIn(common)} onChange={onChips(common)} />
-          {others.length ? <ChoiceSection options={others} value={selectedIn(others)} onChange={onChips(others)} /> : null}
+          {/* จุดที่แตะบนหุ่น (ไม่มีในรายการ) */}
+          {extraOnly.length ? <ChoiceSection options={extraOnly} value={selectedIn(extraOnly)} onChange={onChips(extraOnly)} /> : null}
           {/* ไม่มีใน chip ด่วน → เปิด/ปิดรายการทั้งร่างกาย (ตามส่วนของร่างกาย) · ปุ่มอยู่ตลอดเพื่อย่อกลับได้ */}
           {onOther ? (
             <Pressable
@@ -106,9 +110,9 @@ export function AssessWidget({
                 <ChoiceSection
                   key={g.title}
                   title={g.title}
-                  options={g.items.map(([l]) => l).filter((l) => !symptoms.includes(l))}
-                  value={[]}
-                  onChange={(next) => next.length && onOther(next[next.length - 1])}
+                  options={g.items.map(([l]) => l).filter((l) => !common.includes(l))}
+                  value={selectedIn(g.items.map(([l]) => l))}
+                  onChange={onChips(g.items.map(([l]) => l).filter((l) => !common.includes(l)))}
                 />
               ))
             : null}
