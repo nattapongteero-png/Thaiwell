@@ -21,7 +21,47 @@ const STAGE: Record<string, string> = { checked_in: 'เช็กอินแล
 export function CourseScreen() {
   const nav = useNav();
   const { colors } = useTheme();
-  const { clinicCourse: c, clinicVisits, looseBookings } = useJourney();
+  const { clinicCourse: c, clinicVisits, looseBookings, plannedVisits, cases } = useJourney();
+  // นัดตามแผนที่คลินิกลงไว้ล่วงหน้า (ของการรักษาที่ทำอยู่) — เรียงตามวัน · นัดแรก = นัดถัดไป
+  const planned = Object.entries(plannedVisits)
+    .flatMap(([caseId, vs]) => {
+      const tc = cases.find((x) => x.id === caseId);
+      return vs.map((v, i) => ({ ...v, caseId, no: (tc?.visits.length ?? 0) + 1 + i, topic: tc?.short ?? '' }));
+    })
+    .sort((a, b) => `${a.iso}${a.time}`.localeCompare(`${b.iso}${b.time}`));
+  const plannedRow = (v: (typeof planned)[number], i: number, last: boolean) => (
+    <Pressable
+      key={v.id}
+      accessibilityRole="button"
+      accessibilityLabel={`ครั้งที่ ${v.no} ${v.date} ${v.time}`}
+      onPress={i === 0 ? () => nav.navigate('AppointmentDetail', { caseId: v.caseId }) : undefined}
+      style={({ pressed }) => ({ backgroundColor: pressed && i === 0 ? colors.surface.sunken : 'transparent' })}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[3], marginHorizontal: space[4], borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.border.subtle }}>
+        <View style={{ width: 44, alignItems: 'center' }}>
+          <Text variant="bodyXs" tone="secondary">
+            ครั้งที่
+          </Text>
+          <Text variant="titleMd">{v.no}</Text>
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text variant="labelMd">
+            {v.iso ? thaiDate(v.iso) : v.date} · {v.time} น.
+          </Text>
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            {[v.therapist, v.topic ? `รักษา${v.topic}` : ''].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+        <Tag text={i === 0 ? 'นัดถัดไป' : 'นัดแล้ว'} tone="good" />
+        {i === 0 ? <Icon name="chevron-right" size="sm" color={colors.text.tertiary} /> : null}
+      </View>
+    </Pressable>
+  );
+  const plannedPanel = planned.length ? (
+    <Panel title="นัดตามแผน" flush>
+      {planned.map((v, i) => plannedRow(v, i, i === planned.length - 1))}
+    </Panel>
+  ) : null;
   const [open, setOpen] = React.useState<string | null>(null);
   const appts = looseBookings
     .filter((b): b is LooseBooking & { course: NonNullable<LooseBooking['course']> } => !!b.course)
@@ -107,13 +147,15 @@ export function CourseScreen() {
           <Panel title={c.name} right={<Tag text={left ? `เหลือ ${left} ครั้ง` : 'ครบคอร์สแล้ว'} tone={left ? 'good' : undefined} />}>
             <View style={{ flexDirection: 'row', gap: space[2] }}>
               <StatTile label="ใช้ไปแล้ว" value={String(c.used)} unit={`/ ${c.total} ครั้ง`} color={colors.brand.primary} />
-              <StatTile label="นัดไว้" value={String(appts.length)} unit="ครั้ง" />
+              <StatTile label="นัดไว้" value={String(appts.length + planned.length)} unit="ครั้ง" />
             </View>
             <ProgressBar value={c.total ? c.used / c.total : 0} label={`รับบริการแล้ว ${c.used} จาก ${c.total} ครั้ง`} />
             <InfoRow k="บริการ" v={c.service} />
             {c.startedOn ? <InfoRow k="เปิดคอร์ส" v={thaiDate(c.startedOn)} /> : null}
             {c.expiresOn ? <InfoRow k="ใช้ได้ถึง" v={thaiDate(c.expiresOn)} /> : null}
           </Panel>
+          {plannedPanel}
+          {appts.length || !planned.length ? (
           <Panel title="นัดตามคอร์ส" flush>
             {appts.length ? (
               appts.map((b, i) => row(b, i === appts.length - 1))
@@ -125,10 +167,14 @@ export function CourseScreen() {
               </View>
             )}
           </Panel>
+          ) : null}
           {history}
         </>
-      ) : history ? (
-        history
+      ) : history || plannedPanel ? (
+        <>
+          {plannedPanel}
+          {history}
+        </>
       ) : (
         <View style={{ alignItems: 'center', gap: space[3], paddingVertical: space[10] }}>
           <IconBox icon="calendar" tint={TINT.green} size={56} />
