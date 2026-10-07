@@ -3253,6 +3253,21 @@ function DateBlock({ date }: { date: string }) {
   );
 }
 
+/** ปุ่มโทรหาคลินิก (ไอคอนอย่างเดียว outline) — ท้ายแถวปุ่มของการ์ดนัด แทนการ์ดติดต่อคลินิก */
+function CallIconButton({ clinic }: { clinic: string }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`โทรหา ${clinic}`}
+      onPress={() => callClinic(clinic)}
+      hitSlop={6}
+      style={({ pressed }) => ({ width: 34, height: 34, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border.subtle, backgroundColor: colors.surface.default, opacity: pressed ? 0.7 : 1 })}
+    >
+      <Icon name="phone" size="xs" color={colors.text.primary} />
+    </Pressable>
+  );
+}
 /** ปุ่มนำทาง (ไอคอนอย่างเดียว outline) — วางคู่เช็กอินเฉพาะนัดวันนี้ */
 function NavIconButton({ clinic }: { clinic: string }) {
   const { colors } = useTheme();
@@ -4551,6 +4566,7 @@ function HomeBento({
                   <TilePill icon="file-text" label="รายละเอียด" dark={false} />
                 </Pressable>
               )}
+              <CallIconButton clinic={clinic} />
             </View>
           </>
         ) : (
@@ -4644,7 +4660,8 @@ function HomeBento({
         </View>
       </View>
 
-      {/* 5) บิล/ใบเสร็จ · ติดต่อคลินิก */}
+      {/* 5) บิล/ใบเสร็จ · ติดต่อคลินิก (มีนัด = ปุ่มโทรอยู่ในการ์ดนัดแล้ว) */}
+      {bill || !hasNext ? (
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         {bill ? (
           <Tile style={{ flex: 1, gap: space[2], justifyContent: 'space-between' }} onPress={() => nav.navigate('Bill', { id: bill.id })} accessibilityLabel={`${bill.status === 'pending' ? 'บิลรอชำระ' : 'ใบเสร็จ'} ${bill.total} บาท`}>
@@ -4659,16 +4676,19 @@ function HomeBento({
             </View>
           </Tile>
         ) : null}
-        <Tile style={{ flex: 1, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(clinic)} accessibilityLabel={`โทรหา ${clinic}`}>
-          <TileTitle title="ติดต่อคลินิก" />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-            <Icon name="phone" size="xs" color={colors.brand.primary} />
-            <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-              {clinicPhone(clinic)}
-            </Text>
-          </View>
-        </Tile>
+        {hasNext ? null : (
+          <Tile style={{ flex: 1, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(clinic)} accessibilityLabel={`โทรหา ${clinic}`}>
+            <TileTitle title="ติดต่อคลินิก" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+              <Icon name="phone" size="xs" color={colors.brand.primary} />
+              <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
+                {clinicPhone(clinic)}
+              </Text>
+            </View>
+          </Tile>
+        )}
       </View>
+      ) : null}
     </View>
   );
 }
