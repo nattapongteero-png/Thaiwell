@@ -142,11 +142,18 @@ function InlineCalendar({ counts, last, value, onPick }: { /** วัน (offset
     <View style={{ gap: space[3] }} onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
       {/* หัว: เดือน/ปี (แตะ = เลือกเดือน) · สัปดาห์|เดือน */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="เลือกเดือน" onPress={() => (setYear(headDate.getFullYear()), setSheet(true))} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text variant="titleSm">
+        {/* ปุ่มเดือน: ทรงเดียว สูงเท่ากับตัวสลับ สัปดาห์|เดือน ด้านขวา (คู่กันในแถวเดียว ไม่ลอย) */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`เลือกเดือน ตอนนี้ ${MONTH_FULL[headDate.getMonth()]} ${headDate.getFullYear() + 543}`}
+          onPress={() => (setYear(headDate.getFullYear()), setSheet(true))}
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[2], height: 36, paddingLeft: space[3], paddingRight: space[2] + 2, borderRadius: radius.full, backgroundColor: colors.surface.sunken, opacity: pressed ? 0.7 : 1 })}
+        >
+          <Icon name="calendar" size="xs" color={colors.text.secondary} />
+          <Text variant="labelMd">
             {MONTH_FULL[headDate.getMonth()]} {headDate.getFullYear() + 543}
           </Text>
-          <Icon name="chevron-down" size="xs" color={colors.brand.primary} />
+          <Icon name="chevron-down" size="xs" color={colors.text.secondary} />
         </Pressable>
         <View style={{ flexDirection: 'row', padding: 3, borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
           {seg('week', 'สัปดาห์')}
