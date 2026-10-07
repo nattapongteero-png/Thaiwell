@@ -19,7 +19,7 @@ import { clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type Clini
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
-import { readAvailability, birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
+import { readAvailability, birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, sendPreVisit, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
   pain: number;
@@ -730,7 +730,45 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // บิลนี้จ่ายแล้ว → แจ้งเตือนบิลถือว่าอ่านแล้ว
     setApptNotices((all) => all.map((n) => (n.billId === id ? { ...n, read: true } : n)));
   }, []);
-  const setCaseToday = useCallback((caseId: string, v: CaseToday) => setCaseTodayState((m) => ({ ...m, [caseId]: v })), []);
+  /**
+   * ประเมินก่อนนวดครั้งถัดไป → เก็บในแอป + ส่งเข้าแถวนัดของครั้งนั้นที่หลังบ้าน (คิวรอส่ง: ออฟไลน์/ยังไม่มีแถวนัด → ส่งใหม่ทีหลัง)
+   * ไม่มีแถวนัดในแอป (คลินิกยังไม่ลงนัด/ไม่ใช่ cloud) → ส่งเป็นข้อความ (หลังบ้านผูกกับนัดถัดไปของผู้ป่วยเอง)
+   */
+  const pendingPre = React.useRef<Record<string, CaseToday & { at: string; tries: number }>>(saved('pendingPre', {}));
+  const flushPreVisit = React.useCallback(async () => {
+    for (const [caseId, v] of Object.entries(pendingPre.current)) {
+      const ref = refOf({ caseId });
+      const tc = casesRef.current.find((c) => c.id === caseId);
+      const no = tc ? tc.course.done + 1 : undefined;
+      const summary = `ประเมินก่อนนวด${no ? `ครั้งที่ ${no}` : ''} · ปวด ${v.pain}/10${v.adverse ? ` · หลังนวดครั้งก่อน ${v.adverse}` : ''}${v.risk && v.risk !== 'ไม่มี' ? ` · ${v.risk}` : ''}${v.red ? ' · ควรพบแพทย์ก่อนนวด' : ''}`;
+      const r = v.risk ?? '';
+      const screening = { fever: r === 'มีไข้', pregnant: r === 'ตั้งครรภ์', recentSurgery: /ผ่าตัด/.test(r), contagious: r === 'โรคติดต่อ', menstruation: r === 'มีประจำเดือน' };
+      if (ref && isCloud()) {
+        const ok = await sendPreVisit(ref, { at: v.at, pain: v.pain, adverse: v.adverse, risk: v.risk, red: v.red, summary, screening }, patientOf().name);
+        if (ok) {
+          delete pendingPre.current[caseId];
+          log('ระบบ → ผู้ให้บริการ', `ส่งผลประเมินก่อนนวดเข้านัดแล้ว · ${summary}`);
+          continue;
+        }
+      }
+      // ยังส่งเข้าแถวนัดไม่ได้: ลองใหม่ (ออฟไลน์) · ไม่มีแถวนัด/ลองหลายรอบแล้ว → ส่งเป็นข้อความแทน
+      v.tries += 1;
+      if ((!ref || v.tries >= 6) && sendNote(v.red ? 'ผลประเมินก่อนนวด: ควรพบแพทย์ก่อน' : 'ผลประเมินก่อนนวดจากแอป', `${patientOf().name} · ${tc?.short ?? ''} · ${summary}`, patientOf().id, patientOf().name)) delete pendingPre.current[caseId];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  React.useEffect(() => {
+    // ค้างส่ง → ลองใหม่ทุก 10 วินาที
+    const id = setInterval(() => {
+      if (Object.keys(pendingPre.current).length) void flushPreVisit();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [flushPreVisit]);
+  const setCaseToday = useCallback((caseId: string, v: CaseToday) => {
+    setCaseTodayState((m) => ({ ...m, [caseId]: v }));
+    pendingPre.current[caseId] = { ...v, at: new Date().toISOString(), tries: 0 };
+    setTimeout(() => void flushPreVisit(), 0);
+  }, [flushPreVisit]);
   const recordCaseVisit = useCallback((caseId: string, painBefore: number, painAfter: number) => {
     // นวดครั้งนี้แล้ว → ประเมินก่อนนวดรอบนี้ใช้ไปแล้ว
     setCaseTodayState((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== caseId)));
@@ -1225,7 +1263,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           JSON.stringify({
             entered, profile, consents, elements, elementsDone, followUps, account, newPatient, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted,
             cancelledAppts, caseAppts, plannedVisits, caseVisits, selfPains, visitRecords, caseToday, apptNotices, bills, queueNo: queueNo.current,
-            bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, pendingPlan: pendingPlan.current,
+            bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, pendingPlan: pendingPlan.current, pendingPre: pendingPre.current,
           }),
         );
       } catch {

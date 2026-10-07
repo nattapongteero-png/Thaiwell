@@ -158,6 +158,33 @@ export async function cloudCheckIn(id: string, who?: string, code?: string) {
   return true;
 }
 
+/**
+ * ประเมินก่อนนวดของนัดนี้ (ครั้งถัดไปของเรื่องที่รักษา) → เขียนลงแถวนัด ให้หลังบ้านเห็นในนัดนั้น
+ * รูปแบบเดียวกับที่หลังบ้านอ่าน (CloudAssessment): รอบเดิม (ถ้ามีคะแนน) ย้ายไป rounds · รอบใหม่อยู่บนสุด + previsit
+ * หลังบ้านจับการเปลี่ยน rounds/at → อัปเดตผลประเมินของนัด + แจ้งเตือนเจ้าหน้าที่ · เช็กอินแล้ว = ไม่รับ (คืน false)
+ */
+export async function cloudPreVisit(id: string, pv: { at: string; pain: number; adverse?: string; risk?: string; red?: boolean; summary: string; screening: Record<string, boolean> }, who?: string) {
+  const { data: row, error: re } = await cloud.from('tw_appointments').select('status, assessment').eq('id', id).maybeSingle();
+  if (re) throw re;
+  if (!row || !['requested', 'confirmed'].includes(row.status as string)) return false;
+  const base = (row.assessment ?? {}) as Record<string, unknown> & { rounds?: Record<string, unknown>[]; addenda?: unknown[]; pain?: unknown };
+  const { rounds = [], addenda, ...top } = base;
+  const assessment = {
+    ...top,
+    rounds: typeof top.pain === 'number' ? [...rounds, top] : rounds,
+    ...(addenda ? { addenda } : {}),
+    at: pv.at,
+    pain: pv.pain,
+    summary: pv.summary,
+    screening: { ...((top.screening as object) ?? {}), ...pv.screening },
+    previsit: { adverse: pv.adverse, risk: pv.risk, red: !!pv.red },
+  };
+  const { error } = await cloud.from('tw_appointments').update({ assessment }).eq('id', id);
+  if (error) throw error;
+  await logEvent('assessment.previsit', id, who, pv.summary);
+  return true;
+}
+
 /** จ่ายบิลในแอป → paid (คลินิกเห็นว่าชำระแล้วและปิดบิลเอง) */
 export async function cloudPay(id: string, who?: string) {
   const b = rows.get(id)?.bill;

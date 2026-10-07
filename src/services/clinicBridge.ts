@@ -14,7 +14,7 @@
  * เว็บยังใช้ localStorage ตามเดิม (ตั้ง EXPO_PUBLIC_CLOUD=1 ตอน build ถ้าต้องการให้เว็บใช้ cloud ด้วย)
  */
 import { Platform } from 'react-native';
-import { CLOUD_CONFIGURED, cloudAvailabilityRaw, cloudCancel, cloudCheckIn, cloudNote, cloudOnline, cloudPay, cloudSendBooking, listenCloud, cloudRows, type CloudRow, cloudPatientRows } from './cloudBridge';
+import { CLOUD_CONFIGURED, cloudAvailabilityRaw, cloudCancel, cloudCheckIn, cloudNote, cloudPreVisit, cloudOnline, cloudPay, cloudSendBooking, listenCloud, cloudRows, type CloudRow, cloudPatientRows } from './cloudBridge';
 
 /** ใช้สะพาน cloud (ข้ามเครื่อง) แทน localStorage (เบราว์เซอร์เดียวกัน) — ต้องมีค่าใน .env ก่อน */
 export const CLOUD = CLOUD_CONFIGURED && (Platform.OS !== 'web' || process.env.EXPO_PUBLIC_CLOUD === '1');
@@ -187,6 +187,8 @@ export const sendNote = (title: string, body: string, patientId?: string, patien
 /** เช็กอินที่คลินิก (เฉพาะสะพาน cloud — localStorage ไม่มีขั้นนี้) */
 /** code = รหัสจาก QR เช็กอินที่เคาน์เตอร์ (คลินิกตรวจก่อนออกเลขคิว) */
 export const sendCheckIn = (ref: string, who?: string, code?: string) => (CLOUD ? cloudCheckIn(ref, who, code).catch(() => false) : Promise.resolve(false));
+/** ประเมินก่อนนวด → แถวนัดครั้งนั้น (เฉพาะ cloud) · true = หลังบ้านได้รับแล้ว */
+export const sendPreVisit = (ref: string, pv: Parameters<typeof cloudPreVisit>[1], who?: string) => (CLOUD && clinicOnline() ? cloudPreVisit(ref, pv, who).catch(() => false) : Promise.resolve(false));
 /** ยกเลิกนัดที่ส่งไปแล้ว */
 export const sendCancel = (ref: string, who?: string, reason?: string) => (CLOUD ? cloudCancel(ref, who, reason).catch(() => false) : Promise.resolve(true));
 /** จ่ายบิลในแอป → คลินิกเห็นว่าชำระแล้ว */

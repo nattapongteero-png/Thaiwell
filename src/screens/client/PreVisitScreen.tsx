@@ -37,7 +37,7 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
     const red = preVisitRed(adverse, risk);
     setCaseToday(tc.id, { pain: pain!, adverse, risk, red });
     log('ระบบ → ผู้ให้บริการ', `ก่อนนวด${tc.short}: วันนี้ปวด ${pain}/10 · หลังนวดครั้งก่อน ${adverse}${risk !== 'ไม่มี' ? ` · ${risk}` : ''}${red ? ' · ควรพบแพทย์ก่อนนวด' : ''}`);
-    notifyClinic(red ? 'ผลประเมินก่อนนวด: ควรพบแพทย์ก่อน' : 'ผลประเมินก่อนนวดจากแอป', `${tc.short} ครั้งที่ ${tc.course.done + 1} · ปวด ${pain}/10 · หลังนวดครั้งก่อน ${adverse}${risk !== 'ไม่มี' ? ` · ${risk}` : ''}`);
+    // ส่งเข้าแถวนัดครั้งนี้ที่หลังบ้าน (setCaseToday จัดการคิวรอส่ง/ข้อความสำรอง)
     setEditing(false);
   };
 
