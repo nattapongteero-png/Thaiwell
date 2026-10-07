@@ -4676,7 +4676,7 @@ function HomeBento({
         <GuideTile wide width={width} title={`แนวทางครั้งที่ ${tc.visits.length}`} subtitle={rec.diagnoses?.[0] ?? tc.condition} items={rec.techniques} onPress={() => onHistory(tc.visits.length - 1)} />
       )}
 
-      {/* 5) ดูแลตัวเอง | บิล/ใบเสร็จ · ติดต่อคลินิก (มีนัด = ปุ่มโทรอยู่ในการ์ดนัดแล้ว) */}
+      {/* 5) ดูแลตัวเอง | บิล/ใบเสร็จ (โทรหาคลินิก = ปุ่มไอคอนในการ์ดนัดทุกสถานะ) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <View style={{ width: halfW }}>
           <SelfCareTile groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare(tc.selfCare.groupId)} />
@@ -4695,17 +4695,6 @@ function HomeBento({
               </View>
             </Tile>
           ) : null}
-          {hasNext ? null : (
-            <Tile style={{ flex: 1, gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(clinic)} accessibilityLabel={`โทรหา ${clinic}`}>
-              <TileTitle title="ติดต่อคลินิก" />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-                <Icon name="phone" size="xs" color={colors.brand.primary} />
-                <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-                  {clinicPhone(clinic)}
-                </Text>
-              </View>
-            </Tile>
-          )}
         </View>
       </View>
     </View>
