@@ -1,7 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { AppBar, Button, Icon, Panel, ReplyChips, ScaleSelector, Screen, Text, TextField, TINT, space, useTheme } from '../../design-system';
-import { ASSESS_LOCK_TEXT, assessLock } from '../../state/appointments';
+import { ASSESS_LOCK_TEXT, assessLock, preVisitOpensOn } from '../../state/appointments';
 import { FU_ADVERSE, FU_RISK } from '../../data/homeFeed';
 import { preVisitRed, preVisitSummary } from '../../data/preVisit';
 import { useJourney } from '../../state/JourneyContext';
@@ -39,6 +39,19 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
     notifyClinic(red ? 'ผลประเมินก่อนนวด: ควรพบแพทย์ก่อน' : 'ผลประเมินก่อนนวดจากแอป', `${tc.short} ครั้งที่ ${tc.course.done + 1} · ปวด ${pain}/10 · หลังนวดครั้งก่อน ${adverse}${risk !== 'ไม่มี' ? ` · ${risk}` : ''}`);
     setEditing(false);
   };
+
+  // ยังไม่ถึงช่วงประเมิน (เปิด 1 วันก่อนนัด) → บอกวันที่เปิด
+  const opensOn = !saved && hasAppt ? preVisitOpensOn(tc.appointment.date) : null;
+  if (opensOn)
+    return (
+      <Screen header={<AppBar title={`ก่อนนวดครั้งที่ ${no}`} onBack={() => nav.goBack()} />}>
+        <Panel icon="calendar" tint={TINT.slate} title={`ประเมินได้ตั้งแต่${opensOn === 'พรุ่งนี้' ? '' : ' '}${opensOn}`}>
+          <Text variant="bodySm" tone="secondary">
+            ประเมินใกล้วันนัด ให้ตรงกับอาการวันที่มานวด
+          </Text>
+        </Panel>
+      </Screen>
+    );
 
   // ผลประเมิน
   if (!editing && saved) {

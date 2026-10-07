@@ -5,6 +5,7 @@
  */
 import { useJourney } from './JourneyContext';
 import type { TreatmentCase } from '../data/homeFeed';
+import { isoToLabel, labelToISO } from '../services/clinicBridge';
 
 export type ApptTarget = { caseId?: string; draftId?: string; /** นัดเรื่องใหม่ที่ยังไม่ได้ประเมิน */ looseId?: string };
 
@@ -150,3 +151,21 @@ export const ASSESS_LOCK_TEXT: Record<Exclude<AssessLock, null>, string> = {
   in_service: 'กำลังรับบริการอยู่ค่ะ มีอาการเพิ่ม แจ้งผู้ให้บริการได้โดยตรง',
   done: 'ผลประเมินครั้งนี้ใช้ในการนวดแล้ว เก็บเป็นบันทึกค่ะ ถ้ามีอาการใหม่ ประเมินเรื่องใหม่ได้',
 };
+
+/** ประเมินก่อนนวดเปิดให้ทำได้กี่วันก่อนนัด (เร็วกว่านี้ อาการอาจไม่ตรงกับวันที่มานวด) */
+export const PREVISIT_OPEN_DAYS = 1;
+const dayDiff = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  return Math.round((new Date(y, m - 1, d).getTime() - t.getTime()) / 86400000);
+};
+/** ประเมินก่อนนวดของนัดนี้ยังไม่เปิด → ป้ายวันที่เปิด ("พรุ่งนี้" / "พฤ. 9 ต.ค.") · เปิดแล้ว = null */
+export function preVisitOpensOn(dateLabel: string): string | null {
+  if (!dateLabel || dateLabel === '-') return null;
+  const iso = labelToISO(dateLabel);
+  if (dayDiff(iso) <= PREVISIT_OPEN_DAYS) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const open = new Date(y, m - 1, d - PREVISIT_OPEN_DAYS);
+  return isoToLabel(`${open.getFullYear()}-${String(open.getMonth() + 1).padStart(2, '0')}-${String(open.getDate()).padStart(2, '0')}`);
+}

@@ -64,7 +64,7 @@ import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { THERAPIST_SCHEDULE, anyoneSlots, dayLabel, liveTherapists, slotsOf, therapistsAt, urgencyOf, type ServiceId, type Therapist } from '../../data/booking';
-import { ASSESS_LOCK_TEXT, assessLock, caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
+import { ASSESS_LOCK_TEXT, assessLock, caseClinic, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
@@ -1110,7 +1110,8 @@ export function HomeScreen() {
       const hasAppt = tcase.appointment.date !== '-';
       // เช็กอินแล้ว → ประเมินก่อนนวดแก้ไม่ได้ (แจ้งอาการเพิ่มแทน) · กำลังรับบริการ → ไม่มีทั้งคู่
       const lock = hasAppt ? assessLock(caseAppts[tcase.id] ?? tcase.appointment) : null;
-      const pre = !hasAppt ? [] : !lock ? [CASE_INTENTS[0]] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
+      const notYet = hasAppt && !caseToday[tcase.id] ? preVisitOpensOn(tcase.appointment.date) : null;
+      const pre = !hasAppt || notYet ? [] : !lock ? [CASE_INTENTS[0]] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
       const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${tcase.short} อยากให้ช่วยเรื่องไหนคะ?`, [...pre, CASE_INTENTS[1], CASE_INTENTS[2], NEW_TOPIC_INTENT]);
       const id = caseChats[tcase.id] ?? tcase.chatId;
       if (id && sessions.some((c) => c.id === id)) {
@@ -1460,6 +1461,8 @@ export function HomeScreen() {
       if (label === CASE_INTENTS[0]) {
         const lock = assessLock(caseAppts[tcase.id] ?? tcase.appointment);
         if (lock) return aiReply(activeId, label, () => [aiText(ASSESS_LOCK_TEXT[lock])]);
+        const opens = caseToday[tcase.id] ? null : preVisitOpensOn(tcase.appointment.date);
+        if (opens) return aiReply(activeId, label, () => [aiText(`ประเมินก่อนนวดได้ตั้งแต่${opens === 'พรุ่งนี้' ? '' : ' '}${opens}ค่ะ ให้ตรงกับอาการวันที่มานวด ระหว่างนี้ถ้ามีอาการผิดปกติ เล่าให้ฟังได้เลย`)]);
         // ประเมินวันนี้ไปแล้ว → สรุปผลเดิม (ไม่ถามซ้ำ) · ยังไม่ได้ประเมิน → ถามแบบสั้น (ปวดวันนี้ · อาการหลังนวด · ข้อห้ามใหม่)
         const done = caseToday[tcase.id];
         if (done && tcase.appointment.date !== '-') return aiReply(activeId, label, () => preResultItems(tcase, undefined, done.red));
@@ -4255,6 +4258,8 @@ function HomeBento({
   const preDone = !!today;
   // ประเมินหลังนวดครั้งล่าสุดแล้วหรือยัง: บอกความรู้สึกหลังนวด / ส่งผลติดตาม / ประเมินก่อนนวดครั้งถัดไป (ถามอาการหลังนวดครั้งก่อนแล้ว)
   const needPost = last.selfPain === undefined;
+  // ประเมินก่อนนวดเปิดได้ 1 วันก่อนนัด (เร็วกว่านั้นอาการอาจไม่ตรงวันที่มานวด) · ยังไม่เปิด = วันที่เปิด
+  const opensOn = hasNext && !preDone ? preVisitOpensOn(ap.date) : null;
 
   return (
     <View style={{ gap: BENTO_GAP }}>
@@ -4294,14 +4299,24 @@ function HomeBento({
             </View>
             {/* สิ่งที่ต้องทำก่อนครั้งนี้ */}
             <View style={{ gap: space[2] }}>
-              <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : 'ประเมินก่อนนวด · ต่อจากครั้งก่อน'} />
+              {needPost ? <StepRow text={`ประเมินหลังนวดครั้งที่ ${tc.visits.length}`} /> : null}
+              <StepRow done={preDone} warn={today?.red} text={today ? (today.red ? `ปวด ${today.pain}/10 · ควรพบแพทย์ก่อนนวด` : `ประเมินแล้ว · ปวด ${today.pain}/10`) : opensOn ? `ประเมินก่อนนวดได้ตั้งแต่${opensOn === 'พรุ่งนี้' ? '' : ' '}${opensOn}` : 'ประเมินก่อนนวด · ต่อจากครั้งก่อน'} />
               <StepRow text={tc.prep.join(' · ')} />
             </View>
             {/* ทุกครั้งต้องประเมินก่อน (อาการ/ข้อห้ามเปลี่ยนได้ระหว่างนัด) → ผ่านแล้วจึงเช็กอินได้ · ควรพบแพทย์ = เช็กอินไม่ได้ */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-              <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onPreVisit} style={{ flex: 1 }}>
-                <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
-              </Pressable>
+              {opensOn ? (
+                // ยังไม่ถึงช่วงประเมินก่อนนวด → ระหว่างนี้ประเมินหลังนวดครั้งก่อน (ถ้ายังไม่ทำ)
+                needPost ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="ประเมินหลังนวด" onPress={() => nav.navigate('PostAssessment', { caseId: tc.id })} style={{ flex: 1 }}>
+                    <TilePill icon="edit-3" label="ประเมินหลังนวด" />
+                  </Pressable>
+                ) : null
+              ) : (
+                <Pressable accessibilityRole="button" accessibilityLabel={preDone ? 'ดูผลประเมินก่อนนวด' : 'ประเมินก่อนนวด'} onPress={onPreVisit} style={{ flex: 1 }}>
+                  <TilePill icon={preDone ? 'eye' : 'edit-3'} label={preDone ? 'ดูผลประเมิน' : 'ประเมินก่อนนวด'} dark={!preDone || !!today?.red} />
+                </Pressable>
+              )}
               {ap.today && preDone && !today?.red ? (
                 <>
                   <Pressable accessibilityRole="button" accessibilityLabel="เช็กอิน" onPress={onCheckIn} style={{ flex: 1 }}>
