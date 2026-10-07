@@ -474,7 +474,7 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
       <PainCompare
         from={{ label: 'ก่อนนวด', v: v.painBefore }}
         to={{ label: 'หลังนวด', v: vAfter, empty: 'ยังไม่ประเมิน' }}
-        note={vAfter === undefined ? { text: 'ประเมินหลังนวดเพื่อดูผลครั้งนี้' } : d > 0 ? { text: `ปวดลดลง ${d} คะแนน`, good: true } : d < 0 ? { text: `ปวดเพิ่มขึ้น ${-d} คะแนน` } : { text: 'ปวดเท่าเดิม' }}
+        note={vAfter === undefined ? { text: 'ประเมินหลังนวดเพื่อดูผลครั้งนี้' } : d > 0 ? { text: `ปวดลดลง ${d} คะแนน`, good: true } : d < 0 ? undefined : { text: 'ปวดเท่าเดิม' }}
       />
       {/* วินิจฉัย (แพทย์แผนไทยบันทึกในหลังบ้าน) + รหัส ICD-10 ชุดเดียวกับหลังบ้าน */}
       <Section icon="clipboard" tint="#2F6FA3" title="วินิจฉัย">
