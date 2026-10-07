@@ -5,7 +5,7 @@ import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { PLACES, callClinic, clinicPhone } from './PlacesScreen';
-import { isCloud } from '../../services/clinicBridge';
+import { isCloud, isoToLabel } from '../../services/clinicBridge';
 import { anyoneSlots, dayLabel, therapistsAt, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
@@ -51,7 +51,12 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   /* ---------- จองให้เรื่องไหน ---------- */
   // ระบุมาแล้ว (จากการ์ดของเรื่องนั้น) → ไม่ต้องเลือก · ไม่ระบุ → เลือกในหน้านี้ (ไม่เดาจากใบที่ประเมินล่าสุด)
   const topics: Topic[] = [
-    ...drafts.map((d) => ({ key: `d:${d.id}`, draftId: d.id, title: d.title, sub: d.booking ? `มีนัด ${d.booking.date} ${d.booking.time}` : 'ประเมินแล้ว' })),
+    ...drafts.map((d) => ({
+      key: `d:${d.id}`,
+      draftId: d.id,
+      title: d.guide?.areas && d.guide.areas.length > 1 ? `${d.guide.areas[0].region ?? d.guide.areas[0].symptom} +${d.guide.areas.length - 1}` : d.title,
+      sub: d.booking ? `มีนัด ${d.booking.date} ${d.booking.time}` : d.assessedOn ? `ประเมิน ${isoToLabel(d.assessedOn)}` : 'ประเมินแล้ว',
+    })),
     // เรื่องที่รักษาอยู่ → จองได้เฉพาะที่เดิม (บอกไว้ในตัวเลือก)
     // เรื่องที่รักษาอยู่ไม่อยู่ในรายการนี้: นัดครั้งถัดไปมาจากแผนของแพทย์ (คลินิกนัดให้) · จองเรื่องใหม่/นวดผ่อนคลายเพิ่มได้
     // นัดเรื่องใหม่ที่จองไว้แล้ว → เลือก = เลื่อนนัดนั้น
@@ -60,7 +65,18 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     { key: 'new', title: newPatient && !looseBookings.length ? 'ยังไม่ได้เล่าอาการ' : 'เรื่องใหม่', sub: looseBookings.length ? 'นัดเพิ่ม · เล่าอาการกับ AI ทีหลัง' : 'จองก่อน เล่าอาการกับ AI ทีหลัง' },
   ];
   const fixed = !!(pre?.caseId || pre?.draftId || pre?.looseId);
-  const initialKey = pre?.caseId ? `c:${pre.caseId}` : pre?.draftId ? `d:${pre.draftId}` : pre?.looseId ? `l:${pre.looseId}` : (topics.find((t) => t.draftId === activeDraftId && !drafts.find((d) => d.id === activeDraftId)?.booking) ?? topics[0])?.key;
+  /**
+   * จองนัดใหม่ (ไม่ได้มาจากการ์ดของเรื่องไหน) → เลือกได้เฉพาะเรื่องที่ประเมินแล้วยังไม่จอง + เรื่องใหม่
+   * ไม่แสดง: เรื่องที่จองแล้ว/นัดที่ยังไม่ประเมิน (เลื่อนนัดจากการ์ดนัด) · ควรพบแพทย์ก่อน (จองนวดไม่ได้) · นวดแล้ว/ทำคอร์ส (แพทย์วางแผน คลินิกนัดให้)
+   */
+  const pickable = topics.filter((t) => t.key === 'new' || (t.draftId && drafts.some((d) => d.id === t.draftId && !d.booking && !d.red && d.stage === 'assessed')));
+  const initialKey = pre?.caseId
+    ? `c:${pre.caseId}`
+    : pre?.draftId
+      ? `d:${pre.draftId}`
+      : pre?.looseId
+        ? `l:${pre.looseId}`
+        : (pickable.find((t) => t.draftId === activeDraftId) ?? pickable[0])?.key;
   const [topicKey, setTopicKey] = React.useState(initialKey ?? 'new');
   const topic = topics.find((t) => t.key === topicKey) ?? topics[0];
   const draft = drafts.find((d) => d.id === topic?.draftId);
@@ -176,12 +192,18 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
       ) : null}
 
       {/* จองให้เรื่องไหน — มีหลายเรื่อง/ไม่ได้ระบุมา → เลือก (นัดไปอยู่ที่การ์ดของเรื่องนั้น) */}
-      {!fixed && topics.length > 1 ? (
+      {!fixed && pickable.length > 1 ? (
         <Panel title="จองให้เรื่องไหน" flush>
-          {topics.map((t, i) => (
-            <Choice key={t.key} on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === topics.length - 1} />
+          {pickable.map((t, i) => (
+            <Choice key={t.key} on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === pickable.length - 1} />
           ))}
         </Panel>
+      ) : null}
+      {/* การรักษาที่ทำอยู่ไม่อยู่ในรายการ → บอกเหตุผลสั้น ๆ */}
+      {!fixed && cases.length ? (
+        <Text variant="bodyXs" tone="tertiary">
+          นัดครั้งถัดไปของการรักษาที่ทำอยู่ คลินิกจะนัดให้ตามแผน
+        </Text>
       ) : null}
 
       {/* ข้อมูลของเรื่องที่จอง — ผู้ให้บริการเห็นก่อนถึงคิว */}
