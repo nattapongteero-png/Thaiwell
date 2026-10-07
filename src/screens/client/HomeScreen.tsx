@@ -150,6 +150,8 @@ const LEFT_COLUMN = 179;
 const MERGE_OLD = 'รวมกับเรื่องเดิม';
 /** หลังเช็กอิน: แก้ผลประเมินไม่ได้ → ส่งข้อความเพิ่มถึงผู้ให้บริการ (ไม่แทนผลเดิม) */
 const ADD_NOTE_INTENT = 'แจ้งอาการเพิ่ม';
+/** แท็บนัดที่ยังไม่ประเมิน: ประเมินสำหรับนัดนี้ (ผูกกับนัด) — อีกทางคือประเมินเรื่องใหม่ (แท็บใหม่ ไม่ผูก) */
+const LOOSE_ASSESS_INTENT = 'ประเมินอาการสำหรับนัดนี้';
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
@@ -1139,6 +1141,20 @@ export function HomeScreen() {
       upsertDraft({ ...selDraft, chatId: ss.id });
       return openChat(ss.id);
     }
+    if (selLoose) {
+      // นัดที่ยังไม่ประเมิน → ถามก่อนว่าประเมินสำหรับนัดนี้ หรือเริ่มเรื่องใหม่ (แท็บใหม่)
+      const item = menuItem(`นัด${selLoose.service.split(' · ')[0]} ${selLoose.date} ${selLoose.time} อยากให้ช่วยเรื่องไหนคะ?`, [LOOSE_ASSESS_INTENT, NEW_TOPIC_INTENT]);
+      const key = `loose:${selLoose.id}`;
+      const id = caseChats[key];
+      if (id && sessions.some((c) => c.id === id)) {
+        setThread((t) => (t[t.length - 1]?.card?.type === 'intents' ? [...t.slice(0, -1), item] : [...t, item]), id);
+        return openChat(id);
+      }
+      const ss: ChatSession = { ...newChatSession(), title: `นัด${selLoose.service.split(' · ')[0]}`, items: [item], assess: { ...blankAssessment(), step: 'done' } };
+      setSessions((all) => [ss, ...all]);
+      setCaseChats((m) => ({ ...m, [key]: ss.id }));
+      return openChat(ss.id);
+    }
     if (unfinished) return openChat(unfinished.id);
     // ยังไม่มีข้อมูล → แชทต้อนรับ (AI ถามว่าวันนี้สนใจเรื่องอะไร)
     if (chatHome) return startWelcome();
@@ -1390,6 +1406,18 @@ export function HomeScreen() {
     if (fresh) freshFor.current[sid] = true;
     scrollToThread();
   };
+  /** ประเมินสำหรับนัดที่ยังไม่ประเมิน (การ์ดนัด / เลือกในแชท) → ผูกผลกับนัดนั้น · ค้างไว้ของนัดนี้ = ทำต่อ */
+  const assessLoose = (looseId: string) => {
+    const mine = sessions.find((c) => looseFor.current[c.id] === looseId && c.assess.step !== 'done' && c.assess.step !== 'idle');
+    if (mine) return openChat(mine.id);
+    setStarted(true);
+    bodyRef.current?.face('front');
+    const next = newChatSession(askTopic, currentTopic);
+    setSessions((all) => [next, ...all]);
+    setActiveId(next.id);
+    looseFor.current[next.id] = looseId;
+    scrollToThread();
+  };
   /** ติดตามผลบนหุ่น: "ยังปวด" → เริ่มประเมินโดยกรอกอาการบริเวณนั้นให้แล้ว (ข้ามข้อแรก) */
   const restartFromArea = (a: FollowUpArea = fuActive) => {
     const next = newChatWithSymptom(a.symptom, `${a.label} ยังปวดอยู่ (ต่อจากการรักษา ${fuSession.date})`, fuScores[fuKey(a.pin)]);
@@ -1429,6 +1457,10 @@ export function HomeScreen() {
     const born = account ? birthElement(account.birthDate) : null;
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
     if (label === NEW_TOPIC_INTENT) return newChat(true);
+    if (label === LOOSE_ASSESS_INTENT) {
+      const lid = Object.entries(caseChats).find(([k, v]) => k.startsWith('loose:') && v === activeId)?.[0].slice(6) ?? selLoose?.id;
+      return lid ? assessLoose(lid) : newChat();
+    }
     // ประเมินเรื่องใหม่แต่บริเวณซ้ำเรื่องเดิม → ผู้ใช้เลือกรวม/แยก
     if (label === MERGE_OLD || label === KEEP_NEW) {
       const m = mergeFor.current[activeId];
@@ -2544,7 +2576,7 @@ export function HomeScreen() {
                 ) : homeLoading ? (
                   <BentoSkeleton width={bentoW} />
                 ) : selLoose ? (
-                  <BookingBento width={bentoW} booking={selLoose} onCheckIn={() => nav.navigate('CheckIn', { looseId: selLoose.id })} onEdit={() => nav.navigate('AppointmentDetail', { looseId: selLoose.id })} onAssess={openAI} />
+                  <BookingBento width={bentoW} booking={selLoose} onCheckIn={() => nav.navigate('CheckIn', { looseId: selLoose.id })} onEdit={() => nav.navigate('AppointmentDetail', { looseId: selLoose.id })} onAssess={() => assessLoose(selLoose.id)} />
                 ) : selDraft ? (
                   <DraftBento
                     width={bentoW}
