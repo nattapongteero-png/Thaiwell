@@ -508,6 +508,8 @@ export function HomeScreen() {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บอกแค่จุดที่ปวด (ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ)
     if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    // จองแล้วแต่ยังไม่เคยประเมิน → ยังไม่รู้จุดที่ปวด
+    if (selLoose) return { title: 'ยังไม่ได้บอกจุดที่ปวด', sub: 'ประเมินอาการก่อนมา', color: colors.border.default };
     if (selCase && cases.length) {
       const lv = tcase.visits[tcase.visits.length - 1];
       const t = caseToday[tcase.id];
@@ -3538,16 +3540,23 @@ function FirstVisitCard({
   steps,
   onCheckIn,
   onOpen,
+  onAssess,
+  minutes,
 }: {
   booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed' };
   /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
   steps?: React.ReactNode;
   onCheckIn: () => void;
   onOpen: () => void;
+  /** ยังไม่เคยประเมิน → ประเมินเป็นขั้นแรก (ปุ่มหลัก) · ยังไม่ประเมิน = เช็กอินไม่ได้ */
+  onAssess?: () => void;
+  /** ระยะเวลาบริการ (เช่น 60 นาที) */
+  minutes?: string;
 }) {
   const { colors } = useTheme();
   const today = b.date === 'วันนี้';
   const pending = b.status === 'pending';
+  const needAssess = !!onAssess;
   return (
     <Tile style={{ gap: space[3] }} onPress={onOpen} accessibilityLabel={`นัดครั้งที่ 1 ${b.date} ${b.time}${b.queue ? ` คิว ${b.queue}` : ''} ดูรายละเอียด`}>
       <TileTitle title="นัดครั้งที่ 1" meta={b.clinic} />
@@ -3555,6 +3564,7 @@ function FirstVisitCard({
         <View>
           <Text variant="bodyXs" tone="secondary">
             {today ? 'วันนี้' : 'เวลา'}
+            {minutes ? ` · ${minutes}` : ''}
           </Text>
           <Text variant="titleXl">{b.time}</Text>
         </View>
@@ -3573,10 +3583,25 @@ function FirstVisitCard({
       </View>
       <View style={{ gap: space[2] }}>
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
-        <StepRow done={!!b.queue} text={b.queue ? `ได้คิว ${b.queue}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
+        {needAssess ? <StepRow text="ประเมินอาการก่อนมา" /> : null}
         {steps}
+        <StepRow done={!!b.queue} text={b.queue ? `ได้คิว ${b.queue}` : 'รับเลขคิวเมื่อเช็กอินวันนัด'} />
       </View>
-      {pending ? (
+      {needAssess ? (
+        // ยังไม่เคยประเมิน: ประเมินก่อน (คัดกรองความปลอดภัย) · วันนัด = ยังเช็กอินไม่ได้จนกว่าจะประเมิน
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="ประเมินอาการ" onPress={onAssess} style={{ flex: 1 }}>
+            <TilePill icon="edit-3" label="ประเมินอาการ" />
+          </Pressable>
+          {today ? (
+            <NavIconButton clinic={b.clinic} />
+          ) : (
+            <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen} style={{ flex: 1 }}>
+              <TilePill icon="file-text" label="รายละเอียด" dark={false} />
+            </Pressable>
+          )}
+        </View>
+      ) : pending ? (
         <Pressable accessibilityRole="button" accessibilityLabel="รายละเอียดนัด" onPress={onOpen}>
           <TilePill icon="clock" label="รอคลินิกยืนยัน" dark={false} />
         </Pressable>
@@ -3598,13 +3623,15 @@ function FirstVisitCard({
 }
 
 function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void; /** ประเมินอาการก่อนมา (แชท AI) */ onAssess: () => void }) {
-  const halfW = (width - BENTO_GAP) / 2;
-  const [svc, mins] = b.service.split(' · ');
+  const { colors } = useTheme();
+  const mins = b.service.split(' · ')[1];
   const nav = useNav();
   const { clinicCourse, clinicVisits } = useJourney();
+  // ยังไม่เคยประเมิน: ประเมินในการ์ดนัด (ปุ่มหลัก) · ชื่อบริการอยู่ที่แท็บแล้ว ระยะเวลาอยู่ในการ์ดนัด
   return (
     <View style={{ gap: BENTO_GAP }}>
-      <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} />
+      <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} onAssess={onAssess} minutes={mins} steps={<StepRow text="งดอาหารหนัก 30 นาที · ใส่เสื้อผ้าหลวมสบาย" />} />
+      <TherapistTile name={b.therapist} width={width} />
       {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา */}
       {b.course ? (
         <Tile onPress={() => nav.navigate('Course')} accessibilityLabel="ดูคอร์สและประวัติการรักษา" style={{ gap: space[1] }}>
@@ -3617,20 +3644,20 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { widt
           </Text>
         </Tile>
       ) : null}
-      <TherapistTile name={b.therapist} width={width} />
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <Tile style={{ width: halfW, gap: space[1] }}>
-          <TileTitle title="บริการ" meta={mins} />
-          <Text variant="bodySm" numberOfLines={2}>
-            {svc}
+      <Tile style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <TileTitle title="ติดต่อคลินิก" />
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            {b.clinic}
           </Text>
-        </Tile>
-        {/* ยังไม่ได้ประเมิน → ให้ผู้ให้บริการรู้อาการและข้อห้ามก่อนถึงวันนัด */}
-        <Tile style={{ width: halfW, gap: space[2], justifyContent: 'space-between' }} onPress={onAssess} accessibilityLabel="ประเมินอาการก่อนมา">
-          <TileTitle title="ก่อนมา" />
-          <TilePill icon="edit-3" label="ประเมินอาการ" />
-        </Tile>
-      </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+          <Icon name="phone" size="xs" color={colors.brand.primary} />
+          <Text variant="bodySm" color={colors.brand.primary}>
+            {clinicPhone(b.clinic)}
+          </Text>
+        </View>
+      </Tile>
     </View>
   );
 }
@@ -3894,11 +3921,11 @@ function DraftBento({
     return (
       <View style={{ gap: BENTO_GAP }}>
         {tabs}
-        <GuideSheet visible={guideOpen} onClose={() => setGuideOpen(false)} guide={d.guide} />
+        <SafetySheet visible={guideOpen} card={null} onClose={() => setGuideOpen(false)} onHospital={() => (setGuideOpen(false), onPlaces('doctor'))} />
         <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
         <TherapistTile name={b.therapist} width={width} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-          <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} onPress={() => setGuideOpen(true)} />
+          <SafetyTile width={halfW} extra={d.risk === 'มีประจำเดือน' ? ['งดนวดท้อง'] : undefined} onPress={() => setGuideOpen(true)} />
           <View pointerEvents="none">
             <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           </View>
@@ -4123,7 +4150,7 @@ function HomeBento({
   onBook: () => void;
 }) {
   const { colors } = useTheme();
-  const { followUps, cancelledAppts, caseAppts, plannedVisits } = useJourney();
+  const { followUps, cancelledAppts, caseAppts, plannedVisits, clinicCourse } = useJourney();
   // นัดที่คลินิกลงไว้ล่วงหน้าตามแผน (ครั้งแรก = นัดในการ์ดนี้)
   const planned = plannedVisits[tcase.id] ?? [];
   const [planOpen, setPlanOpen] = React.useState(false);
@@ -4248,7 +4275,12 @@ function HomeBento({
 
       {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <PlanTile width={halfW} plan={tc.plan} done={tc.course.done} total={tc.course.total} values={trendValues(tc)} onPress={onHistory} />
+        {/* คลินิกเปิดคอร์สให้ (บัญชีจริง) → ชื่อ/จำนวนครั้งตามคอร์สจริง แตะ = หน้าคอร์ส (นัดทั้งหมด + ประวัติ) */}
+        {clinicCourse ? (
+          <PlanTile width={halfW} plan={clinicCourse.name} done={Math.min(clinicCourse.used, clinicCourse.total)} total={clinicCourse.total} values={trendValues(tc)} onPress={() => nav.navigate('Course')} />
+        ) : (
+          <PlanTile width={halfW} plan={tc.plan} done={tc.course.done} total={tc.course.total} values={trendValues(tc)} onPress={onHistory} />
+        )}
         <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
           <View pointerEvents={needPost ? 'box-none' : 'none'}>
             <PainScoreCard
@@ -4435,6 +4467,40 @@ function GuideTile({ width, guide, symptoms, onPress }: { width: number; guide?:
       ))}
       <Text variant="caption" tone="tertiary" style={{ marginTop: 'auto' }}>
         แพทย์วางแผนจำนวนครั้งหลังตรวจ
+      </Text>
+    </Tile>
+  );
+}
+
+/**
+ * ผลคัดกรองความปลอดภัย (จองแล้ว ก่อนนวดครั้งแรก) — วันนัดผู้ให้บริการจะปรับอะไรให้ · แตะ = ผลตรวจเต็ม
+ * ช่วงนี้ยังไม่มีแผนจากแพทย์ (แผน/คอร์สมาหลังนวดครั้งแรก) และเลือกบริการไปแล้ว (แนวทางที่แนะนำหมดหน้าที่)
+ */
+function SafetyTile({ width, extra, onPress }: { width: number; /** ข้อจากการประเมิน (เช่น มีประจำเดือน งดนวดท้อง) */ extra?: string[]; onPress: () => void }) {
+  const { colors } = useTheme();
+  const { safety } = useJourney();
+  const items = [...safety.hits.filter((h) => h.level !== 'red').map((h) => SHORT_CAUTION[h.ruleId] ?? h.title), ...(extra ?? [])];
+  const amber = safety.level !== 'green' || items.length > 0;
+  const tone = amber ? colors.status.warning : colors.status.success;
+  return (
+    <Tile style={{ width, gap: space[2] }} onPress={onPress} accessibilityLabel="ผลคัดกรองความปลอดภัย ดูรายละเอียด">
+      <TileTitle title="ผลคัดกรอง" />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], alignSelf: 'flex-start', paddingHorizontal: space[2], height: 26, borderRadius: radius.full, backgroundColor: tone.bg }}>
+        <Icon name={amber ? 'alert-triangle' : 'check-circle'} size="xs" color={tone.fg} />
+        <Text variant="labelSm" color={tone.fg}>
+          {amber ? 'นวดได้ ปรับวิธี' : 'นวดได้ตามปกติ'}
+        </Text>
+      </View>
+      {items.slice(0, 2).map((it) => (
+        <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
+          <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: 8, backgroundColor: tone.fg }} />
+          <Text variant="bodySm" style={{ flex: 1 }} numberOfLines={2}>
+            {it}
+          </Text>
+        </View>
+      ))}
+      <Text variant="caption" tone="tertiary" style={{ marginTop: 'auto' }}>
+        {amber ? 'ผู้ให้บริการจะปรับให้วันนัด' : 'ไม่พบข้อห้ามจากข้อมูลที่ให้มา'}
       </Text>
     </Tile>
   );
