@@ -98,6 +98,8 @@ export type ClinicEvent =
   | { id: string; at: string; type: 'checkinRejected'; ref: string; reason: string }
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
+  /** หลังบ้านลบนัดนี้ออกจากระบบ (ล้างข้อมูลผู้ป่วย/ล้างทั้งหมด) → แอปเอาออกตาม */
+  | { id: string; at: string; type: 'deleted'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
   | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; /** รายการพร้อมราคา (ค่าบริการ + หัตถการเพิ่ม) */ lines?: { name: string; amount: number }[]; /** เลขใบเสร็จที่คลินิกจองไว้ให้บิลนี้ */ receiptNo?: string; therapist?: string }
   /** จ่ายแล้ว → ใบเสร็จ · method = วิธีชำระของคลินิก (cash · promptpay · app · credit) · quiet = จ่ายในแอปเอง แค่เติมเลข/รายการจริง (ไม่แจ้งเตือนซ้ำ) */

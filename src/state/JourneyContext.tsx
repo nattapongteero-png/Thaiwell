@@ -491,6 +491,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [drafts, setDrafts] = useState<DraftCase[]>(() => saved('drafts', []));
   const [activeDraftId, setActiveDraftId] = useState<string | null>(() => saved('activeDraftId', null));
   const [promoted, setPromoted] = useState<TreatmentCase[]>(() => saved('promoted', []));
+  const promotedRef = React.useRef(promoted);
+  promotedRef.current = promoted;
   const [cancelledAppts, setCancelledAppts] = useState<string[]>(() => saved('cancelledAppts', []));
   const cancelAppointment = useCallback((caseId: string) => setCancelledAppts((ids) => (ids.includes(caseId) ? ids : [...ids, caseId])), []);
   const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>(() => saved('caseAppts', {}));
@@ -1101,10 +1103,53 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       if (bridgeRefs.current[ref]?.caseBooking) delete bridgeRefs.current[ref];
     }
   };
+  /**
+   * หลังบ้านลบนัด (ล้างข้อมูลผู้ป่วย/ล้างทั้งหมด) → แอปเอาออกตาม
+   * นัดแรกของเรื่องที่รักษา = ทั้งเรื่อง (แท็บ ผล บิล แจ้งเตือน) · นัดครั้งถัดไป = นัดนั้น · ใบร่างที่จองไว้ = กลับเป็นประเมินแล้วยังไม่จอง (ผลประเมินเป็นของผู้ใช้)
+   * ยกเลิก/ปฏิเสธ (เปลี่ยนสถานะ) ไม่ใช่การลบ → ยังแสดงตามเดิม
+   */
+  const removeCase = (caseId: string) => {
+    const drop = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== caseId));
+    setPromoted((cs) => cs.filter((c) => c.id !== caseId));
+    setCaseAppts(drop);
+    setCaseVisits(drop);
+    setSelfPains(drop);
+    setPlannedVisits(drop);
+    setCaseTodayState(drop);
+    setVisitRecords((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(`${caseId}:`))));
+    setBills((all) => all.filter((b) => b.caseId !== caseId));
+    setApptNotices((all) => all.filter((n) => n.caseId !== caseId));
+    delete pendingPre.current[caseId];
+    for (const k of Object.keys(caseLinks.current)) if (caseLinks.current[k].caseId === caseId) delete caseLinks.current[k];
+    for (const k of Object.keys(bridgedCase.current)) if (bridgedCase.current[k] === caseId) delete bridgedCase.current[k];
+  };
+  const onDeleted = (ref: string) => {
+    const t = bridgeRefs.current[ref];
+    const l = caseLinks.current[ref];
+    const label = t?.title ?? t?.label ?? l?.title ?? 'นัด';
+    // เรื่องที่เกิดจากนัดนี้ (นวดครั้งแรกแล้ว) → ลบทั้งเรื่อง
+    const origin = t?.draftId ? `case-${t.draftId}` : t && !t.caseBooking ? t.caseId : undefined;
+    const caseId = l?.caseId ?? (t?.caseBooking ? t.caseId : undefined);
+    if (origin && promotedRef.current.some((c) => c.id === origin)) removeCase(origin);
+    else if (caseId) {
+      // นัดครั้งถัดไปของเรื่องที่รักษา → ไม่มีนัดแล้ว
+      setCaseAppts((m) => ({ ...m, [caseId]: { today: false, date: '-', time: '-', clinic: m[caseId]?.clinic ?? '', therapist: m[caseId]?.therapist ?? '' } }));
+      if (l?.planned) setTimeout(() => syncPlanned.current(), 400);
+    }
+    if (t?.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId ? { ...d, booking: undefined, stage: 'assessed' } : d)));
+    if (t?.looseId) setLooseBookings((all) => all.filter((b) => b.id !== t.looseId));
+    delete bridgeRefs.current[ref];
+    delete caseLinks.current[ref];
+    if (t || l) setApptNotices((all) => [{ id: `n-del-${ref}`, kind: 'cancelled', text: `คลินิกลบข้อมูล${label}ออกจากระบบแล้ว`, at: nowAtLabel() }, ...all.filter((n) => n.id !== `n-del-${ref}`)]);
+  };
   onClinic.current = (events) => {
     // ทุกความเปลี่ยนแปลงจากคลินิก → อ่านคอร์สใหม่ (ใช้ไปกี่ครั้ง)
     if (events.length) refreshCourse();
     for (const e of events) {
+      if (e.type === 'deleted') {
+        onDeleted(e.ref);
+        continue;
+      }
       if ('ref' in e && caseLinks.current[e.ref]) {
         onCaseEvent(e.ref, caseLinks.current[e.ref], e);
         continue;

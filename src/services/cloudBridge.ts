@@ -339,13 +339,43 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     saveSeen();
     if (out.length) cb(out);
   };
+  /** หลังบ้านลบนัด → ยืนยันว่าไม่มีแถวนั้นแล้วจริง (ไม่ใช่แค่ปิดงาน) แล้วแจ้งแอป */
+  const checkGone = async (ids: string[]) => {
+    try {
+      const { data, error } = await cloud.from('tw_appointments').select('id, status').in('id', ids);
+      if (error || stopped) return;
+      const still = new Map((data ?? []).map((r) => [r.id as string, r.status as CloudRow['status']]));
+      const out: ClinicEvent[] = [];
+      for (const id of ids) {
+        const st = still.get(id);
+        if (st) {
+          // ปิดงานแล้ว (ไม่อยู่ในรายการหลัก) → จำสถานะไว้ ไม่นับว่าถูกลบ
+          const r = rows.get(id);
+          if (r) rows.set(id, { ...r, status: st });
+          continue;
+        }
+        rows.delete(id);
+        out.push({ id: `${id}:deleted`, at: new Date().toISOString(), type: 'deleted', ref: id });
+      }
+      saveSeen();
+      if (out.length) cb(out);
+    } catch {
+      /* ออฟไลน์ → ตรวจรอบหน้า */
+    }
+  };
   const fetchAll = async (emit: boolean) => {
     // ยังไม่ได้ดึงข้อมูลแอปของบัญชีกลับมา → ยังไม่ตั้งจุดตั้งต้น (ไม่อย่างนั้นเหตุการณ์ระหว่างปิดแอปจะหาย)
     if (!gateOpen) return;
     try {
       const { data, error } = await cloud.from('tw_appointments').select('*').neq('status', 'closed').order('created_at');
       online = !error;
-      if (!error && data && !stopped) apply(data as CloudRow[], emit);
+      if (!error && data && !stopped) {
+        apply(data as CloudRow[], emit);
+        // นัดที่เคยเห็นแต่ไม่อยู่ในรายการแล้ว (ไม่ใช่ปิดงาน) → ตรวจซ้ำว่าถูกลบจริง
+        const got = new Set((data as CloudRow[]).map((r) => r.id));
+        const missing = [...rows.values()].filter((r) => r.status !== 'closed' && !got.has(r.id)).map((r) => r.id);
+        if (missing.length) void checkGone(missing);
+      }
     } catch {
       online = false;
     }
@@ -357,6 +387,12 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   const ch = cloud
     .channel('tw-app')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tw_appointments' }, (ev) => {
+      // ลบแถว → ตรวจยืนยันแล้วแจ้งแอป (realtime ส่งแค่ id เดิม)
+      if (ev.eventType === 'DELETE') {
+        const id = (ev.old as { id?: string })?.id;
+        if (id && rows.has(id) && !stopped) void checkGone([id]);
+        return;
+      }
       const r = ev.new as CloudRow;
       if (r?.id && !stopped) apply([r], true);
     })
