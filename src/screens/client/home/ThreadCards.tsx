@@ -320,7 +320,7 @@ export function ThreadCardView({
               {card.areas.map((a, i) => (
                 <Text key={a.symptom} variant="bodyXs" tone={i ? 'secondary' : 'primary'}>
                   {i ? '' : 'หลัก · '}
-                  {a.symptom} — {a.condition}
+                  {a.region ?? a.symptom} — {a.condition}
                 </Text>
               ))}
             </VStack>

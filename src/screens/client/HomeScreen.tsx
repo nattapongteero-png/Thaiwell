@@ -157,11 +157,12 @@ const LOOSE_ASSESS_INTENT = 'ประเมินอาการสำหรั
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
 /** ชื่อเรื่องที่ปวดหลายบริเวณ: บริเวณหลัก +จำนวนที่เหลือ (เช่น "ปวดหลัง +2") */
 const draftLabel = (d: DraftCase) => {
-  const n = d.symptoms.length;
-  if (n < 2) return d.title;
-  const main = d.primary ?? d.symptoms[0];
-  return `${main} +${n - 1}`;
+  const regions = draftRegions(d);
+  if (regions.length < 2) return d.title;
+  return `${regions[0]} +${regions.length - 1}`;
 };
+/** บริเวณที่ปวด (บริเวณหลักก่อน) — จากแนวทาง (รวมซ้าย/ขวา) · ไม่มี = ตามอาการที่เลือก */
+const draftRegions = (d: DraftCase) => (d.guide?.areas?.length ? d.guide.areas.map((a) => a.region ?? a.symptom) : d.symptoms);
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
 /** ข้อมูลหน้าแรกเริ่มที่ 60% ของจอ (ขั้นแรก: เห็นหุ่นเกือบทั้งตัว หมุนได้) → ปัดขึ้น = แผ่นข้อมูลขึ้นมาบังหุ่น (ขั้นที่สอง) */
@@ -305,7 +306,7 @@ export function HomeScreen() {
   /** รอข้อความ "แจ้งอาการเพิ่ม" ในแชทนี้ (ชื่อเรื่อง) */
   const noteFor = React.useRef<Record<string, string>>({});
   /** ปวดหลายบริเวณ: รอคำตอบ "ตรงไหนปวดมากที่สุด" ของแชทนี้ → จัดแนวทางใหม่ตามบริเวณหลัก */
-  const primaryFor = React.useRef<Record<string, { draftId: string; symptoms: string[]; radiate?: string; /** แนวทาง + สิ่งที่ตามมา (นัด/จอง) ที่รอแสดงหลังตอบ */ held?: ThreadItem[] }>>({});
+  const primaryFor = React.useRef<Record<string, { draftId: string; symptoms: string[]; radiate?: string; /** แนวทาง + สิ่งที่ตามมา (นัด/จอง) ที่รอแสดงหลังตอบ */ held?: ThreadItem[]; regions?: { label: string; symptoms: string[] }[] }>>({});
   /** คำตอบข้ออื่นที่ผู้ใช้บอกมาก่อนถึงข้อนั้น (เช่น "ปวดคอ 7 เป็นมา 3 วัน") → ถึงข้อนั้นแล้วข้าม ไม่ถามซ้ำ · แยกตามแชท */
   const prefill = React.useRef<Record<string, Partial<Assessment>>>({});
   /** คำถามที่ค้างก่อนถามยืนยัน (เช่น ร้องเรียน) → ตอบยืนยันแล้วกลับมาถามต่อ */
@@ -540,19 +541,22 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts.length]);
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
-  const modelTag = (() => {
+  const modelTag = ((): { items: string[]; note?: string; color: string } | null => {
     if (started || chatHome) return null;
-    // ยังไม่ได้รักษา: บอกแค่จุดที่ปวด (ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ)
-    if (selDraft) return { title: selDraft.symptoms.length > 1 ? draftLabel(selDraft) : selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    // ยังไม่ได้รักษา: บริเวณที่ปวด (บริเวณหลักก่อน) · ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ
+    if (selDraft) return { items: draftRegions(selDraft), note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     // จองแล้วแต่ยังไม่เคยประเมิน → ยังไม่รู้จุดที่ปวด
-    if (selLoose) return { title: 'ยังไม่ได้บอกจุดที่ปวด', sub: 'ประเมินอาการก่อนมา', color: colors.border.default };
+    if (selLoose) return { items: [], note: 'ยังไม่ได้บอกจุดที่ปวด', color: colors.border.default };
     if (selCase && cases.length) {
       const lv = tcase.visits[tcase.visits.length - 1];
       const t = caseToday[tcase.id];
       const v = t?.pain ?? lv?.selfPain ?? lv?.painAfter;
       if (v === undefined) return null;
-      const area = tcase.areas.slice(0, 2).map((a) => a.label).join(' ') || tcase.short;
-      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v) };
+      return {
+        items: tcase.areas.map((a) => a.label),
+        note: t ? (t.red ? `ปวด ${v}/10 · ควรพบแพทย์ก่อนนวด` : `ปวด ${v}/10 · ประเมินก่อนนวดครั้งนี้`) : `ปวด ${v}/10 · หลังนวดครั้งที่ ${tcase.visits.length}`,
+        color: t?.red ? colors.status.danger.fg : painColorOf(v),
+      };
     }
     return null;
   })();
@@ -1077,8 +1081,9 @@ export function HomeScreen() {
       const gi = withBooking.findIndex((r) => r.card?.type === 'guideline');
       const gl = gi >= 0 ? withBooking[gi].card : undefined;
       if (gl?.type === 'guideline' && (gl.areas?.length ?? 0) > 1) {
-        primaryFor.current[sid] = { draftId: id, symptoms: gl.areas!.map((a) => a.symptom), radiate: after.radiate, held: withBooking.slice(gi) };
-        return [...withBooking.slice(0, gi), { ...aiText(`ปวด ${gl.areas!.length} บริเวณ ตรงไหนปวดมากที่สุดคะ? จะใช้เป็นบริเวณหลักของแนวทาง`), card: { type: 'intents', options: gl.areas!.map((a) => a.symptom) }, time: withBooking[0]?.time ?? nowTimeText() }];
+        // ตัวเลือก = ชื่อบริเวณ (จุดซ้าย/ขวาของบริเวณเดียวกันรวมเป็นข้อเดียว ไม่ยาวแม้ปวดหลายจุด)
+        primaryFor.current[sid] = { draftId: id, symptoms: sym, radiate: after.radiate, held: withBooking.slice(gi), regions: gl.areas!.map((a) => ({ label: a.region ?? a.symptom, symptoms: a.symptoms ?? [a.symptom] })) };
+        return [...withBooking.slice(0, gi), { ...aiText(`ปวด ${gl.areas!.length} บริเวณ ตรงไหนปวดมากที่สุดคะ? จะใช้เป็นบริเวณหลักของแนวทาง`), card: { type: 'intents', options: gl.areas!.map((a) => a.region ?? a.symptom) }, time: withBooking[0]?.time ?? nowTimeText() }];
       }
       return withBooking;
     }, userExtra);
@@ -1500,16 +1505,19 @@ export function HomeScreen() {
     if (label === NEW_TOPIC_INTENT) return newChat(true);
     // บริเวณหลัก (ปวดมากที่สุด) → แนวทางใหม่: บริเวณนี้เป็นหลัก ที่เหลือเป็นบริเวณรอง
     const pf = primaryFor.current[activeId];
-    if (pf && pf.symptoms.includes(label)) {
+    const region = pf?.regions?.find((r) => r.label === label);
+    if (pf && (region || pf.symptoms.includes(label))) {
       delete primaryFor.current[activeId];
       const d = drafts.find((x) => x.id === pf.draftId);
-      const g = guideFor([label, ...pf.symptoms.filter((x) => x !== label)], pf.radiate);
-      if (d) upsertDraft({ ...d, primary: label, guide: { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution ?? d.guide?.caution, areas: g.areas } });
+      // อาการของบริเวณที่เลือกขึ้นก่อน = บริเวณหลัก
+      const lead = region?.symptoms ?? [label];
+      const g = guideFor([...lead, ...pf.symptoms.filter((x) => !lead.includes(x))], pf.radiate);
+      if (d) upsertDraft({ ...d, primary: lead[0], guide: { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution ?? d.guide?.caution, areas: g.areas } });
       // แนวทางที่จัดตามบริเวณหลัก แทนแนวทางเดิมที่พักไว้ · สิ่งที่ตามมา (นัด/จอง) แสดงต่อจากนั้น
       return aiReply(activeId, label, () =>
         (pf.held ?? [{ ...aiText('แนวทางการรักษาที่แนะนำค่ะ'), source: 'Knowledge Hub' as const }]).map((m, i) =>
           m.card?.type === 'guideline' || (i === 0 && !pf.held)
-            ? { ...m, id: `${m.id}-p`, text: `ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`, card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: m.card?.type === 'guideline' ? m.card.caution : g.caution, ref: g.ref, areas: g.areas, booked: m.card?.type === 'guideline' ? m.card.booked : !!d?.booking } }
+            ? { ...m, id: `${m.id}-p`, text: g.areas.length >= 3 ? `ใช้${label}เป็นบริเวณหลักค่ะ ปวด ${g.areas.length} บริเวณ ครั้งแรกแพทย์จะเน้น${label}ก่อน บริเวณอื่นวางแผนต่อในครั้งถัดไป` : `ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`, card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: m.card?.type === 'guideline' ? m.card.caution : g.caution, ref: g.ref, areas: g.areas, booked: m.card?.type === 'guideline' ? m.card.booked : !!d?.booking } }
             : { ...m, id: `${m.id}-p` },
         ),
       );
@@ -2504,17 +2512,22 @@ export function HomeScreen() {
       </Animated.View>
       {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
       {modelTag ? (
-        // ตำแหน่งคงที่ (มุมขวาใต้แท็บ) — สีจุดตรงกับจุดบนหุ่น
-        <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4], maxWidth: winW * 0.5, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
-          <View style={{ flexShrink: 1 }}>
-            <Text variant="labelMd" numberOfLines={1}>
-              {modelTag.title}
-            </Text>
-            <Text variant="caption" tone="secondary" numberOfLines={1}>
-              {modelTag.sub}
-            </Text>
-          </View>
+        // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
+        <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
+          {modelTag.items.map((it, i) => (
+            <View key={it} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />
+              <Text variant={i ? 'labelSm' : 'labelMd'}>{it}</Text>
+            </View>
+          ))}
+          {modelTag.note ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
+              {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
+              <Text variant="labelSm" tone="secondary">
+                {modelTag.note}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
       </Animated.View>
@@ -4660,7 +4673,7 @@ function GuideTile({ width, guide, symptoms, onPress }: { width: number; guide?:
         </View>
       ))}
       <Text variant="caption" tone="tertiary" style={{ marginTop: 'auto' }} numberOfLines={2}>
-        {(guide?.areas?.length ?? 0) > 1 ? `รวม ${guide!.areas!.length} บริเวณ: ${guide!.areas!.map((a) => a.symptom.replace(/^ปวด/, '')).join(' ')}` : 'แพทย์วางแผนจำนวนครั้งหลังตรวจ'}
+        {(guide?.areas?.length ?? 0) > 1 ? `รวม ${guide!.areas!.length} บริเวณ: ${guide!.areas!.map((a) => a.region ?? a.symptom.replace(/^ปวด/, '')).join(' · ')}` : 'แพทย์วางแผนจำนวนครั้งหลังตรวจ'}
       </Text>
     </Tile>
   );
@@ -4761,10 +4774,11 @@ function GuideSheet({ visible, onClose, guide, onBook }: { visible: boolean; onC
           {guide.areas!.map((a, i) => (
             <View key={a.symptom} style={{ gap: 2, ...(i ? { paddingTop: space[2], borderTopWidth: 1, borderTopColor: colors.border.subtle } : null) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-                <Text variant="labelMd">{a.symptom}</Text>
+                <Text variant="labelMd">{a.region ?? a.symptom}</Text>
                 {i === 0 ? <Badge label="หลัก" tone="brand" /> : null}
               </View>
               <Text variant="bodySm" tone="secondary">
+                {(a.symptoms?.length ?? 0) > 1 ? `${a.symptoms!.join(' · ')}\n` : ''}
                 {a.condition}
                 {a.points.length ? ` · จุด ${a.points.join(', ')}` : ''}
               </Text>

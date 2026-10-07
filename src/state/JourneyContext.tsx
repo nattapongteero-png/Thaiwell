@@ -137,7 +137,7 @@ export interface DraftCase {
   /** บริเวณที่ไม่ต้องการให้นวด */
   avoid?: string;
   /** แนวทางที่ AI แนะนำ (จากการ์ดแนวทางในแชท) — ยังไม่ใช่แผนของแพทย์ */
-  guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; condition: string; points: string[] }[] };
+  guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; region?: string; symptoms?: string[]; condition: string; points: string[] }[] };
   /** บริเวณหลัก (ปวดมากที่สุด) เมื่อปวดหลายบริเวณ */
   primary?: string;
   /** ผลประเมินรอบก่อน ๆ (ประเมินซ้ำ = รอบใหม่ ไม่ลบของเดิม) — at = วันเวลาที่ประเมินรอบนั้นถูกแทน */

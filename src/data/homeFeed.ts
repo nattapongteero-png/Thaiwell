@@ -32,7 +32,7 @@ export type ThreadCard =
   | { type: 'plan'; title: string; by: string; approved: boolean; adjustments: string[]; points: string[] }
   | { type: 'appointment'; time: string; place: string; queue?: string; waitMin?: number; /** นัดที่จองไว้ (ไม่ใช่วันนี้) */ date?: string; therapist?: string; service?: string; /** นัดของเรื่องไหน (เช็กอิน/เลื่อนนัดของเรื่องนั้น) */ caseId?: string; draftId?: string; /** บริการที่จองไม่ตรงผลประเมิน → เตือน + ปุ่มเปลี่ยนบริการ */ warn?: string }
   | { type: 'selfcare'; name: string; dosage: string; streak: number }
-  | { type: 'guideline'; condition?: string; methods: string[]; points: string[]; pins?: BodyPin[]; caution?: string; ref: string; /** จองไว้แล้ว → ไม่เสนอให้จองอีก */ booked?: boolean; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; condition: string; points: string[] }[] }
+  | { type: 'guideline'; condition?: string; methods: string[]; points: string[]; pins?: BodyPin[]; caution?: string; ref: string; /** จองไว้แล้ว → ไม่เสนอให้จองอีก */ booked?: boolean; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; region?: string; symptoms?: string[]; condition: string; points: string[] }[] }
   /** ขั้นต่อไปหลังประเมิน: จองนวด (หรือพบแพทย์ถ้ามีสัญญาณอันตราย) */
   | { type: 'book'; service: string; red: boolean }
   /** หน้าแรกแบบแชท (ยังไม่มีข้อมูล): คำถามแนะนำว่าสนใจเรื่องอะไร */

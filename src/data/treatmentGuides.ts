@@ -213,8 +213,30 @@ const guideOf = (symptom: string) => {
 const sideOf = (symptom: string): Side => (symptom.endsWith('ซ้าย') ? 'L' : symptom.endsWith('ขวา') ? 'R' : 'both');
 const pinsOf = (p: PointDef, side: Side): BodyPin[] => (!p.R ? p.L : side === 'L' ? p.L : side === 'R' ? p.R : [...p.L, ...p.R]);
 
+/** ชื่อบริเวณ (ใช้ถาม "ตรงไหนปวดมากที่สุด" เมื่อปวดหลายจุด — จุดซ้าย/ขวาของบริเวณเดียวกันรวมเป็นข้อเดียว) */
+const REGION: Record<string, string> = {
+  head: 'ศีรษะ',
+  neck: 'คอ บ่า',
+  shoulder: 'ไหล่',
+  scapula: 'สะบัก',
+  upperBack: 'หลังส่วนบน',
+  lowerBack: 'หลัง เอว',
+  lowerBackRadiating: 'หลังร้าวลงขา',
+  hip: 'สะโพก',
+  rib: 'ชายโครง',
+  belly: 'ท้อง',
+  arm: 'แขน',
+  wrist: 'ข้อมือ มือ',
+  thigh: 'ต้นขา',
+  knee: 'เข่า',
+  leg: 'น่อง ขา',
+  ankle: 'ข้อเท้า เท้า',
+  jaw: 'กราม',
+};
+
 /**
- * แนวทางของการประเมินนี้: อาการแรก = อาการหลัก (ชื่อโรค + วิธี) · จุดกดรวมจากทุกตำแหน่ง (สูงสุด 3 จุด) ตามข้างที่ปวด
+ * แนวทางของการประเมินนี้ — อาการแรก = บริเวณหลัก (ชื่อโรค + วิธี + จุดกดครบ)
+ * ปวดหลายบริเวณ: จุดซ้าย/ขวาของบริเวณเดียวกันรวมเป็นบริเวณเดียว · บริเวณรองแสดงจุดกด 1 จุดต่อบริเวณ · วิธีรักษารวมไม่ซ้ำ
  * ไม่ตรงกลุ่มไหน → แนวทางคอ บ่า (กลุ่มที่พบบ่อยที่สุด)
  */
 export function guideFor(
@@ -228,8 +250,8 @@ export function guideFor(
   pins: BodyPin[];
   caution?: string;
   ref: string;
-  /** หลายบริเวณ: แต่ละบริเวณ (อาการแรก = บริเวณหลัก) · ชื่อโรค + จุดกดของบริเวณนั้น */
-  areas: { symptom: string; condition: string; points: string[] }[];
+  /** หลายบริเวณ (แรก = บริเวณหลัก): ชื่อบริเวณ · อาการที่อยู่ในบริเวณนี้ · ชื่อโรค · จุดกด */
+  areas: { symptom: string; region: string; symptoms: string[]; condition: string; points: string[] }[];
 } {
   const rk = radiateOption(radiate)?.guideKey;
   const rg = rk ? GUIDES.find((g) => g.key === rk) : undefined;
@@ -237,24 +259,30 @@ export function guideFor(
     .map((s, i) => ({ s, g: i === 0 && rg ? rg : guideOf(s) }))
     .filter((x): x is { s: string; g: TreatmentGuide } => !!x.g);
   const main = found[0]?.g ?? GUIDES.find((g) => g.key === 'neck')!;
+  // รวมตามบริเวณ (แนวทางเดียวกัน) โดยคงลำดับ (บริเวณแรก = หลัก)
+  const groups: { g: TreatmentGuide; ss: string[] }[] = [];
+  for (const { s, g } of found) {
+    const hit = groups.find((x) => x.g.key === g.key);
+    if (hit) hit.ss.push(s);
+    else groups.push({ g, ss: [s] });
+  }
+  if (!groups.length) groups.push({ g: main, ss: [''] });
+  // จุดกด: บริเวณหลักครบทุกจุด · บริเวณรองจุดแรกจุดเดียว (ตามข้างที่ปวด)
   const pts = new Map<string, BodyPin[]>();
-  (found.length ? found : [{ s: '', g: main }]).forEach(({ s, g }) =>
-    g.points.forEach((p) => pts.set(p.label, [...new Set([...(pts.get(p.label) ?? []), ...pinsOf(p, sideOf(s))])])),
+  groups.forEach(({ g, ss }, gi) =>
+    (gi === 0 ? g.points : g.points.slice(0, 1)).forEach((p) =>
+      pts.set(p.label, [...new Set([...(pts.get(p.label) ?? []), ...ss.flatMap((s) => pinsOf(p, sideOf(s)))])]),
+    ),
   );
-  const points = [...pts.keys()].slice(0, 3);
-  // บริเวณละแนวทาง (กลุ่มเดียวกัน = รวม) · วิธีรักษา: ของบริเวณหลักก่อน แล้วเพิ่มวิธีเฉพาะของบริเวณอื่น (นวด/ประคบซ้ำ = รายการเดียว)
-  const seen = new Set<string>();
-  const areas = found
-    .filter(({ g }) => (seen.has(g.key) ? false : (seen.add(g.key), true)))
-    .map(({ s, g }) => ({ symptom: s, condition: g.condition, points: g.points.map((p) => p.label) }));
-  const methods = [...new Set(found.flatMap(({ g }) => g.methods))];
+  const points = [...pts.keys()];
+  const areas = groups.map(({ g, ss }) => ({ symptom: ss[0], region: REGION[g.key] ?? ss[0], symptoms: ss, condition: g.condition, points: g.points.map((p) => p.label) }));
   return {
     condition: main.condition,
-    methods: found.length > 1 ? methods : main.methods,
+    methods: groups.length > 1 ? [...new Set(groups.flatMap(({ g }) => g.methods))] : main.methods,
     points,
-    areas,
     pins: [...new Set(points.flatMap((l) => pts.get(l)!))],
     caution: main.caution,
     ref: [...new Set(found.map((x) => x.g.ref))].join(' · ') || main.ref,
+    areas,
   };
 }
