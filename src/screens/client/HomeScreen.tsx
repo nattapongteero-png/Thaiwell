@@ -127,7 +127,7 @@ import { PainPicker } from './home/PainPicker';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
-import { afterOf, sessionRecord } from './home/TreatmentDetailBody';
+import { afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
 import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
@@ -4493,7 +4493,7 @@ function HomeBento({
   const preDone = !!today;
   // แนวทางการรักษาจากแพทย์: ผลวินิจฉัย + หัตถการของครั้งล่าสุด (บันทึกการรักษาของคลินิก)
   const rec = sessionRecord(tc, tc.visits.length - 1);
-  const nextPlan = today ? preVisitSummary(tc, today) : { status: 'ok' as const, plan: [] as string[] };
+  const nextGuide = today ? nextVisitGuide(tc, today) : null;
   // ประเมินหลังนวดครั้งล่าสุดแล้วหรือยัง: บอกความรู้สึกหลังนวด / ส่งผลติดตาม / ประเมินก่อนนวดครั้งถัดไป (ถามอาการหลังนวดครั้งก่อนแล้ว)
   const needPost = last.selfPain === undefined;
   // ประเมินก่อนนวดเปิดได้ 1 วันก่อนนัด (เร็วกว่านั้นอาการอาจไม่ตรงวันที่มานวด) · ยังไม่เปิด = วันที่เปิด
@@ -4624,15 +4624,15 @@ function HomeBento({
 
       {/* 4) แนวทางการรักษา (แพทย์ทำอะไรให้) | ดูแลตัวเอง (ทำเองที่บ้าน) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        {today && hasNext ? (
-          // ประเมินก่อนนวดครั้งถัดไปแล้ว → แนวทางของครั้งนั้น: แผนเดิมของแพทย์ + ข้อที่ปรับตามผลประเมินวันนี้ (ชุดเดียวกับผลประเมินก่อนนวด)
+        {nextGuide && hasNext ? (
+          // ประเมินก่อนนวดครั้งถัดไปแล้ว → แนวทางของครั้งนั้น (ชุดเดียวกับแท็บครั้งนั้นใน sheet)
           <GuideTile
             width={halfW}
             title={`แนวทางครั้งที่ ${nextNo}`}
-            subtitle={rec.diagnoses?.[0] ?? tc.condition}
-            items={nextPlan.status === 'red' ? [] : rec.techniques}
-            adjust={nextPlan.status === 'red' ? nextPlan.plan : nextPlan.plan.slice(1)}
-            danger={nextPlan.status === 'red'}
+            subtitle={nextGuide.diagnosis}
+            items={nextGuide.items}
+            adjust={nextGuide.adjust}
+            danger={nextGuide.red}
             onAdjust={() => onHistory(tc.visits.length)}
             onPress={() => onHistory(tc.visits.length)}
           />

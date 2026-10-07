@@ -7,7 +7,8 @@ import { radius, space } from '../../../design-system/tokens';
 import { type TreatmentCase } from '../../../data/homeFeed';
 import { SYMPTOM_GROUPS } from '../../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../../data/stretchMotion';
-import { useJourney } from '../../../state/JourneyContext';
+import { useJourney, type CaseToday } from '../../../state/JourneyContext';
+import { preVisitSummary } from '../../../data/preVisit';
 
 /**
  * รายละเอียดการรักษา — หน้าตาเดียวกับหลังบ้าน (ThaiWellAI · หน้าผู้มารับบริการ)
@@ -413,6 +414,17 @@ function PainCompare({ from, to, note }: { from: { label: string; v: number }; t
   );
 }
 
+/**
+ * แนวทางของครั้งถัดไป (ประเมินก่อนนวดแล้ว) — ใช้ทั้งการ์ดหน้าแรกและแท็บครั้งนั้นใน sheet ให้ตรงกัน
+ * หลังบ้านยังไม่ส่งแผนรายครั้ง → หัตถการ = ของครั้งล่าสุด (แผนเดิม) · ข้อปรับ = จากผลประเมินก่อนนวดวันนี้
+ */
+export function nextVisitGuide(tc: TreatmentCase, today: CaseToday) {
+  const rec = sessionRecord(tc, tc.visits.length - 1);
+  const sum = preVisitSummary(tc, today);
+  const red = sum.status === 'red';
+  return { diagnosis: rec.diagnoses?.[0] ?? tc.condition, items: red ? [] : rec.techniques, adjust: red ? sum.plan : sum.plan.slice(1), red };
+}
+
 /** ครั้งถัดไปที่ประเมินก่อนนวดแล้วแต่ยังไม่นวด — ก่อนนวด (วันนี้) · หลังนวด = ยังไม่มี · เทียบหลังนวดครั้งก่อน */
 function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
   const { colors } = useTheme();
@@ -438,6 +450,31 @@ function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
         to={{ label: 'วันนี้ก่อนนวด', v: t.pain }}
         note={d > 0 ? { text: `ปวดกลับมา +${d}` } : d < 0 ? { text: `ดีขึ้นอีก ${-d}`, good: true } : undefined}
       />
+      {/* แนวทางครั้งนี้ — ชุดเดียวกับการ์ดแนวทางในหน้าแรก */}
+      {(() => {
+        const g = nextVisitGuide(tc, t);
+        const tone = g.red ? colors.status.danger : colors.status.warning;
+        return (
+          <Section icon="activity" tint={colors.brand.primary} title="แนวทางครั้งนี้">
+            <Text variant="bodyMd">{g.diagnosis}</Text>
+            {g.items.length ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {g.items.map((it) => (
+                  <Chip key={it} text={it} />
+                ))}
+              </View>
+            ) : null}
+            {g.adjust.map((a) => (
+              <View key={a} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+                <Icon name="alert-triangle" size="xs" color={tone.fg} />
+                <Text variant="bodySm" color={tone.fg} style={{ flex: 1 }}>
+                  {a}
+                </Text>
+              </View>
+            ))}
+          </Section>
+        );
+      })()}
       {t.adverse || t.risk ? (
         <Section icon="clipboard" tint="#2F6FA3" title="แจ้งก่อนนวด">
           {t.adverse ? <Info k="หลังนวดครั้งก่อน" v={t.adverse} /> : null}
