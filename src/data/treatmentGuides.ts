@@ -11,7 +11,7 @@
  * ⚠️ ยังไม่ได้ให้แพทย์แผนไทยตรวจ — เป็นข้อมูลต้นแบบ
  */
 import type { BodyPin } from '../design-system/components/Body3D';
-import { radiateOption } from './radiation';
+import { radiateAnswers } from './radiation';
 
 type Side = 'L' | 'R' | 'both';
 /** จุดกด: ซ้าย/ขวา (ตามข้างที่ปวด) หรือแนวกลางตัว */
@@ -250,21 +250,46 @@ export function guideFor(
   pins: BodyPin[];
   caution?: string;
   ref: string;
-  /** หลายบริเวณ (แรก = บริเวณหลัก): ชื่อบริเวณ · อาการที่อยู่ในบริเวณนี้ · ชื่อโรค · จุดกด */
-  areas: { symptom: string; region: string; symptoms: string[]; condition: string; points: string[] }[];
+  /** หลายบริเวณ (แรก = บริเวณหลัก): ชื่อบริเวณ · อาการที่อยู่ในบริเวณนี้ · ชื่อโรค · จุดกด · ร้าวไปไหน */
+  areas: { symptom: string; region: string; symptoms: string[]; condition: string; points: string[]; radiate?: string }[];
 } {
-  const rk = radiateOption(radiate)?.guideKey;
-  const rg = rk ? GUIDES.find((g) => g.key === rk) : undefined;
+  // อาการร้าวผูกกับบริเวณที่ถาม (ไม่ใช่บริเวณแรกเสมอ) — ร้าว = แนวทางของรูปแบบการร้าวแทนแนวทางของจุดนั้น
+  const answers = radiateAnswers(symptoms, radiate).filter((a) => a.option);
+  const radiOf = (s: string) => answers.find((a) => a.symptom === s);
   const found = symptoms
-    .map((s, i) => ({ s, g: i === 0 && rg ? rg : guideOf(s) }))
+    .map((s) => {
+      const ra = radiOf(s);
+      const rg = ra?.option?.guideKey ? GUIDES.find((g) => g.key === ra.option!.guideKey) : undefined;
+      return { s, g: rg ?? guideOf(s) };
+    })
     .filter((x): x is { s: string; g: TreatmentGuide } => !!x.g);
   const main = found[0]?.g ?? GUIDES.find((g) => g.key === 'neck')!;
   // รวมตามบริเวณ (แนวทางเดียวกัน) โดยคงลำดับ (บริเวณแรก = หลัก)
-  const groups: { g: TreatmentGuide; ss: string[] }[] = [];
+  // บริเวณที่อยู่ในแนวร้าวของอีกจุด (เช่น หลังร้าวลงขา + เลือกขามาด้วย) = อาการเดียวกัน → รวมเข้าจุดต้นทาง ไม่นับแยก
+  const coveredBy = (s: string) => {
+    const k = guideOf(s)?.key;
+    return k ? answers.find((a) => a.symptom !== s && a.option?.covers?.includes(k)) : undefined;
+  };
+  const groups: { g: TreatmentGuide; ss: string[]; radiate?: string }[] = [];
   for (const { s, g } of found) {
+    const cov = coveredBy(s);
+    const src = cov ? groups.find((x) => x.ss.includes(cov.symptom)) : undefined;
+    if (src) {
+      src.ss.push(s);
+      continue;
+    }
     const hit = groups.find((x) => x.g.key === g.key);
     if (hit) hit.ss.push(s);
-    else groups.push({ g, ss: [s] });
+    else groups.push({ g, ss: [s], radiate: radiOf(s)?.label });
+  }
+  // บริเวณที่ถูกรวมแต่มาก่อนจุดต้นทาง (ลำดับเลือก) → ย้ายเข้าจุดต้นทาง
+  for (const gr of [...groups]) {
+    const cov = gr.ss.length === 1 ? coveredBy(gr.ss[0]) : undefined;
+    const src = cov ? groups.find((x) => x !== gr && x.ss.includes(cov.symptom)) : undefined;
+    if (src) {
+      src.ss.push(...gr.ss);
+      groups.splice(groups.indexOf(gr), 1);
+    }
   }
   if (!groups.length) groups.push({ g: main, ss: [''] });
   // จุดกด: บริเวณหลักครบทุกจุด · บริเวณรองจุดแรกจุดเดียว (ตามข้างที่ปวด)
@@ -275,13 +300,14 @@ export function guideFor(
     ),
   );
   const points = [...pts.keys()];
-  const areas = groups.map(({ g, ss }) => ({ symptom: ss[0], region: REGION[g.key] ?? ss[0], symptoms: ss, condition: g.condition, points: g.points.map((p) => p.label) }));
+  const areas = groups.map(({ g, ss, radiate: r }) => ({ symptom: ss[0], region: REGION[(guideOf(ss[0]) ?? g).key] ?? ss[0], symptoms: ss, condition: g.condition, points: g.points.map((p) => p.label), radiate: r }));
   return {
-    condition: main.condition,
-    methods: groups.length > 1 ? [...new Set(groups.flatMap(({ g }) => g.methods))] : main.methods,
+    condition: groups[0].g.condition,
+    // รวมไม่ซ้ำ · วิธีเดียวกันแต่ละเอียดกว่า (เช่น นวด 60 นาที ตามแนวเส้น…) = ใช้แบบละเอียดแบบเดียว
+    methods: groups.length > 1 ? [...new Set(groups.flatMap(({ g }) => g.methods))].filter((m, _, all) => !all.some((o) => o !== m && o.startsWith(m))) : groups[0].g.methods,
     points,
     pins: [...new Set(points.flatMap((l) => pts.get(l)!))],
-    caution: main.caution,
+    caution: groups[0].g.caution,
     ref: [...new Set(found.map((x) => x.g.ref))].join(' · ') || main.ref,
     areas,
   };

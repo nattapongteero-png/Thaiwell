@@ -73,7 +73,7 @@ import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor } from '../../data/treatmentGuides';
-import { ALL_RADIATE_OPTIONS, radiateFor, radiateOption, radiatePins } from '../../data/radiation';
+import { ALL_RADIATE_OPTIONS, RADIATE_SEP, radiateAnswers, radiateFor, radiateForAll, radiateList, radiatePins } from '../../data/radiation';
 import { evaluateSafety } from '../../services/safetyEngine';
 import { needsReview } from '../../services/followUpService';
 import { useNav } from '../../navigation/types';
@@ -165,6 +165,11 @@ const draftLabel = (d: DraftCase) => {
 const draftRegions = (d: DraftCase) => (d.guide?.areas?.length ? d.guide.areas.map((a) => a.region ?? a.symptom) : d.symptoms);
 /** สีโปร่ง (พื้นป้าย) จากสี rgb()/hex */
 const tint = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(', 'rgba(').replace(')', `,${a})`) : c.startsWith('#') && c.length === 7 ? `${c}${Math.round(a * 255).toString(16).padStart(2, '0')}` : c);
+/** ข้ออาการร้าวที่กำลังถาม (ปวดหลายที่ = ถามทีละบริเวณที่มีรูปแบบการร้าว) */
+const radiateNow = (symptoms: string[], radiate?: string) => radiateForAll(symptoms)[radiateList(radiate).length] ?? radiateFor(symptoms);
+/** ชา / อ่อนแรง ร่วมด้วย (ถามทุกบริเวณ ไม่ว่าจะมีรูปแบบการร้าวไหม) — CPG หน้า 139: อาการทางเส้นประสาท */
+const NUMB = 'ชาบริเวณที่ปวด';
+const WEAK = 'แขนหรือขาอ่อนแรง';
 const BENTO_GAP = 12;
 /** หน้าแรก: bento เริ่มที่สัดส่วนนี้ของความสูงจอ (ด้านบนเห็นหุ่นครึ่งบน) */
 /** ข้อมูลหน้าแรกเริ่มที่ 60% ของจอ (ขั้นแรก: เห็นหุ่นเกือบทั้งตัว หมุนได้) → ปัดขึ้น = แผ่นข้อมูลขึ้นมาบังหุ่น (ขั้นที่สอง) */
@@ -508,7 +513,9 @@ export function HomeScreen() {
         .flatMap(([c]) => (CHIP_PINS[c] ?? []).map((at) => ({ at, tone: 'symptom' as const, color: symptomColor }))),
       // จุดกดบำบัดขึ้นบนหุ่นหลังประเมินครบแล้วเท่านั้น
       // บริเวณที่ร้าวไป (อาการเดียวกัน แสดงต่อจากจุดที่ปวด)
-      ...radiatePins(assess.radiate, radiateFor(Object.keys(sel))?.symptom).map((at) => ({ at, tone: 'symptom' as const, color: symptomColor })),
+      ...radiateAnswers(Object.keys(sel), assess.radiate)
+        .flatMap((a) => radiatePins(a.label, a.symptom))
+        .map((at) => ({ at, tone: 'symptom' as const, color: symptomColor })),
       ...(done ? guidePins.map((at) => ({ at, tone: 'point' as const })) : []),
       // หน้าเริ่มต้น: บริเวณที่รักษาครั้งล่าสุด
       // สีตามคะแนนปวดที่ผู้ใช้ให้ (ยังไม่ให้ = สีแบรนด์)
@@ -874,6 +881,18 @@ export function HomeScreen() {
       aiReply(sid, answer, () => [reviewItem('แก้แล้วค่ะ มีข้ออื่นอีกไหม หรือยืนยันได้เลย')], userExtra);
       return;
     }
+    // อาการร้าวหลายบริเวณ: เก็บคำตอบต่อกันตามลำดับ แล้วถามบริเวณถัดไปที่มีรูปแบบการร้าว (ครบแล้วจึงไปอาการร่วม)
+    if (!fromStep && assess.step === 'radiate' && patch?.radiate) {
+      const syms = Object.keys(assess.sel).filter((k) => !HOME_CONTENT.related.includes(k));
+      const list = [...radiateList(assess.radiate), patch.radiate];
+      patch = { ...patch, radiate: list.join(RADIATE_SEP) };
+      if (radiateForAll(syms).length > list.length) {
+        const p2 = patch;
+        setAssess((a) => ({ ...a, ...p2, step: 'radiate' }), sid);
+        aiReply(sid, answer, () => radiateOrNext(sid, syms, 'รับทราบค่ะ', list.length), userExtra);
+        return;
+      }
+    }
     const i = ASSESS_ORDER.indexOf((fromStep ?? assess.step) as (typeof ASSESS_ORDER)[number]);
     let nextStep: (typeof ASSESS_ORDER)[number] | undefined = ASSESS_ORDER[i + 1];
     // ประเมินซ้ำเรื่องเดิม: ใช้คำตอบโรคประจำตัวชุดเดิม ไม่ถามซ้ำ
@@ -928,17 +947,26 @@ export function HomeScreen() {
       const ev = evaluateSafety(nextProfile);
       const amber = ev.hits.find((h) => h.level === 'amber');
       // อาการร้าว: ร้าวเลยเข่า/ร้าวชาลงแขน = ข้อควรระวัง · ชา/อ่อนแรง = พบแพทย์ก่อน (data/radiation.ts)
-      const ro = radiateOption(after.radiate);
+      // ร้าวหลายบริเวณ → ใช้ผลที่หนักที่สุด (แดง > เหลือง) · ทุกข้อขึ้นในผลตรวจ
+      const ros = radiateAnswers(sym, after.radiate)
+        .map((a) => a.option)
+        .filter((o): o is NonNullable<typeof o> => !!o?.level);
+      const ro = ros.find((o) => o.level === 'red') ?? ros[0];
+      // ชา / อ่อนแรง ร่วมด้วย (ทุกบริเวณ) — อ่อนแรง = พบแพทย์ก่อน · ชา = แพทย์ตรวจก่อนนวด (CPG หน้า 139)
+      const numb = rel.includes(NUMB);
+      const weak = rel.includes(WEAK);
       // โรคติดต่อ = รอหายก่อน (เลื่อนนัด) · มีประจำเดือน = นวดได้ แต่งดนวดท้อง (ข้อควรระวัง)
       const contagious = after.risk === 'โรคติดต่อ';
       const period = after.risk === 'มีประจำเดือน';
       const roHit = [
-        ...(ro?.level ? [{ id: ro.level === 'red' ? 'RF-NERVE' : 'CA-NERVE', title: ro.note ?? ro.label, evidence: ro.label, source: ro.source ?? 'CPG หน้า 139' }] : []),
+        ...ros.map((o) => ({ id: o.level === 'red' ? 'RF-NERVE' : 'CA-NERVE', title: o.note ?? o.label, evidence: o.label, source: o.source ?? 'CPG หน้า 139' })),
+        ...(weak ? [{ id: 'RF-WEAK', title: 'อ่อนแรง อาการทางเส้นประสาท ควรพบแพทย์ก่อน', evidence: WEAK, source: 'CPG หน้า 139' }] : []),
+        ...(numb && !weak ? [{ id: 'CA-NUMB', title: 'มีอาการชา แพทย์ตรวจก่อนนวด', evidence: NUMB, source: 'CPG หน้า 139' }] : []),
         ...(contagious ? [{ id: 'RF-INFECT', title: 'โรคติดต่อ ควรรอหายก่อนนวด', evidence: after.risk!, source: 'แบบคัดกรองคลินิก' }] : []),
         ...(period ? [{ id: 'CA-PERIOD', title: 'มีประจำเดือน งดนวดท้อง', evidence: after.risk!, source: 'แบบคัดกรองคลินิก' }] : []),
       ];
-      const level = ev.level === 'red' || ro?.level === 'red' || contagious ? 'red' : ev.level === 'amber' || ro?.level === 'amber' || period ? 'amber' : 'green';
-      const caution = [amber ? SHORT_CAUTION[amber.ruleId] ?? amber.title : ro?.level === 'amber' ? ro.note : undefined, period ? 'งดนวดท้อง' : undefined, after.avoid && after.avoid !== 'ไม่มี' ? `ไม่นวด${after.avoid}` : undefined].filter(Boolean).join(' · ') || undefined;
+      const level = ev.level === 'red' || ro?.level === 'red' || contagious || weak ? 'red' : ev.level === 'amber' || ro?.level === 'amber' || period || numb ? 'amber' : 'green';
+      const caution = [amber ? SHORT_CAUTION[amber.ruleId] ?? amber.title : ro?.level === 'amber' ? ro.note : numb ? 'มีอาการชา แพทย์ตรวจก่อนนวด' : undefined, period ? 'งดนวดท้อง' : undefined, after.avoid && after.avoid !== 'ไม่มี' ? `ไม่นวด${after.avoid}` : undefined].filter(Boolean).join(' · ') || undefined;
       const results = assessmentResults(after, sym, rel, withAppt, {
         level,
         items: [...roHit, ...ev.hits.map((h) => ({ id: h.ruleId, title: h.title, evidence: h.evidence, source: h.source }))],
@@ -1736,7 +1764,7 @@ export function HomeScreen() {
     radiate: ' · ไม่ร้าว/ปวดที่เดียว = ไม่ร้าว · ร้าวถึงน่อง เท้า หรือนิ้วเท้า = ร้าวเลยเข่า · อ่อนแรง ยกขา/แขนไม่ขึ้น = ตัวเลือกที่มีคำว่าอ่อนแรง (ชาอย่างเดียวไม่ใช่)',
   };
   /** กำลังถามข้อหนึ่งอยู่ แต่ผู้ใช้พิมพ์ตอบเอง → AI แปลงเป็นคำตอบของข้อนั้น (แปลงไม่ได้ = ถามซ้ำพร้อมตัวเลือก) */
-  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateFor(Object.keys(assess.sel))?.options ?? ALL_RADIATE_OPTIONS });
+  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
   /** ข้อมูลข้ออื่นที่บอกมาในข้อความเดียวกัน → เก็บไว้ข้ามตอนถึงข้อนั้น · คืนสรุปสั้น ๆ */
   const keepPrefill = (st: AssessStep, f: TurnFields): string[] => {
     const extra: Partial<Assessment> = {};
@@ -1838,9 +1866,10 @@ export function HomeScreen() {
   };
 
   /** หลังได้อาการ: อาการนั้นมีรูปแบบการร้าว → ถามว่าร้าวไปไหน · ไม่มี → ข้ามไปอาการร่วม (อ่านอาการล่าสุดของแชท ณ ตอนตอบ) */
-  const radiateOrNext = (sid: string, picked?: string[], lead = 'รับทราบค่ะ'): ThreadItem[] => {
+  /** answered = ถามอาการร้าวไปแล้วกี่บริเวณ → ถามบริเวณถัดไปที่มีรูปแบบการร้าว · ครบ = อาการร่วม */
+  const radiateOrNext = (sid: string, picked?: string[], lead = 'รับทราบค่ะ', answered = 0): ThreadItem[] => {
     const syms = picked ?? Object.keys(sessionsRef.current.find((c) => c.id === sid)?.assess.sel ?? {}).filter((k) => !HOME_CONTENT.related.includes(k));
-    const r = radiateFor(syms);
+    const r = radiateForAll(syms)[answered] ?? null;
     setAssess((a) => ({ ...a, step: r ? 'radiate' : 'related' }), sid);
     return r ? [askItem('radiate', lead, `${r.symptom}ร้าวไปที่อื่นไหมคะ?`)] : [askItem('related', lead)];
   };
@@ -1984,7 +2013,7 @@ export function HomeScreen() {
     // ข้อประเมิน → ถามใหม่ด้วยคำถามเดิม (ไม่ติดข้อความนำของรอบก่อน)
     const st = assess.step;
     if (p.item?.ask && st !== 'idle' && st !== 'done' && st !== 'review') {
-      const r = st === 'radiate' ? radiateFor(Object.keys(assess.sel)) : null;
+      const r = st === 'radiate' ? radiateNow(Object.keys(assess.sel), assess.radiate) : null;
       return [askItem(st, lead, r ? `${r.symptom}ร้าวไปที่อื่นไหมคะ?` : undefined)];
     }
     if (p.item) return [{ ...p.item, id: `re-${Date.now()}`, time: nowTimeText(), thinking: undefined, text: `${lead}\n${p.item.text ?? ''}`.trim() }];
@@ -2779,7 +2808,7 @@ export function HomeScreen() {
                       onPain={(v) => setAssess((a) => ({ ...a, pain: v }))}
                       onNext={answerStep}
                       topics={topicOptions}
-                      radiate={radiateFor(Object.keys(assess.sel))?.options}
+                      radiate={radiateNow(Object.keys(assess.sel), assess.radiate)?.options}
                       onPickBody={openPicker}
                       onOther={(l) => {
                         // เพิ่มเป็นตัวเลือกที่เลือกไว้ (เลือกหลายบริเวณต่อได้ แล้วกดถัดไป)

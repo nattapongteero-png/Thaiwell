@@ -21,6 +21,8 @@ export interface RadiateOption {
   R?: BodyPin[];
   /** ใช้แนวทางนี้แทนแนวทางของจุดที่ปวด */
   guideKey?: string;
+  /** บริเวณ (คีย์แนวทาง) ที่อยู่ในแนวร้าว — เลือกบริเวณเหล่านี้มาด้วย = อาการร้าวของจุดเดียวกัน ไม่นับเป็นบริเวณแยก */
+  covers?: string[];
   /** ผลต่อการคัดกรอง · note = สิ่งที่ระบบพบ (หัวข้อในผลตรวจ) ส่วน label = คำตอบของผู้ใช้ (บรรทัดรอง) — ห้ามซ้ำกัน */
   level?: 'amber' | 'red';
   note?: string;
@@ -39,12 +41,13 @@ const PATTERNS: RadiatePattern[] = [
     match: ['ปวดหลัง', 'เอว'],
     except: ['หลังส่วนบน'],
     options: [
-      { label: 'ร้าวลงสะโพก ก้น', L: ['hipLeft', 'hipRight'], guideKey: 'lowerBackRadiating' },
-      { label: 'ร้าวลงถึงเข่า', L: ['hipLeft', 'hipRight', 'thighBackLeft', 'thighBackRight', 'kneeBackLeft', 'kneeBackRight'], guideKey: 'lowerBackRadiating' },
+      { label: 'ร้าวลงสะโพก ก้น', L: ['hipLeft', 'hipRight'], guideKey: 'lowerBackRadiating', covers: ['hip'] },
+      { label: 'ร้าวลงถึงเข่า', L: ['hipLeft', 'hipRight', 'thighBackLeft', 'thighBackRight', 'kneeBackLeft', 'kneeBackRight'], guideKey: 'lowerBackRadiating', covers: ['hip', 'thigh', 'knee'] },
       {
         label: 'ร้าวเลยเข่าถึงน่อง เท้า',
         L: ['hipLeft', 'hipRight', 'thighBackLeft', 'thighBackRight', 'calfLeft', 'calfRight', 'heelLeft', 'heelRight'],
         guideKey: 'lowerBackRadiating',
+        covers: ['hip', 'thigh', 'knee', 'leg', 'ankle'],
         level: 'amber',
         note: 'อาจเกี่ยวกับเส้นประสาท แพทย์ตรวจก่อนนวด',
         source: 'CPG หน้า 139, 146',
@@ -55,11 +58,12 @@ const PATTERNS: RadiatePattern[] = [
   {
     match: ['คอ', 'บ่า', 'สะบัก'],
     options: [
-      { label: 'ร้าวไปสะบัก', L: ['scapulaLeft', 'scapulaRight'], guideKey: 'scapula' },
+      { label: 'ร้าวไปสะบัก', L: ['scapulaLeft', 'scapulaRight'], guideKey: 'scapula', covers: ['scapula'] },
       {
         label: 'ร้าวชาลงแขน นิ้วมือ',
         L: ['armLeft', 'armRight', 'elbowLeft', 'elbowRight', 'handLeft', 'handRight'],
         guideKey: 'scapula',
+        covers: ['scapula', 'arm', 'wrist'],
         level: 'amber',
         note: 'อาจเกี่ยวกับเส้นประสาท แพทย์ตรวจก่อนนวด',
         source: 'CPG หน้า 139, 145',
@@ -70,17 +74,17 @@ const PATTERNS: RadiatePattern[] = [
   {
     match: ['ข้อศอก'],
     options: [
-      { label: 'ร้าวขึ้นไหล่', L: ['shoulderLeft'], R: ['shoulderRight'] },
-      { label: 'ร้าวชาลงข้อมือ นิ้วมือ', L: ['wristLeft', 'handLeft'], R: ['wristRight', 'handRight'] },
+      { label: 'ร้าวขึ้นไหล่', L: ['shoulderLeft'], R: ['shoulderRight'], covers: ['shoulder'] },
+      { label: 'ร้าวชาลงข้อมือ นิ้วมือ', L: ['wristLeft', 'handLeft'], R: ['wristRight', 'handRight'], covers: ['wrist'] },
     ],
   },
   {
     match: ['ส้นเท้า'],
-    options: [{ label: 'ร้าวไปขอบเท้า เอ็นร้อยหวาย', L: ['footLeft', 'footRight'] }],
+    options: [{ label: 'ร้าวไปขอบเท้า เอ็นร้อยหวาย', L: ['footLeft', 'footRight'], covers: ['ankle'] }],
   },
   {
     match: ['สะโพก'],
-    options: [{ label: 'ร้าวลงต้นขา', L: ['thighBackLeft'], R: ['thighBackRight'] }],
+    options: [{ label: 'ร้าวลงต้นขา', L: ['thighBackLeft'], R: ['thighBackRight'], covers: ['thigh'] }],
   },
 ];
 
@@ -91,6 +95,32 @@ export function radiateFor(symptoms: string[]): { symptom: string; options: stri
     if (p) return { symptom: s, options: [NO_RADIATE, ...p.options.map((o) => o.label)] };
   }
   return null;
+}
+
+const patternOf = (s: string) => PATTERNS.find((x) => x.match.some((w) => s.includes(w)) && !x.except?.some((w) => s.includes(w)));
+
+/**
+ * ทุกบริเวณที่มีรูปแบบการร้าว (ถามทีละบริเวณตามลำดับ · รูปแบบเดียวกันถามครั้งเดียว) — ปวดหลายที่ต้องคัดกรองทุกที่
+ */
+export function radiateForAll(symptoms: string[]): { symptom: string; options: string[] }[] {
+  const out: { symptom: string; options: string[]; p: RadiatePattern }[] = [];
+  for (const s of symptoms) {
+    const p = patternOf(s);
+    if (p && !out.some((x) => x.p === p)) out.push({ symptom: s, options: [NO_RADIATE, ...p.options.map((o) => o.label)], p });
+  }
+  return out.map(({ symptom, options }) => ({ symptom, options }));
+}
+/** คำตอบอาการร้าว (หลายบริเวณ = เก็บต่อกันตามลำดับคำถาม) */
+export const RADIATE_SEP = ' + ';
+export const radiateList = (radiate?: string) => (radiate ? radiate.split(RADIATE_SEP).filter(Boolean) : []);
+/** คำตอบแต่ละข้อ → อาการต้นทาง (บริเวณที่ถาม) + ตัวเลือก */
+export function radiateAnswers(symptoms: string[], radiate?: string): { symptom: string; label: string; option?: RadiateOption }[] {
+  const asked = radiateForAll(symptoms);
+  return radiateList(radiate).map((label, i) => {
+    // คำตอบเดี่ยวจากข้อมูลเดิม/AI (ไม่รู้ว่าข้อไหน) → หาบริเวณที่มีตัวเลือกนี้
+    const src = asked[i]?.options.includes(label) ? asked[i] : asked.find((a) => a.options.includes(label));
+    return { symptom: src?.symptom ?? '', label, option: radiateOption(label) };
+  });
 }
 
 /** ตัวเลือกที่ตอบ → รายละเอียด (บริเวณที่ร้าว · ผลคัดกรอง · แนวทาง) */
