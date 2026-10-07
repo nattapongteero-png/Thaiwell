@@ -507,43 +507,17 @@ export function HomeScreen() {
   const modelTag = (() => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บอกแค่จุดที่ปวด (ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ)
-    if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain), pin: selDraft.symptoms.map((c) => CHIP_PINS[c]?.[0]).find(Boolean) };
+    if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     if (selCase && cases.length) {
       const lv = tcase.visits[tcase.visits.length - 1];
       const t = caseToday[tcase.id];
       const v = t?.pain ?? lv?.selfPain ?? lv?.painAfter;
       if (v === undefined) return null;
-      // ชื่อจุดที่ป้ายชี้ (จุดแรก) — ป้ายแคบ ไม่บังหุ่น
-      const area = tcase.areas[0]?.label ?? tcase.short;
-      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v), pin: tcase.areas[0]?.pin };
+      const area = tcase.areas.slice(0, 2).map((a) => a.label).join(' ') || tcase.short;
+      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v) };
     }
     return null;
   })();
-  /** ตำแหน่งบนจอของจุดที่ป้ายชี้ (หุ่นโหลด/ขยับเข้าที่ช้ากว่าหน้า → อ่านซ้ำช่วงแรก) */
-  const [tagAt, setTagAt] = React.useState<{ x: number; y: number } | null>(null);
-  const tagPin = modelTag?.pin;
-  /** ชั้นของป้าย (วัดตำแหน่งบนจอ → แปลงตำแหน่งจุดจากพิกัดจอเป็นพิกัดในชั้นนี้) */
-  const tagLayer = React.useRef<View>(null);
-  const homeFocused = useIsFocused();
-  React.useEffect(() => {
-    if (!tagPin || !homeFocused) return;
-    // กลับมาหน้านี้ / หุ่นขยับเข้าที่ → ตำแหน่งบนจอเปลี่ยน: วัดหุ่นใหม่ แล้วอ่านตำแหน่งจุดตามไปตลอดที่อยู่หน้านี้
-    bodyRef.current?.remeasure();
-    let n = 0;
-    const read = () => {
-      if (++n % 8 === 0) bodyRef.current?.remeasure();
-      const q = bodyRef.current?.projectPin(tagPin);
-      if (!q) return;
-      tagLayer.current?.measureInWindow((ox, oy) => {
-        const v = { x: q.x - (ox || 0), y: q.y - (oy || 0) };
-        setTagAt((o) => (o && Math.abs(o.x - v.x) < 1 && Math.abs(o.y - v.y) < 1 ? o : v));
-      });
-    };
-    read();
-    const t = setInterval(read, 400);
-    return () => clearInterval(t);
-  }, [tagPin, started, homeFocused]);
-  React.useEffect(() => setTagAt(null), [tagPin]);
 
   /** แตะบนหุ่น → เลือก chip ของส่วนนั้น (หรือเพิ่ม chip ใหม่) · แตะจุดเดิม → ยกเลิก · ใช้ได้ระหว่างถามอาการ/อาการร่วม */
   /** โหมด focus: mark ที่อยู่ใกล้ตำแหน่งแตะ (ระยะนิ้ว 44px) → ลำดับขั้น */
@@ -2373,48 +2347,19 @@ export function HomeScreen() {
         <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : chatHome ? WELCOME_ANGLE : 0} />
       </Animated.View>
       {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
-      <View ref={tagLayer} pointerEvents="none" style={StyleSheet.absoluteFill} />
       {modelTag ? (
-        (() => {
-          // ป้ายอยู่ข้างจุดบนหุ่น + เส้นชี้ · จุดอยู่ครึ่งขวาของจอ → ป้ายไปซ้าย · ยังไม่รู้ตำแหน่ง = มุมขวาใต้แท็บ
-          const LINE = 24;
-          // ฝั่งที่มีที่ว่างพอ (ป้ายกว้างราว 170) · ไม่พอทั้งสองฝั่ง = ฝั่งที่กว้างกว่า แล้วตัดข้อความ
-          const roomR = tagAt ? winW - tagAt.x - 6 - LINE - space[4] : 0;
-          const roomL = tagAt ? tagAt.x - 6 - LINE - space[4] : 0;
-          const left = roomR >= 170 || roomR >= roomL;
-          const box = (
-            <View style={{ maxWidth: winW * 0.5, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
-              <View style={{ flexShrink: 1 }}>
-                <Text variant="labelMd" numberOfLines={1}>
-                  {modelTag.title}
-                </Text>
-                <Text variant="caption" tone="secondary" numberOfLines={1}>
-                  {modelTag.sub}
-                </Text>
-              </View>
-            </View>
-          );
-          if (!tagAt) return <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4] }}>{box}</View>;
-          return (
-            <View
-              style={{
-                position: 'absolute',
-                top: Math.max(headerBottom + space[2], tagAt.y - 24),
-                height: 48,
-                justifyContent: 'center',
-                ...(left ? { left: tagAt.x, right: space[4] } : { right: winW - tagAt.x, left: space[4] }),
-                flexDirection: left ? 'row' : 'row-reverse',
-                alignItems: 'center',
-              }}
-            >
-              {/* ปลายเส้น = จุดบนหุ่นพอดี */}
-              <View style={{ width: 8, height: 8, borderRadius: 4, marginHorizontal: -4, backgroundColor: colors.surface.default, borderWidth: 2, borderColor: colors.text.secondary }} />
-              <View style={{ width: LINE, height: 1.5, backgroundColor: colors.text.tertiary }} />
-              {box}
-            </View>
-          );
-        })()
+        // ตำแหน่งคงที่ (มุมขวาใต้แท็บ) — สีจุดตรงกับจุดบนหุ่น
+        <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4], maxWidth: winW * 0.5, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
+          <View style={{ flexShrink: 1 }}>
+            <Text variant="labelMd" numberOfLines={1}>
+              {modelTag.title}
+            </Text>
+            <Text variant="caption" tone="secondary" numberOfLines={1}>
+              {modelTag.sub}
+            </Text>
+          </View>
+        </View>
       ) : null}
       </Animated.View>
 
