@@ -40,7 +40,9 @@ export function noticeOf(e: ClinicEvent): [string, string] | null {
     case 'rejected':
       return ['คลินิกไม่สามารถรับนัดได้', e.reason || 'แตะเพื่อเลือกเวลาใหม่'];
     case 'queue':
-      return e.called ? [`ถึงคิว ${e.queue} แล้ว`, 'เชิญเข้ารับบริการได้เลย'] : [`เลขคิวของคุณ ${e.queue}`, 'เช็กอินแล้ว รอเรียกคิว'];
+      return e.called ? [`ถึงคิว${e.queue ? ` ${e.queue}` : 'คุณ'}แล้ว`, 'เชิญเข้ารับบริการได้เลย'] : [`เลขคิวของคุณ ${e.queue}`, 'เช็กอินแล้ว รอเรียกคิว'];
+    case 'checkinRejected':
+      return ['เช็กอินไม่สำเร็จ', e.reason];
     case 'started':
       return ['เริ่มรับบริการแล้ว', 'ผู้ให้บริการกำลังดูแลคุณ'];
     case 'completed':
@@ -52,8 +54,12 @@ export function noticeOf(e: ClinicEvent): [string, string] | null {
       return ['ใบเสร็จรับเงิน', `${e.amount.toLocaleString()} บาท${e.receiptNo ? ` · ${e.receiptNo}` : ''}`];
     case 'plan':
       return e.summary ? ['แผนการรักษาจากคลินิก', `${e.course?.total ?? ''} ครั้ง${e.frequency ? ` (${e.frequency})` : ''} · ${e.summary}`] : e.next ? ['นัดครั้งถัดไปตามแผน', `${e.next.date} ${e.next.start} น.`] : null;
+    case 'moved':
+      return ['คลินิกเลื่อนนัดของคุณ', `${e.date} เวลา ${e.start} น.${e.therapist ? ` · ${e.therapist}` : ''}`];
+    case 'billVoid':
+      return ['คลินิกยกเลิกใบเสร็จ', 'บิลนี้รอชำระใหม่ · แตะเพื่อดูรายละเอียด'];
     case 'cancelled':
-      return ['คลินิกยกเลิกนัด', 'แตะเพื่อดูรายละเอียด'];
+      return [e.reason?.startsWith('ผู้ป่วย') ? 'ยกเลิกนัดแล้ว' : 'คลินิกยกเลิกนัด', e.reason || 'แตะเพื่อดูรายละเอียด'];
     case 'absent':
       return ['บันทึกว่าไม่มาตามนัด', 'ติดต่อคลินิกเพื่อนัดใหม่'];
     default:

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Linking, View } from 'react-native';
+import { Linking, Platform, View } from 'react-native';
 import {
   AILabel,
   AppBar,
@@ -22,11 +22,14 @@ import {
   safetyMeta,
   useTheme,
   type RegionId,
- Panel, TINT, Tag, fontFamily, space } from '../../design-system';
+ Panel, TINT, Tag, TextField, fontFamily, space } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { useAppointment } from '../../state/appointments';
 import { NotFoundScreen } from './NotFound';
+import { QrScanner } from './QrScanner';
+import { readAvailability } from '../../services/clinicBridge';
+import { refreshAvailability } from '../../services/cloudBridge';
 
 /* ============================================================ 07 PRE-SERVICE SUMMARY */
 
@@ -135,14 +138,34 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
   const target = route?.params ?? {};
   // นัดของเรื่องที่แตะมา (ไม่ใช่นัดล่าสุดที่จอง)
   const appt = useAppointment(target);
-  const { caseToday, clinicCloseVisit, checkIn, cloudRefOf } = useJourney();
+  const { caseToday, clinicCloseVisit, checkIn, cloudRefOf, checkinErrors } = useJourney();
   // นัดที่จองผ่าน cloud: เปิดหน้านี้ในวันนัด = เช็กอินที่คลินิก → คลินิกออกเลขคิวส่งกลับมาแสดงตรงนี้ (คลินิกเป็นคนปิดการรักษา ไม่ต้องจำลอง)
   const linked = cloudRefOf(target) !== undefined;
   const canCheckIn = !!appt && appt.today && !appt.red && !(target.caseId && caseToday[target.caseId]?.red) && !appt.pending;
+  // เช็กอิน = สแกน QR ที่เคาน์เตอร์ (หรือพิมพ์รหัสใต้ QR) → คลินิกตรวจรหัสแล้วออกเลขคิวตามลำดับที่มาถึง
+  const ref = cloudRefOf(target);
+  const [scanOpen, setScanOpen] = React.useState(false);
+  const [code, setCode] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [sentAt, setSentAt] = React.useState<number | null>(null);
+  const issue = ref ? checkinErrors[ref] : undefined;
+  const submit = async (c: string) => {
+    setScanOpen(false);
+    setSending(true);
+    const ok = await checkIn(target, c);
+    setSending(false);
+    setSentAt(ok ? Date.now() : null);
+    if (!ok) setSentAt(-1);
+  };
+  // สถานะคิวของคลินิก (อีกกี่คิว · กำลังให้บริการคิวไหน) — อัปเดตทุก 5 วินาที
+  const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => {
-    if (linked && canCheckIn && !appt?.queue) checkIn(target);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked, canCheckIn, appt?.queue]);
+    if (!linked || !appt?.today) return;
+    const t = setInterval(() => void refreshAvailability().then(tick), 5000);
+    return () => clearInterval(t);
+  }, [linked, appt?.today]);
+  const q = readAvailability()?.queue;
+  const ahead = appt?.queue && q ? q.waiting.filter((x) => x < appt.queue!).length : null;
   if (!appt) return <NotFoundScreen title="เช็กอิน" message="ยังไม่มีนัดสำหรับเช็กอิน" />;
   // ต้นแบบ: ข้ามช่วงนวด → คลินิกปิดการรักษาในหลังบ้าน (ครั้งใหม่ + คะแนนของคลินิก + บิล) → หน้าผลลัพธ์ของเรื่องนี้
   // นัดเรื่องใหม่ที่ยังไม่ได้เล่าอาการ (ไม่มีใบ) → แบบประเมินหลังนวดแบบเดิม
@@ -195,7 +218,36 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
         </Panel>
       ) : (
         <>
-          {/* คิว + QR แบบการ์ดหลังบ้าน */}
+          {linked && !appt.queue ? (
+            // ยังไม่ได้เช็กอิน → สแกน QR ที่เคาน์เตอร์
+            <Panel icon="maximize" tint={TINT.green} title="เช็กอินที่คลินิก">
+              <Text variant="bodySm" tone="secondary">
+                มาถึงคลินิกแล้ว สแกน QR เช็กอินบนจอที่เคาน์เตอร์ เพื่อรับเลขคิวตามลำดับที่มาถึง
+              </Text>
+              {Platform.OS !== 'web' ? <Button label="สแกน QR เช็กอิน" iconLeft="maximize" onPress={() => setScanOpen(true)} disabled={sending} /> : null}
+              <View style={{ flexDirection: 'row', gap: space[2], alignItems: 'flex-end' }}>
+                <View style={{ flex: 1 }}>
+                  <TextField label="หรือพิมพ์รหัส 6 ตัวใต้ QR" value={code} onChangeText={(v) => setCode(v.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6))} placeholder="เช่น K7P2QX" autoCapitalize="characters" autoCorrect={false} />
+                </View>
+                <Button label="เช็กอิน" size="md" fullWidth={false} disabled={code.length !== 6 || sending} loading={sending} onPress={() => void submit(code)} />
+              </View>
+              {issue ? (
+                <Text variant="bodySm" color={colors.status.danger.fg}>
+                  {issue}
+                </Text>
+              ) : sentAt === -1 ? (
+                <Text variant="bodySm" color={colors.status.danger.fg}>
+                  ส่งเช็กอินไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่
+                </Text>
+              ) : sentAt ? (
+                <Text variant="bodySm" color={colors.brand.primary}>
+                  เช็กอินแล้ว · รอคลินิกออกเลขคิว…
+                </Text>
+              ) : null}
+            </Panel>
+          ) : null}
+          {linked && !appt.queue ? null : (
+          /* คิว + สถานะคิว */
           <Panel>
             <View style={{ alignItems: 'center', gap: 2 }}>
               <Text variant="bodyXs" tone="secondary">
@@ -214,13 +266,34 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
                 </View>
               ) : null}
             </View>
-            <View style={{ alignSelf: 'center', width: 190, height: 190, borderRadius: 20, backgroundColor: colors.surface.sunken, alignItems: 'center', justifyContent: 'center', gap: space[2] }}>
-              <Icon name="maximize" size="xl" color={colors.text.secondary} />
-              <Text variant="bodyXs" tone="secondary">
-                แสดง QR นี้ที่เคาน์เตอร์
-              </Text>
-            </View>
+            {linked && appt.queue && appt.stage !== 'called' && appt.stage !== 'in_service' ? (
+              // อีกกี่คิว (จากคลินิก · เฉพาะเลขคิว ไม่มีชื่อ)
+              <View style={{ flexDirection: 'row', gap: space[2] }}>
+                <View style={{ flex: 1, alignItems: 'center', padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
+                  <Text variant="bodyXs" tone="secondary">
+                    รออีก
+                  </Text>
+                  <Text variant="titleLg">{ahead === null ? '–' : ahead === 0 ? 'คิวถัดไป' : `${ahead} คิว`}</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: 'center', padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
+                  <Text variant="bodyXs" tone="secondary">
+                    กำลังให้บริการ
+                  </Text>
+                  <Text variant="titleLg">{q?.serving ?? '–'}</Text>
+                </View>
+              </View>
+            ) : null}
+            {!linked ? (
+              <View style={{ alignSelf: 'center', width: 190, height: 190, borderRadius: 20, backgroundColor: colors.surface.sunken, alignItems: 'center', justifyContent: 'center', gap: space[2] }}>
+                <Icon name="maximize" size="xl" color={colors.text.secondary} />
+                <Text variant="bodyXs" tone="secondary">
+                  แสดง QR นี้ที่เคาน์เตอร์
+                </Text>
+              </View>
+            ) : null}
           </Panel>
+          )}
+          <QrScanner open={scanOpen} onClose={() => setScanOpen(false)} onCode={(c) => void submit(c)} />
           <Panel icon="list" tint={TINT.green} title="ขั้นตอนวันนี้">
             {(
               [

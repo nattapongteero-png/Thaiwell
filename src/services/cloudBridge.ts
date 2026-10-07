@@ -35,8 +35,8 @@ export interface CloudRow {
   therapist?: string | null;
   queue_no?: string | null;
   record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; painBefore?: number; painAfter?: number; advice?: string; therapist?: string } | null;
-  bill?: { amount: number; items?: string[]; status: 'pending' | 'paid'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
-  plan?: { summary: string; sessions: number; frequency: string; phases?: { title: string; weeks: string; focus: string }[]; homeCare?: string[] } | null;
+  bill?: { amount: number; items?: string[]; lines?: { name: string; amount: number }[]; status: 'pending' | 'paid' | 'void'; method?: string; receipt_no?: string; paid_at?: string; via?: 'app' | 'clinic' } | null;
+  plan?: { summary: string; sessions: number; frequency: string; phases?: { title: string; weeks: string; focus: string }[]; homeCare?: string[]; course?: { name: string; total: number; used: number } } | null;
   note?: string | null;
   created_at: string;
   updated_at: string;
@@ -67,7 +67,7 @@ const loadSeen = () => {
 const saveSeen = () => {
   try {
     // เก็บเฉพาะที่ใช้หาความเปลี่ยนแปลง
-    const list = [...rows.values()].map(({ id, patient_id, status, date, start, therapist, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, date, start, therapist, queue_no, bill, plan, created_at, updated_at }));
+    const list = [...rows.values()].map(({ id, patient_id, status, service, date, start, therapist, queue_no, bill, plan, created_at, updated_at }) => ({ id, patient_id, status, service, date, start, therapist, queue_no, bill, plan, created_at, updated_at }));
     setItem(SEEN_KEY, JSON.stringify(list.slice(-300)));
   } catch {
     /* ignore */
@@ -76,9 +76,18 @@ const saveSeen = () => {
 /* ---------- เวลาว่างจริงของคลินิก (หลังบ้านประกาศไว้ใน tw_events id = -1) ---------- */
 let availRaw: string | null = null;
 export const cloudAvailabilityRaw = () => availRaw;
+const availListeners = new Set<() => void>();
+/** เวลาว่าง/ข้อมูลคลินิกเปลี่ยน → แจ้ง (เช่น รายการสถานที่) */
+export const onAvailability = (cb: () => void) => {
+  availListeners.add(cb);
+  return () => void availListeners.delete(cb);
+};
 export async function refreshAvailability() {
   const { data } = await cloud.from('tw_events').select('payload').eq('id', -1).maybeSingle();
-  if (data?.payload) availRaw = JSON.stringify(data.payload);
+  const next = data?.payload ? JSON.stringify(data.payload) : null;
+  if (next === availRaw) return;
+  availRaw = next;
+  availListeners.forEach((l) => l());
 }
 /** สถานะปัจจุบันของนัดใน cloud (ใช้ตั้งต้นบัญชีตัวอย่างให้ตรงกับคลินิก) */
 /** นัดที่ยังไม่จบของผู้ป่วยคนนี้ (นัดที่จองจากแอป + นัดที่คลินิกลงเองตามแผน) */
@@ -100,8 +109,10 @@ async function logEvent(kind: string, apptId: string | null, patientName: string
 /** คำขอจอง + ผลประเมิน → แถวใหม่สถานะ requested (ลงทะเบียนผู้ป่วยใน cloud ด้วย) */
 export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPatient) {
   const it = request.intake;
-  const service = request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1;
+  // ชื่อบริการตามที่ผู้ป่วยเห็น (ไม่มีระยะเวลา) · คลินิกใช้รหัส serviceId เป็นหลัก
+  const service = (request.serviceLabel ?? SERVICE_NAME[request.serviceId] ?? SERVICE_NAME.s1).split(' · ')[0];
   const complaint = it?.complaint ?? patient.complaint;
+  const { data: old } = await cloud.from('tw_patients').select('profile').eq('id', patient.id).maybeSingle();
   const { error: pe } = await cloud.from('tw_patients').upsert({
     id: patient.id,
     name: patient.name,
@@ -109,7 +120,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     gender: patient.gender,
     age: patient.age,
     // บัญชีจริง: ผูกกับบัญชี + ข้อมูลตามบัตรประชาชน (คลินิกลงทะเบียนให้ตรงคน)
-    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null } : {}),
+    ...(patient.userId ? { user_id: patient.userId, email: patient.email ?? null, citizen_id: patient.citizenId ?? null, title: patient.title ?? null, birth_date: patient.birthDate ?? null, address: patient.address ?? null, profile: { ...((old?.profile as object) ?? {}), avatar: patient.avatar } } : {}),
   });
   if (pe) throw pe;
   const { error } = await cloud.from('tw_appointments').insert({
@@ -120,6 +131,8 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     date: request.date,
     start: request.start,
     assessment: {
+      serviceId: request.serviceId,
+      therapistId: request.therapistId || undefined,
       complaint,
       pain: request.painScore,
       areas: it?.focusAreas ?? [],
@@ -135,10 +148,10 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
 }
 
 /** มาถึงคลินิก → checked_in (คลินิกออกเลขคิวแล้วเขียนกลับมาใน queue_no) */
-export async function cloudCheckIn(id: string, who?: string) {
+export async function cloudCheckIn(id: string, who?: string, code?: string) {
   const r = rows.get(id);
   if (r && r.status !== 'confirmed') return false;
-  const { data, error } = await cloud.from('tw_appointments').update({ status: 'checked_in' }).eq('id', id).eq('status', 'confirmed').select('id');
+  const { data, error } = await cloud.from('tw_appointments').update({ status: 'checked_in', note: code ? `checkin:${code.toUpperCase()}` : null }).eq('id', id).eq('status', 'confirmed').select('id');
   if (error) throw error;
   if (!data?.length) return false; // ไม่ได้อยู่ในสถานะยืนยันแล้ว (เช็กอินไปแล้ว / คลินิกยังไม่ยืนยัน)
   await logEvent('visit.checked_in', id, who, 'มาถึงคลินิก กดเช็กอินในแอป');
@@ -159,11 +172,11 @@ export async function cloudPay(id: string, who?: string) {
 }
 
 /** ผู้ป่วยยกเลิกนัดในแอป (ก่อนเริ่มรับบริการ) */
-export async function cloudCancel(id: string, who?: string) {
-  const { data, error } = await cloud.from('tw_appointments').update({ status: 'cancelled', note: 'ผู้ป่วยยกเลิกจากแอป' }).eq('id', id).in('status', ['requested', 'confirmed', 'checked_in']).select('id');
+export async function cloudCancel(id: string, who?: string, reason = 'ผู้ป่วยยกเลิกจากแอป') {
+  const { data, error } = await cloud.from('tw_appointments').update({ status: 'cancelled', note: reason }).eq('id', id).in('status', ['requested', 'confirmed', 'checked_in']).select('id');
   if (error) throw error;
   if (!data?.length) return false; // เริ่มรับบริการไปแล้ว → ยกเลิกจากแอปไม่ได้
-  await logEvent('booking.cancelled', id, who, 'ผู้ป่วยยกเลิกนัดจากแอป');
+  await logEvent('booking.cancelled', id, who, reason);
   return true;
 }
 
@@ -180,49 +193,128 @@ export function diffRow(prev: CloudRow | undefined, row: CloudRow): ClinicEvent[
   const s = row.status;
   const p = prev?.status;
   if (s !== p) {
-    if (s === 'confirmed') out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true });
+    // คลินิกส่งเช็กอินกลับ (รหัส QR ไม่ผ่าน) → ไม่ใช่การยืนยันนัดใหม่
+    if (s === 'confirmed' && p === 'checked_in' && (row.note ?? '').startsWith('checkin-rejected')) out.push({ id: id('ckno'), at, type: 'checkinRejected', ref: row.id, reason: (row.note ?? '').replace(/^checkin-rejected:\s*/, '') });
+    else if (s === 'confirmed') {
+      const as = (row as CloudRow & { assessment?: { source?: string; course?: { name: string; no: number; total: number } } }).assessment;
+      out.push({ id: id('ok'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true, byClinic: as?.source === 'clinic', patientId: row.patient_id, course: as?.course });
+    }
     else if (s === 'rejected') out.push({ id: id('no'), at, type: 'rejected', ref: row.id, reason: row.note ?? '' });
     else if (s === 'called') out.push({ id: id('call'), at, type: 'queue', ref: row.id, queue: row.queue_no ?? '', called: true });
     else if (s === 'in_service') out.push({ id: id('start'), at, type: 'started', ref: row.id });
+    // คลินิกยกเลิกใบเสร็จ (ถอยจากชำระแล้ว/ส่งบิล) → ไม่ใช่การนวดเสร็จครั้งใหม่
+    else if (s === 'recorded' && (p === 'billed' || p === 'paid')) out.push({ id: id('void'), at, type: 'billVoid', ref: row.id });
     else if (s === 'recorded') out.push({ id: id('done'), at, type: 'completed', ref: row.id, painBefore: row.record?.painBefore ?? 0, painAfter: row.record?.painAfter, cloud: true, record: row.record ?? undefined });
-    else if (s === 'cancelled') out.push({ id: id('cancel'), at, type: 'cancelled', ref: row.id });
+    else if (s === 'cancelled') out.push({ id: id('cancel'), at, type: 'cancelled', ref: row.id, reason: row.note ?? undefined });
     else if (s === 'no_show') out.push({ id: id('absent'), at, type: 'absent', ref: row.id });
-  } else if (prev && s === 'confirmed' && (row.date !== prev.date || row.start !== prev.start || row.therapist !== prev.therapist)) {
-    // คลินิกเลื่อนนัดที่ยืนยันแล้ว (วัน/เวลา/ผู้บำบัด)
-    out.push({ id: id('move'), at, type: 'approved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '', cloud: true, moved: true });
   }
+  // คลินิกเลื่อนนัด (สถานะเดิม) → วัน/เวลา/ผู้ให้บริการใหม่
+  else if (prev && prev.date !== undefined && ['confirmed', 'checked_in'].includes(s) && (row.date !== prev.date || row.start !== prev.start || (row.therapist ?? '') !== (prev.therapist ?? '')))
+    out.push({ id: id('moved'), at, type: 'moved', ref: row.id, date: row.date ?? '', start: row.start ?? '', therapist: row.therapist ?? '', service: row.service ?? '' });
   // เลขคิว: คลินิกออกให้หลังเช็กอิน (มาอีกรอบหลังสถานะ)
   if (s === 'checked_in' && row.queue_no && row.queue_no !== prev?.queue_no) out.push({ id: id('queue'), at, type: 'queue', ref: row.id, queue: row.queue_no, called: false });
   const b = row.bill;
   const pb = prev?.bill;
   if (b && JSON.stringify(b) !== JSON.stringify(pb ?? null)) {
-    if (b.status === 'pending' && pb?.status !== 'pending') out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], therapist: row.therapist ?? undefined });
-    // จ่ายที่คลินิก → ใบเสร็จ (จ่ายในแอปเองไม่ต้องแจ้งซ้ำ)
-    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: b.method, therapist: row.therapist ?? undefined });
-    // จ่ายในแอป → คลินิกออกเลขใบเสร็จจริงตามมา (เติมลงใบเสร็จในแอปเงียบ ๆ)
-    else if (b.status === 'paid' && b.via === 'app' && b.receipt_no && b.receipt_no !== pb?.receipt_no) out.push({ id: id('rcno'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: 'app', therapist: row.therapist ?? undefined, quiet: true });
+    // บิลใหม่ / คลินิกแก้ยอดระหว่างรอชำระ (รายการพร้อมราคา + เลขใบเสร็จที่คลินิกจองไว้)
+    if (b.status === 'pending' && (pb?.status !== 'pending' || pb.amount !== b.amount)) out.push({ id: id('bill'), at, type: 'bill', ref: row.id, patientId: row.patient_id, amount: b.amount, items: b.items ?? [], lines: b.lines, receiptNo: b.receipt_no, therapist: row.therapist ?? undefined });
+    // จ่ายที่คลินิก → ใบเสร็จ (วิธีชำระ · ผู้บำบัด · รายการจริง)
+    if (b.status === 'paid' && pb?.status !== 'paid' && b.via !== 'app') out.push({ id: id('receipt'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: b.method, therapist: row.therapist ?? undefined, lines: b.lines });
+    // จ่ายในแอป → คลินิกปิดบิลด้วยเลขใบเสร็จ/เวลาจริง → เติมลงใบเสร็จในแอปเงียบ ๆ (ไม่แจ้งซ้ำ)
+    else if (b.status === 'paid' && b.via === 'app' && b.receipt_no && (b.receipt_no !== pb?.receipt_no || pb?.status !== 'paid')) out.push({ id: id('rcno'), at, type: 'receipt', ref: row.id, patientId: row.patient_id, amount: b.amount, receiptNo: b.receipt_no, paidAt: b.paid_at, method: 'app', therapist: row.therapist ?? undefined, lines: b.lines, quiet: true });
   }
   if (row.plan && JSON.stringify(row.plan) !== JSON.stringify(prev?.plan ?? null)) {
-    out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: { name: row.plan.summary, total: row.plan.sessions, used: 1 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });
+    out.push({ id: id('plan'), at, type: 'plan', patientId: row.patient_id, next: null, upcoming: 0, course: row.plan.course ?? { name: row.plan.summary, total: row.plan.sessions, used: 0 }, summary: row.plan.summary, frequency: row.plan.frequency, homeCare: row.plan.homeCare });
   }
   return out;
 }
 
 /** ฟังความเปลี่ยนแปลงจากคลินิก: realtime + สำรองอ่านซ้ำทุก 6 วินาที · คืนฟังก์ชันเลิกฟัง */
+/* ---------- บัญชีจริง: ข้อมูลในแอปของแต่ละคน (tw_app_state) ---------- */
+/** นัดที่คลินิกลงให้เอง (นัดตามคอร์ส) ที่ยังไม่จบ — แอปเทียบกับนัดในเครื่องทุกรอบ (ไม่พึ่งเหตุการณ์อย่างเดียว) */
+export const clinicMadeRows = () =>
+  [...rows.values()].filter((r) => (r as CloudRow & { assessment?: { source?: string } }).assessment?.source === 'clinic' && ['confirmed', 'checked_in', 'called', 'in_service'].includes(r.status));
+/** สถานะนัดที่แอปเคยเห็นล่าสุด (เก็บกับข้อมูลแอป) → เปิดแอปใหม่ได้เหตุการณ์ที่เกิดระหว่างปิดแอปด้วย */
+export const seenRows = () => Object.fromEntries(rows);
+let gateOpen = false;
+let wake: (() => void) | null = null;
+/** ไม่มีบัญชีจริง (โหมดเดิม) → ใช้ที่เคยเห็นในเครื่องอย่างเดียว */
+export function startLocalSync() {
+  gateOpen = true;
+  wake?.();
+}
+/** เริ่มฟังนัดของบัญชีนี้ หลังดึงข้อมูลแอปกลับมาแล้ว (seen = จุดตั้งต้นที่บันทึกไว้) */
+export function startAccountSync(seen: Record<string, CloudRow>) {
+  // ที่บัญชีเคยเห็น (เครื่องไหนก็ได้) + ที่เครื่องนี้เคยเห็น — ใช้อันที่ใหม่กว่า
+  for (const [id, r] of Object.entries(seen)) {
+    const cur = rows.get(id);
+    if (!cur || (r.updated_at ?? '') > (cur.updated_at ?? '')) rows.set(id, r);
+  }
+  gateOpen = true;
+  wake?.();
+}
+export function stopAccountSync() {
+  gateOpen = false;
+  rows.clear();
+}
+/** คอร์สการรักษาที่คลินิกเปิดให้ (คลินิกเขียนไว้ใน tw_patients.profile.course) */
+export interface ClinicCourse {
+  name: string;
+  service: string;
+  total: number;
+  used: number;
+  startedOn: string;
+  expiresOn: string;
+}
+/** ครั้งที่รักษาที่คลินิก (คลินิกบันทึก) */
+export interface ClinicVisit {
+  id: string;
+  date: string;
+  start: string;
+  service: string;
+  therapist: string;
+  painBefore?: number;
+  painAfter?: number;
+  findings?: string;
+  diagnoses?: string[];
+  procedures?: string[];
+  advice?: string;
+}
+/** คอร์ส + ประวัติการรักษาที่คลินิกส่งให้ (tw_patients.profile) */
+export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[] }> {
+  const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
+  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[] };
+  return { course: p.course ?? null, visits: p.visits ?? [] };
+}
+/** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
+export async function fetchMyHn(userId: string): Promise<string | null> {
+  const { data } = await cloud.from('tw_patients').select('clinic_hn').eq('user_id', userId).maybeSingle();
+  return (data?.clinic_hn as string | null) ?? null;
+}
+export async function loadAppState(userId: string): Promise<Record<string, unknown> | null> {
+  const { data } = await cloud.from('tw_app_state').select('state').eq('user_id', userId).maybeSingle();
+  return (data?.state as Record<string, unknown>) ?? null;
+}
+export async function saveAppState(userId: string, state: Record<string, unknown>) {
+  await cloud.from('tw_app_state').upsert({ user_id: userId, state, updated_at: new Date().toISOString() });
+}
+
 export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   let stopped = false;
   const apply = (list: CloudRow[], emit: boolean) => {
     const out: ClinicEvent[] = [];
     for (const r of list) {
       const prev = rows.get(r.id);
-      if (prev && prev.updated_at === r.updated_at && prev.status === r.status) continue;
-      if (emit) out.push(...diffRow(prev, r));
+      // ไม่เปลี่ยน → ไม่มีเหตุการณ์ แต่เก็บแถวเต็มไว้ (ที่จำไว้ในเครื่องเก็บแค่บางช่อง)
+      if (emit && !(prev && prev.updated_at === r.updated_at && prev.status === r.status)) out.push(...diffRow(prev, r));
       rows.set(r.id, r);
     }
     saveSeen();
     if (out.length) cb(out);
   };
   const fetchAll = async (emit: boolean) => {
+    // ยังไม่ได้ดึงข้อมูลแอปของบัญชีกลับมา → ยังไม่ตั้งจุดตั้งต้น (ไม่อย่างนั้นเหตุการณ์ระหว่างปิดแอปจะหาย)
+    if (!gateOpen) return;
     try {
       const { data, error } = await cloud.from('tw_appointments').select('*').neq('status', 'closed').order('created_at');
       online = !error;
@@ -231,8 +323,10 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
       online = false;
     }
   };
-  // แถวที่มีอยู่ก่อนเปิดแอป = จุดตั้งต้น (ไม่เล่นเหตุการณ์เก่าซ้ำ) · เคยเห็นแล้ว (เว็บ) → รับเฉพาะที่เปลี่ยนระหว่างปิดแอป
-  void fetchAll(loadSeen());
+  // ตั้งต้นจากที่เคยเห็นในเครื่อง (เปิดแอปเร็ว) · บัญชีจริง: เทียบกับที่เคยเห็นของบัญชี (startAccountSync) แล้วรับที่เปลี่ยนระหว่างปิดแอป
+  const hadLocal = loadSeen();
+  wake = () => void fetchAll(true);
+  if (gateOpen) void fetchAll(hadLocal);
   const ch = cloud
     .channel('tw-app')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tw_appointments' }, (ev) => {
@@ -248,7 +342,6 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   const { data: authSub } = cloud.auth.onAuthStateChange((ev) => {
     if (ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED' || ev === 'INITIAL_SESSION') {
       void refreshAvailability().catch(() => undefined);
-      void fetchAll(false);
     }
   });
   // สำรอง realtime ทุก 3 วินาที (แจ้งเตือนไม่ช้าแม้ realtime หลุด)

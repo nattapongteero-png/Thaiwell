@@ -43,6 +43,8 @@ export interface ClinicPatient {
   citizenId?: string;
   title?: string;
   address?: string;
+  /** avatar ที่ผู้ใช้เลือก → คลินิกแสดงรูปเดียวกัน */
+  avatar?: string;
 }
 export interface ClinicRequest {
   id: string;
@@ -80,21 +82,26 @@ export interface ClinicRequest {
 
 export type ClinicEvent =
   /** cloud = เลขคิวมาจากคลินิกตอนเช็กอิน (แอปไม่ออกเลขคิวเอง) */
-  /** moved = คลินิกเปลี่ยนวัน/เวลา/ผู้บำบัดของนัดที่ยืนยันแล้ว */
-  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean; moved?: boolean }
+  /** moved = คลินิกเปลี่ยนวัน/เวลา/ผู้บำบัดของนัดที่ยืนยันแล้ว · byClinic = คลินิกลงนัดเอง (นัดตามแผน) ไม่ได้มาจากคำขอจองในแอป */
+  | { id: string; at: string; type: 'approved'; ref: string; date: string; start: string; therapist: string; service: string; cloud?: boolean; moved?: boolean; byClinic?: boolean; patientId?: string; course?: { name: string; no: number; total: number } }
   | { id: string; at: string; type: 'rejected'; ref: string; reason: string }
   /** cloud = คลินิกเป็นคนออกบิล (แอปไม่จำลองบิล) · record = ผลการรักษาที่คลินิกบันทึก */
   | { id: string; at: string; type: 'completed'; ref: string; painBefore: number; painAfter?: number; cloud?: boolean; record?: { findings?: string; diagnoses?: string[]; procedures?: string[]; advice?: string; therapist?: string } }
-  | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string }
+  | { id: string; at: string; type: 'cancelled' | 'absent'; ref: string; reason?: string }
+  /** คลินิกเลื่อนนัด (วัน/เวลา/ผู้ให้บริการ/บริการ) */
+  | { id: string; at: string; type: 'moved'; ref: string; date: string; start: string; therapist: string; service: string }
+  /** คลินิกยกเลิกใบเสร็จ → รอชำระใหม่ */
+  | { id: string; at: string; type: 'billVoid'; ref: string }
   /** เลขคิวจากคลินิก (หลังเช็กอิน) · called = ถึงคิวแล้ว */
   | { id: string; at: string; type: 'queue'; ref: string; queue: string; called: boolean }
+  /** เช็กอินไม่ผ่าน (รหัส QR ผิด/หมดอายุ/ไม่ใช่วันนัด) → สแกนใหม่ */
+  | { id: string; at: string; type: 'checkinRejected'; ref: string; reason: string }
   /** เริ่มรับบริการแล้ว */
   | { id: string; at: string; type: 'started'; ref: string }
   /** คลินิกส่งบิลมาเรียกเก็บในแอป */
-  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; therapist?: string }
-  /** จ่ายที่คลินิกแล้ว → ใบเสร็จ */
-  /** method = วิธีชำระของคลินิก (cash · promptpay · app · credit) · quiet = จ่ายในแอปเอง แค่เติมเลขใบเสร็จจริง (ไม่แจ้งเตือนซ้ำ) */
-  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string; method?: string; therapist?: string; quiet?: boolean }
+  | { id: string; at: string; type: 'bill'; ref: string; patientId: string; amount: number; items: string[]; /** รายการพร้อมราคา (ค่าบริการ + หัตถการเพิ่ม) */ lines?: { name: string; amount: number }[]; /** เลขใบเสร็จที่คลินิกจองไว้ให้บิลนี้ */ receiptNo?: string; therapist?: string }
+  /** จ่ายแล้ว → ใบเสร็จ · method = วิธีชำระของคลินิก (cash · promptpay · app · credit) · quiet = จ่ายในแอปเอง แค่เติมเลข/รายการจริง (ไม่แจ้งเตือนซ้ำ) */
+  | { id: string; at: string; type: 'receipt'; ref: string; patientId: string; amount: number; receiptNo?: string; paidAt?: string; method?: string; therapist?: string; lines?: { name: string; amount: number }[]; quiet?: boolean }
   /** นวดครั้งต่อ ๆ ไปตามแผน (นัดที่คลินิกลงเอง) */
   | { id: string; at: string; type: 'visit'; patientId: string; apptId: string; date: string; painBefore: number; painAfter: number }
   /** แผนการรักษา: นัดถัดไปที่คลินิกลงไว้ + คอร์ส */
@@ -133,7 +140,10 @@ const push = (event: Record<string, unknown>) => {
 export interface Availability {
   at: string;
   clinicName: string;
-  therapists: { id: string; name: string; role: string }[];
+  clinic?: { name: string; address?: string; phone?: string; lat?: number; lng?: number };
+  /** คิววันนี้ของคลินิก (เฉพาะเลขคิว) */
+  queue?: { date: string; serving?: string; waiting: string[] };
+  therapists: { id: string; name: string; role: string; photo?: string }[];
   days: Record<string, Record<string, Record<string, string[]>>>;
 }
 const AVAILABILITY_KEY = 'thaiwell.bridge.availability';
@@ -175,13 +185,10 @@ export const sendNote = (title: string, body: string, patientId?: string, patien
   return true;
 };
 /** เช็กอินที่คลินิก (เฉพาะสะพาน cloud — localStorage ไม่มีขั้นนี้) */
-export const sendCheckIn = (ref: string, who?: string) => {
-  if (CLOUD) void cloudCheckIn(ref, who).catch(() => undefined);
-};
+/** code = รหัสจาก QR เช็กอินที่เคาน์เตอร์ (คลินิกตรวจก่อนออกเลขคิว) */
+export const sendCheckIn = (ref: string, who?: string, code?: string) => (CLOUD ? cloudCheckIn(ref, who, code).catch(() => false) : Promise.resolve(false));
 /** ยกเลิกนัดที่ส่งไปแล้ว */
-export const sendCancel = (ref: string, who?: string) => {
-  if (CLOUD) void cloudCancel(ref, who).catch(() => undefined);
-};
+export const sendCancel = (ref: string, who?: string, reason?: string) => (CLOUD ? cloudCancel(ref, who, reason).catch(() => false) : Promise.resolve(true));
 /** จ่ายบิลในแอป → คลินิกเห็นว่าชำระแล้ว */
 export const sendPayment = (ref: string, who?: string) => {
   if (CLOUD) void cloudPay(ref, who).catch(() => undefined);

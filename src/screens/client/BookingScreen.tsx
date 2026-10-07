@@ -5,6 +5,7 @@ import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { PLACES, callClinic, clinicPhone } from './PlacesScreen';
+import { isCloud } from '../../services/clinicBridge';
 import { anyoneSlots, dayLabel, therapistsAt, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
@@ -41,10 +42,11 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   const pre = route?.params;
   useHideTabs(true);
   const { colors } = useTheme();
-  const { log, newPatient, setCareStage, drafts, activeDraftId, upsertDraft, cases, looseBookings, addLooseBooking, updateLooseBooking, setCaseAppointment, issueQueue, requestBooking } = useJourney();
+  const { log, newPatient, setCareStage, drafts, activeDraftId, upsertDraft, cases, looseBookings, addLooseBooking, updateLooseBooking, setCaseAppointment, issueQueue, requestBooking, bookCase } = useJourney();
   const allAppts = useAllAppointments();
   // สถานที่ที่เลือกมา (หน้าสถานที่) · เรื่องที่รักษาอยู่ใช้ที่เดิมเสมอ (ดูด้านล่าง)
-  const pickedClinic = pre?.clinic ?? CLINIC;
+  // ใช้งานจริง: ชื่อคลินิกตามที่คลินิกตั้งไว้ (ตรงกับหน้าสถานที่)
+  const pickedClinic = pre?.clinic ?? (isCloud() ? PLACES[0]?.name : undefined) ?? CLINIC;
 
   /* ---------- จองให้เรื่องไหน ---------- */
   // ระบุมาแล้ว (จากการ์ดของเรื่องนั้น) → ไม่ต้องเลือก · ไม่ระบุ → เลือกในหน้านี้ (ไม่เดาจากใบที่ประเมินล่าสุด)
@@ -125,7 +127,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     // จองจากแอป = คำขอจอง → รอเจ้าหน้าที่คลินิกยืนยัน (เลขคิวออกตอนยืนยัน)
     const bk = { date: pick.day, time: pick.time, service: svc.label, therapist: who.name, clinic, queue: tc ? queue : undefined, visit: tc ? tc.course.done + 1 : 1, status: tc ? undefined : ('pending' as const) };
     const label = `${pick.day} ${pick.time}`;
-    if (tc) setCaseAppointment(tc.id, { today, date: pick.day, time: pick.time, queue, clinic, therapist: who.name });
+    if (tc) bookCase(tc.id, { today, date: pick.day, time: pick.time, queue, clinic, therapist: who.name }, svc.label);
     else if (draft) {
       upsertDraft({ ...draft, stage: 'booked', booking: bk });
       requestBooking({ draftId: draft.id }, label);

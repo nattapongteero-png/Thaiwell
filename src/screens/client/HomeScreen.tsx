@@ -1,4 +1,5 @@
 import React from 'react';
+import { kmText } from '../../services/location';
 import { useIsFocused, useRoute } from '@react-navigation/native';
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
 import { Gesture, GestureDetector, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
@@ -57,7 +58,7 @@ import {
   BottomSheet,
 } from '../../design-system';
 import { useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
-import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, rankPlaces } from './PlacesScreen';
+import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
@@ -148,8 +149,6 @@ const BENTO_GAP = 12;
 const BENTO_START = 0.6;
 /** ระยะในช่อง bento */
 const TILE_PAD = space[4];
-/** คลินิกของใบการรักษาตัวอย่าง (ยังไม่มีในข้อมูลใบการรักษา) */
-const CASE_CLINIC = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
 const BENTO_CASE_H = 40;
 /** ระยะระหว่างแท็บที่มองเห็นจริง (gap ของ JellyRadio + ขอบพองตัว) — ใช้เป็นระยะปุ่มประเมินใหม่→แท็บแรก และความกว้างช่วงจางตอนเลื่อน */
 const TAB_GAP = 12;
@@ -232,7 +231,7 @@ export function HomeScreen() {
   const chatHome = noRecords && !looseBookings.length;
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, notifyClinic } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
   const allAppts = useAllAppointments();
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;
@@ -633,7 +632,7 @@ export function HomeScreen() {
       const top = ranked[0];
       return [
         {
-          ...aiText(`นัดเรื่อง${topic}ค่ะ ${urgency.label}${urgency.reason ? ` (${urgency.reason})` : ''}\n\nแนะนำ${top.place.name} ${top.reason} ห่าง ${top.place.km} กม.`, {
+          ...aiText(`นัดเรื่อง${topic}ค่ะ ${urgency.label}${urgency.reason ? ` (${urgency.reason})` : ''}\n\nแนะนำ${top.place.name} ${top.reason} ${kmText(top.place) ? `ห่าง ${kmText(top.place)}` : ''}`, {
             type: 'placePick',
             options: ranked.map((r) => ({ id: r.place.id, name: r.place.name, km: r.place.km, reason: r.reason, slot: firstFree(r.place.id) })),
           }),
@@ -712,7 +711,7 @@ export function HomeScreen() {
     if (tc) {
       const moved = tc.appointment.date !== '-';
       const today = c.day === 'วันนี้';
-      setCaseAppointment(tc.id, { today, date: c.day, time: c.time, queue: today ? issueQueue() : undefined, clinic: c.name, therapist: c.therapist });
+      bookCase(tc.id, { today, date: c.day, time: c.time, queue: today ? issueQueue() : undefined, clinic: c.name, therapist: c.therapist }, c.service);
       log('ผู้รับบริการ', `${moved ? 'เลื่อนนัด' : 'จองนัด'}ในแชท ${tc.short} ${c.day} ${c.time}`);
       return aiReply(activeId, 'ยืนยันจอง', () => [
         { ...aiText(`${moved ? 'เลื่อนนัดแล้ว' : 'จองแล้ว'}ค่ะ ${c.day} ${c.time} กับ ${c.therapist}\n\nก่อนมานวด: ${tc.prep.join(' ')}`), source: 'ระบบนัดหมาย' as const },
@@ -1388,7 +1387,7 @@ export function HomeScreen() {
           const near = nearestClinic();
           return reply(
             label,
-            near ? `ใกล้คุณมี${near.name} ${near.km} กม.${near.slots.length ? ` คิวว่างวันนี้ ${near.slots.join(' และ ')}` : ' วันนี้คิวเต็มแล้ว'}ค่ะ` : 'ยังไม่พบคลินิกใกล้คุณค่ะ',
+            near ? `ใกล้คุณมี${near.name} ${kmText(near)}${near.slots.length ? ` คิวว่างวันนี้ ${near.slots.join(' และ ')}` : ' วันนี้คิวเต็มแล้ว'}ค่ะ` : 'ยังไม่พบคลินิกใกล้คุณค่ะ',
             { type: 'action', label: 'ดูสถานที่ทั้งหมด', to: 'Places' },
           );
         }
@@ -2675,7 +2674,7 @@ export function HomeScreen() {
             {/* แถวแรก: รูปโปรไฟล์ + สวัสดีค่ะ/ชื่อ · บรรทัดถัดไป: ธาตุเป็น pill เล็ก (แตะดูรายละเอียดธาตุ) */}
             <View pointerEvents="box-none" style={{ gap: space[2], alignSelf: 'flex-start' }}>
             <View pointerEvents="box-none" style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-              <ProfileAvatar sex={account?.sex || (newPatient ? 'หญิง' : 'ชาย')} />
+              <ProfileAvatar sex={account?.sex || (newPatient ? 'หญิง' : 'ชาย')} photo={account?.avatar} />
               <View pointerEvents="none" style={{ gap: 2 }}>
                 <Text variant="bodyBase" tone="secondary">
                   สวัสดีค่ะ,
@@ -2707,7 +2706,7 @@ export function HomeScreen() {
                 </Animated.View>
               </View>
             ) : !started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => b.service.split(' · ')[0])} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map((d) => d.title)} extras={looseBookings.map((b) => (b.course ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
           </View>
@@ -3218,7 +3217,7 @@ function PlacePickCard({ options, active, onPick, onAll }: { options: Extract<Th
             {i === 0 ? <Badge label="แนะนำ" tone="brand" /> : null}
           </View>
           <Text variant="caption" tone="secondary">
-            {o.km} กม. ว่าง {o.slot}
+            {kmText(o)} ว่าง {o.slot}
           </Text>
           <Text variant="caption" tone="tertiary">
             {o.reason}
@@ -3312,7 +3311,7 @@ function BookConfirmCard({ card, active, onConfirm, onChange }: { card: Extract<
             </Text>
             {place ? (
               <Text variant="caption" tone="secondary">
-                {place.km} กม. {place.area}
+                {kmText(place)} {place.area}
               </Text>
             ) : null}
           </View>
@@ -3528,12 +3527,26 @@ function FirstVisitCard({
   );
 }
 
-function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed' }; onCheckIn: () => void; onEdit: () => void }) {
+function BookingBento({ width, booking: b, onCheckIn, onEdit }: { width: number; booking: { date: string; time: string; clinic: string; therapist: string; service: string; queue?: string; status?: 'pending' | 'confirmed'; course?: { name: string; no: number; total: number } }; onCheckIn: () => void; onEdit: () => void }) {
   const halfW = (width - BENTO_GAP) / 2;
   const [svc, mins] = b.service.split(' · ');
+  const nav = useNav();
+  const { clinicCourse, clinicVisits } = useJourney();
   return (
     <View style={{ gap: BENTO_GAP }}>
       <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onEdit} />
+      {/* นัดตามคอร์สที่คลินิกลงให้ → คอร์ส ครั้งที่ · ใช้ไปแล้ว · ดูนัดทั้งหมดและประวัติการรักษา */}
+      {b.course ? (
+        <Tile onPress={() => nav.navigate('Course')} accessibilityLabel="ดูคอร์สและประวัติการรักษา" style={{ gap: space[1] }}>
+          <TileTitle title="คอร์สการรักษา" meta={`ครั้งที่ ${b.course.no}/${b.course.total}`} />
+          <Text variant="bodySm" numberOfLines={2}>
+            {clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : b.course.name}
+          </Text>
+          <Text variant="bodyXs" tone="secondary">
+            ดูนัดทั้งหมด{clinicVisits.length ? ` และประวัติการรักษา ${clinicVisits.length} ครั้ง` : ''} ›
+          </Text>
+        </Tile>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <Tile style={{ width: halfW, gap: space[1] }}>
           <TileTitle title="ผู้ให้บริการ" />
@@ -3587,8 +3600,8 @@ function WelcomeBento({
     <View style={{ gap: BENTO_GAP }}>
       {/* 1) คลินิกใกล้คุณ */}
       {near ? (
-        <Tile style={{ gap: space[2] }} onPress={() => onPlace(near.id)} accessibilityLabel={`คลินิกใกล้คุณ ${near.name} ${near.km} กม.`}>
-          <TileTitle title="คลินิกใกล้คุณ" meta={`${near.km} กม.`} />
+        <Tile style={{ gap: space[2] }} onPress={() => onPlace(near.id)} accessibilityLabel={`คลินิกใกล้คุณ ${near.name} ${kmText(near)}`}>
+          <TileTitle title="คลินิกใกล้คุณ" meta={`${kmText(near)}`} />
           <Text variant="bodyMd" numberOfLines={1}>
             {near.name}
           </Text>
@@ -3888,10 +3901,17 @@ function DraftBento({
             {b.date !== 'วันนี้' ? <DateBlock date={b.date} /> : null}
           </View>
         </Tile>
+      ) : !near ? (
+        // ยังไม่มีคลินิกในระบบใกล้คุณ (หรือยังไม่ได้ตำแหน่ง) → ดูสถานที่
+        <Tile style={{ gap: space[3] }} onPress={() => onPlaces()} accessibilityLabel="ดูสถานที่นวด">
+          <TileTitle title="จองนวด" />
+          <Text variant="titleSm">เลือกคลินิกที่สะดวก</Text>
+          <TilePill icon="map-pin" label="ดูสถานที่" />
+        </Tile>
       ) : (
         // ยังไม่ได้จอง → แนะนำที่ใกล้ที่สุด (มีแพทย์แผนไทย + บัตรทอง + คิวว่าง) จองได้เลย หรือดูที่อื่น
         <Tile style={{ gap: space[3] }} onPress={() => onBook(near.name)} accessibilityLabel={`จองที่ ${near.name}`}>
-          <TileTitle title="แนะนำใกล้คุณ" meta={`${near.km} กม.`} />
+          <TileTitle title="แนะนำใกล้คุณ" meta={kmText(near)} />
           <View style={{ gap: 2 }}>
             <Text variant="titleSm" numberOfLines={2}>
               {near.name}
@@ -3931,10 +3951,17 @@ function DraftBento({
       </View>
 
       {/* 3) แถวล่าง */}
-      {d.red ? (
+      {d.red && !hospital ? (
+        // ใช้งานจริง: ไม่มีรายชื่อโรงพยาบาลในแอป → ค้นหาโรงพยาบาลใกล้ตัวใน Google Maps
+        <Tile style={{ gap: space[3] }} onPress={() => void searchHospitals()} accessibilityLabel="ค้นหาโรงพยาบาลใกล้คุณ">
+          <TileTitle title="พบแพทย์ใกล้คุณ" />
+          <Text variant="titleSm">ค้นหาโรงพยาบาลใกล้ตัว</Text>
+          <TilePill icon="navigation" label="ค้นหา" />
+        </Tile>
+      ) : d.red ? (
         // ควรพบแพทย์ก่อน → โรงพยาบาลใกล้คุณ (นำทาง) หรือดูทั้งหมด
         <Tile style={{ gap: space[3] }} onPress={() => onPlaces('doctor')} accessibilityLabel="พบแพทย์ใกล้คุณ">
-          <TileTitle title="พบแพทย์ใกล้คุณ" meta={`${hospital.km} กม.`} />
+          <TileTitle title="พบแพทย์ใกล้คุณ" meta={kmText(hospital)} />
           <Text variant="titleSm" numberOfLines={2}>
             {hospital.name}
           </Text>

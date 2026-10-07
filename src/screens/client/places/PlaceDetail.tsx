@@ -1,4 +1,6 @@
 import React from 'react';
+import { kmText, myLocation } from '../../../services/location';
+import { isCloud } from '../../../services/clinicBridge';
 import { ScrollView, View } from 'react-native';
 import { AppBar, Button, Icon, Panel, Screen, Tag, Text, useTheme } from '../../../design-system';
 import { radius, space } from '../../../design-system/tokens';
@@ -59,10 +61,10 @@ export function PlaceDetailScreen({ route }: { route: { params: { id: string } }
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
         <Icon name="map-pin" size="sm" color={colors.brand.primary} />
         <Text variant="bodySm" tone="secondary">
-          {p.km} กม. · {p.area}
+          {kmText(p)} · {p.area}
         </Text>
       </View>
-      <PlacesMap places={[{ id: p.id, name: p.name, lat: p.lat, lng: p.lng, kind: p.kind, slots: p.slots.length }]} me={MY_LOCATION} selected={p.id} height={200} />
+      <PlacesMap places={[{ id: p.id, name: p.name, lat: p.lat, lng: p.lng, kind: p.kind, slots: p.slots.length }]} me={isCloud() ? myLocation() : MY_LOCATION} selected={p.id} height={200} />
 
       {card(
         'สิทธิและผู้ให้บริการ',

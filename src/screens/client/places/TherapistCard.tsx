@@ -22,7 +22,7 @@ export function TherapistCard({ t, selected, onPick, badge, compact }: { t: Ther
   return (
     <Frame selected={!!selected}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-        <ProfileAvatar sex={t.sex} size={52} />
+        <ProfileAvatar sex={t.sex} size={52} photo={t.photo} />
         <View style={{ flex: 1 }}>
           <Text variant="labelLg" numberOfLines={1}>
             {t.name}

@@ -1,5 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
+import { AVATAR_KEYS, defaultAvatar } from '../../data/staffAvatars';
+import { saveAvatar } from '../../services/auth';
 import {
   AppBar,
   Avatar,
@@ -152,7 +154,7 @@ export function ProfileScreen() {
   const loading = useScreenData('profile');
   const nav = useNav();
   const { colors, textScale, setTextScale } = useTheme();
-  const { client, profile, setProfile, signOut, elements, newPatient, account, cases, drafts, looseBookings, log, bills } = useJourney();
+  const { client, profile, setProfile, signOut, elements, newPatient, account, setAccount, cases, drafts, looseBookings, log, bills, clinicCourse, clinicVisits } = useJourney();
   const { elementsDone } = useJourney();
   const element = newPatient && account && !elementsDone ? birthElement(account.birthDate) : dominantElement(elements);
   const visits = cases.reduce((n, c) => n + c.visits.length, 0);
@@ -165,6 +167,7 @@ export function ProfileScreen() {
   const nextAppt = appts.find((a) => a.date === 'วันนี้') ?? appts.find((a) => a.date === 'พรุ่งนี้') ?? appts[0];
   /** แก้ข้อมูลสุขภาพ (กรอกเอง — Health ID ไม่ส่งมา) */
   const [editing, setEditing] = React.useState<null | 'conditions' | 'medications' | 'allergies'>(null);
+  const [pickAvatar, setPickAvatar] = React.useState(false);
   const [linking, setLinking] = React.useState(false);
   // ยังไม่ได้กรอก ≠ ไม่มี (ผู้ใช้ใหม่ยังไม่ได้บอก)
   const none = (a: string[]) => a.join(', ') || (profile.healthKnown === false ? 'ยังไม่ได้กรอก' : 'ไม่มี');
@@ -177,7 +180,15 @@ export function ProfileScreen() {
       {/* หัวโปรไฟล์แบบหลังบ้าน: รูป · ชื่อ · HN/อายุ · ป้ายโรคประจำตัว · ธาตุ */}
       <Panel>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-          <ProfileAvatar sex={account?.sex ?? 'ชาย'} size={68} />
+          {/* แตะรูป = เลือก avatar (คลินิกเห็นรูปเดียวกัน) */}
+          <Pressable accessibilityRole="button" accessibilityLabel="เปลี่ยนรูปโปรไฟล์" onPress={() => setPickAvatar(true)} disabled={!account}>
+            <ProfileAvatar sex={account?.sex ?? 'ชาย'} size={68} photo={account?.avatar} />
+            {account ? (
+              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' }}>
+                <Icon name="edit-2" size="xs" color="#FFFFFF" />
+              </View>
+            ) : null}
+          </Pressable>
           <View style={{ flex: 1, gap: 2 }}>
             <Text variant="titleLg">{client.name}</Text>
             <Text variant="bodyXs" tone="secondary">
@@ -201,18 +212,21 @@ export function ProfileScreen() {
       <Panel title="ข้อมูลสุขภาพ" flush>
         <RowLink icon="activity" tint={TINT.red} title="โรคประจำตัว" sub={none(profile.conditions)} onPress={() => setEditing('conditions')} />
         <RowLink icon="package" tint={TINT.amber} title="ยาที่ใช้ประจำ" sub={none(profile.medications)} onPress={() => setEditing('medications')} />
-        <RowLink icon="alert-circle" tint={TINT.violet} title="ประวัติแพ้" sub={none(profile.allergies)} onPress={() => setEditing('allergies')} />
+        <RowLink icon="alert-circle" tint={TINT.violet} title="ประวัติแพ้" sub={none(profile.allergies)} onPress={() => setEditing('allergies')} last={!!account?.userId} />
         {/* ยังไม่เปิดใช้ → บอกตรง ๆ (ไม่มีลูกศรหลอกให้กด) */}
-        <RowLink icon="link" tint={TINT.blue} title="เชื่อมข้อมูลจากโรงพยาบาล" sub={profile.phrSource ? `เชื่อมแล้ว · ${profile.phrSource}` : 'ดึงโรคประจำตัว ยา และประวัติแพ้'} onPress={() => setLinking(true)} last />
+        {/* ต้นแบบ (ยังไม่มีระบบโรงพยาบาลจริง) → ไม่แสดงกับบัญชีจริง */}
+        {account?.userId ? null : <RowLink icon="link" tint={TINT.blue} title="เชื่อมข้อมูลจากโรงพยาบาล" sub={profile.phrSource ? `เชื่อมแล้ว · ${profile.phrSource}` : 'ดึงโรคประจำตัว ยา และประวัติแพ้'} onPress={() => setLinking(true)} last />}
       </Panel>
 
       <Panel title="การตั้งค่า" flush>
+        {/* คอร์สที่คลินิกเปิดให้ + นัดตามคอร์ส (บัญชีจริง) */}
+        {account?.userId ? <RowLink icon="calendar" tint={TINT.green} title="คอร์สและประวัติการรักษา" sub={clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : clinicVisits.length ? `รักษาแล้ว ${clinicVisits.length} ครั้ง` : 'ยังไม่มีคอร์ส'} onPress={() => nav.navigate('Course')} /> : null}
         {/* บิลจากคลินิก (จ่ายในแอป) + ใบเสร็จ */}
         <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
         <RowLink icon="type" tint={TINT.slate} title="ตัวอักษรขนาดใหญ่" sub="สำหรับผู้สูงอายุ" right={<Switch value={textScale > 1} onChange={(v) => setTextScale(v ? 1.2 : 1)} label="ตัวอักษรขนาดใหญ่" />} />
-        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" />
-        <RowLink icon="briefcase" tint={TINT.slate} title="โหมดผู้ให้บริการ" onPress={() => nav.navigate('ProviderTabs')} last />
+        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" last={!!account?.userId} />
+        {account?.userId ? null : <RowLink icon="briefcase" tint={TINT.slate} title="โหมดผู้ให้บริการ" onPress={() => nav.navigate('ProviderTabs')} last />}
       </Panel>
 
       <Panel flush>
@@ -227,6 +241,32 @@ export function ProfileScreen() {
           }}
         />
       </Panel>
+      <BottomSheet visible={pickAvatar} onClose={() => setPickAvatar(false)} title="เลือกรูปโปรไฟล์" subtitle="คลินิกเห็นรูปเดียวกันตอนคุณจองและมารับบริการ" heightRatio={0.75}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2], justifyContent: 'center' }}>
+          {AVATAR_KEYS.map((k) => {
+            const value = `avatar:${k}`;
+            const on = (account?.avatar ?? defaultAvatar(account?.sex)) === value;
+            return (
+              <Pressable
+                key={k}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`avatar ${k}`}
+                onPress={() => {
+                  if (!account) return;
+                  setAccount({ ...account, avatar: value });
+                  if (account.userId) void saveAvatar(account.userId, value).catch(() => undefined);
+                  log('ผู้รับบริการ', 'เปลี่ยนรูปโปรไฟล์');
+                  setPickAvatar(false);
+                }}
+                style={{ borderRadius: 40, borderWidth: 3, borderColor: on ? colors.brand.primary : 'transparent', padding: 2 }}
+              >
+                <ProfileAvatar size={64} photo={value} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
       <HealthEditSheet
         field={editing}
         value={editing ? profile[editing] : []}

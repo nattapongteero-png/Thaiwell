@@ -7,6 +7,7 @@ import { radius, space } from '../../../design-system/tokens';
 import { type TreatmentCase } from '../../../data/homeFeed';
 import { SYMPTOM_GROUPS } from '../../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../../data/stretchMotion';
+import { useJourney } from '../../../state/JourneyContext';
 
 /**
  * รายละเอียดการรักษา — หน้าตาเดียวกับหลังบ้าน (ThaiWellAI · หน้าผู้มารับบริการ)
@@ -29,6 +30,12 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
   const group = SYMPTOM_GROUPS.find((g) => g.id === tc.selfCare.groupId);
   const motion = group ? STRETCH_MOTION[group.stretch.name] : undefined;
   const hasNext = tc.appointment.date !== '-';
+  // คอร์สจากคลินิก (บัญชีจริง): ชื่อ · ใช้ไป/ทั้งหมด · หมดอายุ — ไม่มี = คอร์สในแอป
+  const { clinicCourse, plannedVisits } = useJourney();
+  const total = clinicCourse?.total ?? tc.course.total;
+  const used = Math.min(total, clinicCourse?.used ?? tc.course.done);
+  // นัดที่คลินิกลงไว้แล้ว (นัดตามแผน) · ไม่มี = นัดครั้งถัดไปนัดเดียว
+  const booked = Math.min(total - used, Math.max(plannedVisits[tc.id]?.length ?? 0, hasNext ? 1 : 0));
   const areaText = tc.areas.map((a) => a.label).join(' · ');
 
   return (
@@ -42,36 +49,43 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
       </View>
 
       {/* คอร์สการรักษา */}
-      <Section icon="clipboard" tint="#C2782B" title="คอร์สการรักษา" right={<Chip text={`เหลือ ${tc.course.total - tc.course.done} ครั้ง`} />}>
-        <Text variant="labelLg">{tc.plan} {tc.course.total} ครั้ง</Text>
+      <Section icon="clipboard" tint="#C2782B" title="คอร์สการรักษา" right={<Chip text={`เหลือ ${total - used} ครั้ง`} />}>
+        <View style={{ gap: 2 }}>
+          <Text variant="labelLg">{clinicCourse ? clinicCourse.name : tc.plan} {total} ครั้ง</Text>
+          {clinicCourse?.expiresOn ? (
+            <Text variant="bodyXs" tone="secondary">
+              หมดอายุ {clinicCourse.expiresOn}
+            </Text>
+          ) : null}
+        </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {Array.from({ length: tc.course.total }, (_, i) => {
-            const done = i < tc.course.done;
-            const booked = !done && i === tc.course.done && hasNext;
+          {Array.from({ length: total }, (_, i) => {
+            const done = i < used;
+            const isBooked = !done && i < used + booked;
             return (
               <View
                 key={i}
-                accessibilityLabel={`ครั้งที่ ${i + 1} ${done ? 'ทำแล้ว' : booked ? 'จองไว้' : 'ว่าง'}`}
+                accessibilityLabel={`ครั้งที่ ${i + 1} ${done ? 'ทำแล้ว' : isBooked ? 'จองไว้' : 'ว่าง'}`}
                 style={{
                   width: 34,
                   height: 30,
                   borderRadius: 8,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: done ? colors.brand.primary : booked ? '#FBE3A8' : colors.surface.default,
-                  borderWidth: done || booked ? 0 : 1,
+                  backgroundColor: done ? colors.brand.primary : isBooked ? '#FBE3A8' : colors.surface.default,
+                  borderWidth: done || isBooked ? 0 : 1,
                   borderColor: colors.border.subtle,
                 }}
               >
-                {done ? <Icon name="check" size="xs" color="#FFFFFF" /> : <Text variant="labelSm" color={booked ? '#9A6A10' : colors.text.tertiary}>{i + 1}</Text>}
+                {done ? <Icon name="check" size="xs" color="#FFFFFF" /> : <Text variant="labelSm" color={isBooked ? '#9A6A10' : colors.text.tertiary}>{i + 1}</Text>}
               </View>
             );
           })}
         </View>
         <View style={{ flexDirection: 'row', gap: space[3] }}>
-          <Legend color={colors.brand.primary} text={`ใช้แล้ว ${tc.course.done}`} />
-          {hasNext ? <Legend color="#E8B23A" text="จองไว้ 1" /> : null}
-          <Legend color={colors.border.default} text={`ว่าง ${tc.course.total - tc.course.done - (hasNext ? 1 : 0)}`} />
+          <Legend color={colors.brand.primary} text={`ใช้แล้ว ${used}`} />
+          {booked ? <Legend color="#E8B23A" text={`จองไว้ ${booked}`} /> : null}
+          <Legend color={colors.border.default} text={`ว่าง ${total - used - booked}`} />
         </View>
       </Section>
 
