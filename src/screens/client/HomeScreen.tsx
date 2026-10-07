@@ -2516,30 +2516,20 @@ export function HomeScreen() {
       {modelTag ? (
         // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
         <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
-          {modelTag.items.map((it, i) => {
-            // บริเวณหลัก (ปวดมากที่สุด) = ขนาดเท่ากัน ต่างแค่สี: พื้นสีอ่อน + ขอบสีตามระดับปวด (ไม่ใช้สีทึบ จะดูเหมือนปุ่ม) · บริเวณรอง = ป้ายขาว
-            const main = i === 0 && modelTag.items.length > 1;
-            return (
-              <View
-                key={it}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: space[1],
-                  height: 30,
-                  paddingHorizontal: space[3],
-                  borderRadius: radius.full,
-                  backgroundColor: main ? tint(modelTag.color, 0.16) : colors.surface.default,
-                  borderWidth: main ? 1.5 : 0,
-                  borderColor: modelTag.color,
-                  ...(main ? null : elevation[1]),
-                }}
-              >
+          {modelTag.items.map((it, i) => (
+            <React.Fragment key={it}>
+              {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) · ป้ายหน้าตาเดียวกันทั้งหมด */}
+              {modelTag.items.length > 1 && i < 2 ? (
+                <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
+                  {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
+                </Text>
+              ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
                 <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />
                 <Text variant="labelSm">{it}</Text>
               </View>
-            );
-          })}
+            </React.Fragment>
+          ))}
           {modelTag.note ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
               {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
