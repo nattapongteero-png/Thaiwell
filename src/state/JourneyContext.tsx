@@ -479,6 +479,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const clinicHnRef = React.useRef<string | null>(null);
   const [clinicCourse, setClinicCourse] = useState<ClinicCourse | null>(null);
   const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
+  /** คลินิกรีเซ็ตข้อมูลการรักษา (ล่าสุดที่เห็น / ที่ล้างไปแล้ว) */
+  const [resetSignal, setResetSignal] = useState<string | null>(null);
+  const [resetSeen, setResetSeen] = useState<string | null>(() => saved('resetSeen', null));
   /** อ่านคอร์สจากคลินิกใหม่ (คลินิกลงนัด/นวดเสร็จ → จำนวนครั้งที่ใช้เปลี่ยน) */
   const refreshCourse = useCallback(() => {
     const id = latest.current.account?.userId;
@@ -487,6 +490,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         .then((r) => {
           setClinicCourse(r.course);
           setClinicVisits(r.visits);
+          if (r.resetAt) setResetSignal(r.resetAt);
         })
         .catch(() => undefined);
   }, []);
@@ -1129,7 +1133,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           JSON.stringify({
             entered, profile, consents, elements, elementsDone, followUps, account, newPatient, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted,
             cancelledAppts, caseAppts, caseVisits, selfPains, visitRecords, caseToday, apptNotices, bills, queueNo: queueNo.current,
-            bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, pendingPlan: pendingPlan.current,
+            bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, pendingPlan: pendingPlan.current, resetSeen,
           }),
         );
       } catch {
@@ -1143,7 +1147,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   clinicHnRef.current = clinicHn;
   const restoredFor = React.useRef<string | null>(null);
   const [restoredTick, setRestoredTick] = useState(0);
-  const persisted = { profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
+  const persisted = { resetSeen, profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
   const uid = account?.userId;
   React.useEffect(() => {
     restoredFor.current = null;
@@ -1158,7 +1162,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     void loadAppState(uid).then((st) => {
       if (!alive) return;
       if (st) {
-        const set: Record<string, (v: never) => void> = { profile: setProfile, consents: setConsents, elements: setElementsState, elementsDone: setElementsDone, careStage: setCareStage, looseBookings: setLooseBookings, lastAssess: setLastAssess, drafts: setDrafts, activeDraftId: setActiveDraftId, promoted: setPromoted, cancelledAppts: setCancelledAppts, caseAppts: setCaseAppts, caseVisits: setCaseVisits, selfPains: setSelfPains, caseToday: setCaseTodayState, visitRecords: setVisitRecords, apptNotices: setApptNotices, bills: setBills, followUps: setFollowUps, audit: setAudit };
+        const set: Record<string, (v: never) => void> = { resetSeen: setResetSeen, profile: setProfile, consents: setConsents, elements: setElementsState, elementsDone: setElementsDone, careStage: setCareStage, looseBookings: setLooseBookings, lastAssess: setLastAssess, drafts: setDrafts, activeDraftId: setActiveDraftId, promoted: setPromoted, cancelledAppts: setCancelledAppts, caseAppts: setCaseAppts, caseVisits: setCaseVisits, selfPains: setSelfPains, caseToday: setCaseTodayState, visitRecords: setVisitRecords, apptNotices: setApptNotices, bills: setBills, followUps: setFollowUps, audit: setAudit };
         for (const [k, fn] of Object.entries(set)) if (k in st) fn(st[k] as never);
         bridgeRefs.current = (st.bridgeRefs as typeof bridgeRefs.current) ?? {};
         bridgedCase.current = (st.bridgedCase as typeof bridgedCase.current) ?? {};
@@ -1172,6 +1176,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setRestoredTick((n) => n + 1);
       // เทียบนัดใน cloud กับที่เคยเห็น → ได้เหตุการณ์ระหว่างปิดแอป (ยืนยัน เรียกคิว บิล ฯลฯ)
       startAccountSync((st?.seen as Record<string, CloudRow>) ?? {});
+      // ดึงคอร์ส/สัญญาณรีเซ็ตหลังได้ข้อมูลแอปกลับมาแล้ว (รู้ว่าเคยล้างไปแล้วหรือยัง)
+      refreshCourse();
     });
     void fetchMyHn(uid).then((hn) => alive && setClinicHn(hn));
     setClinicCourse(null);
@@ -1197,6 +1203,37 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     if (uid && !clinicHn && apptNotices.length) void fetchMyHn(uid).then((hn) => hn && setClinicHn(hn));
   }, [uid, clinicHn, apptNotices.length]);
 
+  // คลินิกรีเซ็ตข้อมูลการรักษาของบัญชีนี้ (ใช้ทดสอบ) → ล้างนัด เรื่องที่รักษา บิล แจ้งเตือนในเครื่อง · ข้อมูลส่วนตัว/บัญชียังอยู่
+  React.useEffect(() => {
+    if (!resetSignal || resetSignal === resetSeen || !uid || restoredFor.current !== uid) return;
+    setResetSeen(resetSignal);
+    bridgeRefs.current = {};
+    bridgedCase.current = {};
+    pendingPlan.current = {};
+    setDrafts([]);
+    setActiveDraftId(null);
+    setLooseBookings([]);
+    setPromoted([]);
+    setCancelledAppts([]);
+    setCaseAppts({});
+    setCaseVisits({});
+    setSelfPains({});
+    setVisitRecords({});
+    setCaseTodayState({});
+    setFollowUps([]);
+    setLastAssess(null);
+    setCareStage('new');
+    setBills([]);
+    setCheckinErrors({});
+    setApptNotices([{ id: `n-reset-${resetSignal}`, kind: 'cancelled', text: 'คลินิกรีเซ็ตข้อมูลการรักษาของคุณแล้ว (ทดสอบระบบ) · เริ่มประเมินและจองใหม่ได้เลย', at: nowAtLabel() }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal, resetSeen, uid, restoredTick]);
+  // สำรอง: ตรวจคอร์ส/สัญญาณรีเซ็ตจากคลินิกทุก 20 วินาที (ลบนัดในคลินิกไม่มีเหตุการณ์ส่งมา)
+  React.useEffect(() => {
+    if (!uid || !isCloud()) return;
+    const t = setInterval(refreshCourse, 20000);
+    return () => clearInterval(t);
+  }, [uid, refreshCourse]);
   const value: JourneyState = {
     resumed: !!savedState()?.entered,
     markEntered,

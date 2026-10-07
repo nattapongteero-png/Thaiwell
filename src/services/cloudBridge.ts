@@ -274,10 +274,11 @@ export interface ClinicVisit {
   advice?: string;
 }
 /** คอร์ส + ประวัติการรักษาที่คลินิกส่งให้ (tw_patients.profile) */
-export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[] }> {
+export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[]; resetAt?: string }> {
   const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
-  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[] };
-  return { course: p.course ?? null, visits: p.visits ?? [] };
+  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[]; resetAt?: string };
+  // resetAt = คลินิกรีเซ็ตข้อมูลการรักษาของบัญชีนี้ (ทดสอบ) → แอปล้างข้อมูลการรักษาในเครื่องตาม
+  return { course: p.course ?? null, visits: p.visits ?? [], resetAt: p.resetAt };
 }
 /** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
 export async function fetchMyHn(userId: string): Promise<string | null> {
@@ -294,8 +295,13 @@ export async function saveAppState(userId: string, state: Record<string, unknown
 
 export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
   let stopped = false;
-  const apply = (list: CloudRow[], emit: boolean) => {
+  const apply = (list: CloudRow[], emit: boolean, full = false) => {
     const out: ClinicEvent[] = [];
+    // รายการเต็มจาก cloud: แถวที่ไม่มีแล้ว (คลินิกลบ/รีเซ็ต) → ลืม ไม่ให้ถูกดึงกลับมาเป็นนัดอีก
+    if (full) {
+      const ids = new Set(list.map((r) => r.id));
+      for (const id of [...rows.keys()]) if (!ids.has(id)) rows.delete(id);
+    }
     for (const r of list) {
       const prev = rows.get(r.id);
       // ไม่เปลี่ยน → ไม่มีเหตุการณ์ แต่เก็บแถวเต็มไว้ (ที่จำไว้ในเครื่องเก็บแค่บางช่อง)
@@ -311,7 +317,7 @@ export function listenCloud(cb: (events: ClinicEvent[]) => void): () => void {
     try {
       const { data, error } = await cloud.from('tw_appointments').select('*').neq('status', 'closed').order('created_at');
       online = !error;
-      if (!error && data && !stopped) apply(data as CloudRow[], emit);
+      if (!error && data && !stopped) apply(data as CloudRow[], emit, true);
     } catch {
       online = false;
     }
