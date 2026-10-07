@@ -68,7 +68,7 @@ export function PillButton({ label, onPress, tone = 'dark', icon }: { label: str
       })}
     >
       {icon ? <Icon name={icon} size="sm" color={dark ? colors.text.inverse : colors.text.primary} /> : null}
-      <Text variant="labelMd" color={dark ? colors.text.inverse : colors.text.primary} style={{ transform: [{ translateY: 1 }] }}>
+      <Text variant="labelMd" color={dark ? colors.text.inverse : colors.text.primary}>
         {label}
       </Text>
     </Pressable>

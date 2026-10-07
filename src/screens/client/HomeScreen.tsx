@@ -2884,7 +2884,7 @@ function TilePill({ icon, label, dark = true }: { icon: React.ComponentProps<typ
     >
       <Icon name={icon} size="xs" color={dark ? colors.text.inverse : colors.text.primary} />
       {/* ฟอนต์ไทยดูสูงกว่าไอคอน ~1pt → ขยับลงให้อยู่กึ่งกลาง */}
-      <Text variant="labelSm" color={dark ? colors.text.inverse : colors.text.primary} numberOfLines={1} style={{ transform: [{ translateY: 1 }] }}>
+      <Text variant="labelSm" color={dark ? colors.text.inverse : colors.text.primary} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -3598,7 +3598,7 @@ function WelcomeBento({
             </Text>
             {(near.slots.length ? near.slots.slice(0, 3) : nextSlotLabels(near.id, 2)).map((t) => (
               <View key={t} style={{ paddingHorizontal: space[2], height: 24, justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
-                <Text variant="labelSm" color={colors.brand.primary} style={{ transform: [{ translateY: 1 }] }}>
+                <Text variant="labelSm" color={colors.brand.primary}>
                   {t}
                 </Text>
               </View>
@@ -3650,7 +3650,7 @@ function WelcomeBento({
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 34, paddingHorizontal: space[3], borderRadius: radius.full, borderWidth: 1, borderColor: colors.border.subtle, backgroundColor: pressed ? colors.surface.sunken : colors.surface.default })}
             >
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
-              <Text variant="labelSm" style={{ transform: [{ translateY: 1 }] }}>
+              <Text variant="labelSm">
                 {sym.replace('-', ' ')}
               </Text>
             </Pressable>
@@ -3702,7 +3702,7 @@ const stretchGroupFor = (symptoms: string[]) => {
  * ดูแลตัวเอง — ภาพท่ายืดเคลื่อนไหว (GIF) เต็มความกว้างช่อง + ชื่อท่า + ปุ่มเล่น
  * ท่าที่ไม่มีภาพ (เช่น ฝึกหายใจ) → แถวเดียวแบบเดิม
  */
-function SelfCareTile({ groupId, title, done, fill, onPress }: { groupId?: string; title: string; done?: boolean; /** ยืดเต็มความสูงช่อง (ภาพขยายตาม) */ fill?: boolean; onPress: () => void }) {
+function SelfCareTile({ groupId, title, done, onPress }: { groupId?: string; title: string; done?: boolean; onPress: () => void }) {
   const { colors } = useTheme();
   const group = SYMPTOM_GROUPS.find((g) => g.id === groupId);
   const motion = group ? STRETCH_MOTION[group.stretch.name] : undefined;
@@ -3725,8 +3725,8 @@ function SelfCareTile({ groupId, title, done, fill, onPress }: { groupId?: strin
     </View>
   );
   return (
-    <Tile style={{ padding: 0, ...(fill ? { flex: 1 } : null) }} onPress={onPress} accessibilityLabel={`ดูแลตัวเอง ${name}${motion ? ` ช่วย${motion.primary.label}` : ''}`}>
-      <View style={{ ...(fill ? { flex: 1, minHeight: 120 } : { height: 120 }), overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
+    <Tile style={{ padding: 0 }} onPress={onPress} accessibilityLabel={`ดูแลตัวเอง ${name}${motion ? ` ช่วย${motion.primary.label}` : ''}`}>
+      <View style={{ height: 120, overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
         {/* เห็นหุ่นเต็มตัวทุกจังหวะ (ชูแขนก็ไม่หลุดขอบ) · ขนาดเท่ากับหน้ารวมท่า */}
         {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={84} style={{ width: '100%', height: '100%' }} /> : null}
         {motion ? (
@@ -3921,9 +3921,9 @@ function DraftBento({
           </Pressable>
         </Tile>
       ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" fill onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
@@ -3938,7 +3938,7 @@ function DraftBento({
             ]
               .filter((sec) => sec.items.length)
               .map((sec) => (
-                <Tile key={sec.title} style={{ flex: 1, gap: space[2] }}>
+                <Tile key={sec.title} style={{ gap: space[2] }}>
                   <TileTitle title={sec.title} />
                   {sec.items.map((it) => (
                     <View key={it} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[1] }}>
@@ -4491,7 +4491,7 @@ function WelcomeHero({
       <Pressable accessibilityRole="button" accessibilityLabel="เริ่มคุยกับ ThaiWell AI" onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
         <View style={{ height: 48, paddingHorizontal: space[6], borderRadius: radius.full, backgroundColor: colors.text.primary, flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
           <Icon name="message-circle" size="sm" color={colors.text.inverse} />
-          <Text variant="labelMd" color={colors.text.inverse} style={{ transform: [{ translateY: 1 }] }}>
+          <Text variant="labelMd" color={colors.text.inverse}>
             เริ่มคุยกับ ThaiWell AI
           </Text>
         </View>
@@ -4502,7 +4502,7 @@ function WelcomeHero({
         {features.map((f) => (
           <View key={f.text} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Icon name={f.icon} size="xs" color={colors.brand.primary} />
-            <Text variant="bodyXs" tone="secondary" style={{ transform: [{ translateY: 1 }] }}>
+            <Text variant="bodyXs" tone="secondary">
               {f.text}
             </Text>
           </View>
@@ -4588,7 +4588,7 @@ function AIButton({ label, onPress }: { label: string; onPress?: () => void }) {
           }}
         />
         <AIBall size={30} />
-        <Text variant="labelMd" color={colors.text.primary} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
+        <Text variant="labelMd" color={colors.text.primary} style={{ fontFamily: fontFamily.semibold }}>
           ThaiWell AI
         </Text>
       </View>

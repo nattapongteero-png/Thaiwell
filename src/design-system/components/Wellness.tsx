@@ -214,7 +214,7 @@ export function DeltaPill({ before, after }: { before: number; after: number }) 
       }}
     >
       {after === before ? null : <Icon name={after < before ? 'trending-down' : 'trending-up'} size="xxs" color={fg} />}
-      <Text variant="bodyXs" color={fg} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
+      <Text variant="bodyXs" color={fg} style={{ fontFamily: fontFamily.semibold }}>
         {label}
       </Text>
     </View>
@@ -338,7 +338,7 @@ export function PainScoreCard({
           >
             <Icon name="edit-3" size="xxs" color={colors.text.inverse} />
             {/* ฟอนต์ไทยเผื่อที่สระบนในบรรทัด → ตัวอักษรดูสูงกว่าไอคอน ~1pt · ขยับลงให้อยู่กึ่งกลางไอคอน */}
-            <Text variant="bodyXs" color={colors.text.inverse} style={{ fontFamily: fontFamily.semibold, transform: [{ translateY: 1 }] }}>
+            <Text variant="bodyXs" color={colors.text.inverse} style={{ fontFamily: fontFamily.semibold }}>
               {action.label}
             </Text>
           </Pressable>

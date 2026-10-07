@@ -112,7 +112,7 @@ export function BillScreen({ route }: { route: { params: { id: string } } }) {
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space[3], paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
               <Icon name="check" size="xs" color={colors.brand.primary} />
-              <Text variant="labelSm" color={colors.brand.primary} style={{ transform: [{ translateY: 1 }] }}>
+              <Text variant="labelSm" color={colors.brand.primary}>
                 ชำระแล้ว · {methodLabel(b)}
               </Text>
             </View>

@@ -21,6 +21,13 @@ const Nested = createContext(false);
 const FONT_BOX = 1.65;
 const DESCENT = 0.534;
 const INK_TOP = 1.12;
+/**
+ * ตัวไทยส่วนใหญ่สูงแค่ x-height (≈0.52 เท่า) ไอคอนสูงเกือบเท่าตัวอักษร → จัดกึ่งกลางทางเรขาคณิตแล้วตัวหนังสือยังดูลอยเหนือไอคอน
+ * เลื่อนลงอีกนิดให้กึ่งกลางอยู่ที่ครึ่งความสูงตัวเลข/ตัวพิมพ์ใหญ่ (≈0.35 เท่า) แทน x-height (≈0.26 เท่า)
+ * จำกัดไม่เกิน 1.5pt → แถวที่เรียงตามเส้นฐาน (ตัวเลขใหญ่ + หน่วยเล็ก) ต่างกันไม่ถึงครึ่ง pt
+ */
+const OPTICAL = 0.09;
+const OPTICAL_MAX = 1.5;
 
 const num = (...v: unknown[]) => {
   for (const x of v) if (x !== undefined) return typeof x === 'number' ? x : null;
@@ -70,8 +77,14 @@ export function Text({ variant = 'bodyMd', tone = 'primary', color, align, style
   if (textScale !== 1) {
     scaled = { ...(f.fontSize ? { fontSize: f.fontSize * textScale } : null), ...(f.lineHeight ? { lineHeight: f.lineHeight * textScale } : null) };
   }
-  const fix = Platform.OS === 'ios' && !nested ? iosCenter({ ...f, ...scaled }, rest.allowFontScaling !== false) : null;
-  const styles = [...base, scaled, fix];
+  const g = { ...f, ...scaled };
+  const fix = Platform.OS === 'ios' && !nested ? iosCenter(g, rest.allowFontScaling !== false) : null;
+  // ทุกแพลตฟอร์ม: เลื่อนลงทางสายตา (ไม่กระทบ layout) · ข้ามข้อความซ้อน/มีพื้นหลัง/วางตำแหน่งเอง
+  const optical =
+    !nested && g.fontSize && !g.backgroundColor && !g.borderWidth && g.position !== 'absolute' && g.top === undefined && g.bottom === undefined
+      ? { top: Math.min(g.fontSize * (rest.allowFontScaling !== false && Platform.OS !== 'web' ? Math.min(PixelRatio.getFontScale(), 1.6) : 1) * OPTICAL, OPTICAL_MAX) }
+      : null;
+  const styles = [...base, scaled, fix, optical];
   if (nested) return <RNText maxFontSizeMultiplier={1.6} {...rest} style={styles} />;
   return (
     <Nested.Provider value>
