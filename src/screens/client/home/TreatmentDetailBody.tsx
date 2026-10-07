@@ -385,7 +385,7 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
 }
 
 /** ก่อน → หลัง (สองกล่อง) + บรรทัดสรุปการเปลี่ยนแปลง — ใช้ทั้งรายครั้งและครั้งที่ประเมินก่อนนวดแล้ว */
-function PainCompare({ from, to, note }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note: { text: string; good?: boolean } }) {
+function PainCompare({ from, to, note }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note?: { text: string; good?: boolean } }) {
   const { colors } = useTheme();
   const box = (label: string, v: number | undefined, empty?: string) => (
     <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
@@ -404,9 +404,11 @@ function PainCompare({ from, to, note }: { from: { label: string; v: number }; t
         <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
         {box(to.label, to.v, to.empty)}
       </View>
-      <Text variant="labelSm" color={note.good ? colors.brand.primary : colors.text.secondary}>
-        {note.text}
-      </Text>
+      {note ? (
+        <Text variant="labelSm" color={note.good ? colors.brand.primary : colors.text.secondary}>
+          {note.text}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -434,7 +436,7 @@ function PreVisitDetail({ tc }: { tc: TreatmentCase }) {
       <PainCompare
         from={{ label: `หลังนวดครั้งที่ ${tc.visits.length}`, v: prev }}
         to={{ label: 'วันนี้ก่อนนวด', v: t.pain }}
-        note={d > 0 ? { text: `ปวดกลับมา +${d}` } : d < 0 ? { text: `ดีขึ้นอีก ${-d}`, good: true } : { text: 'ผลจากครั้งก่อนยังคงอยู่', good: true }}
+        note={d > 0 ? { text: `ปวดกลับมา +${d}` } : d < 0 ? { text: `ดีขึ้นอีก ${-d}`, good: true } : undefined}
       />
       {t.adverse || t.risk ? (
         <Section icon="clipboard" tint="#2F6FA3" title="แจ้งก่อนนวด">
