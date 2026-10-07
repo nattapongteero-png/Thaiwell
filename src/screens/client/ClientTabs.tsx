@@ -154,7 +154,7 @@ export function ProfileScreen() {
   const loading = useScreenData('profile');
   const nav = useNav();
   const { colors, textScale, setTextScale } = useTheme();
-  const { client, profile, setProfile, signOut, elements, newPatient, account, setAccount, cases, drafts, looseBookings, log, bills, clinicCourse, clinicVisits } = useJourney();
+  const { client, profile, setProfile, signOut, elements, newPatient, account, setAccount, cases, drafts, looseBookings, log, bills } = useJourney();
   const { elementsDone } = useJourney();
   const element = newPatient && account && !elementsDone ? birthElement(account.birthDate) : dominantElement(elements);
   const visits = cases.reduce((n, c) => n + c.visits.length, 0);
@@ -219,8 +219,6 @@ export function ProfileScreen() {
       </Panel>
 
       <Panel title="การตั้งค่า" flush>
-        {/* คอร์สที่คลินิกเปิดให้ + นัดตามคอร์ส (บัญชีจริง) */}
-        {account?.userId ? <RowLink icon="calendar" tint={TINT.green} title="การรักษาของฉัน" sub={clinicCourse ? `${clinicCourse.name} · ใช้ไป ${clinicCourse.used}/${clinicCourse.total} ครั้ง` : clinicVisits.length ? `รักษาแล้ว ${clinicVisits.length} ครั้ง` : 'ยังไม่มีคอร์ส'} onPress={() => nav.navigate('Course')} /> : null}
         {/* บิลจากคลินิก (จ่ายในแอป) + ใบเสร็จ */}
         <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
