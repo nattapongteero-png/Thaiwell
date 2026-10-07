@@ -2517,7 +2517,7 @@ export function HomeScreen() {
         // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
         <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
           {modelTag.items.map((it, i) => {
-            // บริเวณหลัก (ปวดมากที่สุด) = พื้นสีอ่อน + ขอบสีตามระดับปวด (ไม่ใช้สีทึบ จะดูเหมือนปุ่ม) · บริเวณรอง = ป้ายขาว
+            // บริเวณหลัก (ปวดมากที่สุด) = ขนาดเท่ากัน ต่างแค่สี: พื้นสีอ่อน + ขอบสีตามระดับปวด (ไม่ใช้สีทึบ จะดูเหมือนปุ่ม) · บริเวณรอง = ป้ายขาว
             const main = i === 0 && modelTag.items.length > 1;
             return (
               <View
@@ -2526,7 +2526,7 @@ export function HomeScreen() {
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: space[1],
-                  height: main ? 34 : 30,
+                  height: 30,
                   paddingHorizontal: space[3],
                   borderRadius: radius.full,
                   backgroundColor: main ? tint(modelTag.color, 0.16) : colors.surface.default,
@@ -2535,8 +2535,8 @@ export function HomeScreen() {
                   ...(main ? null : elevation[1]),
                 }}
               >
-                <View style={{ width: main ? 10 : 8, height: main ? 10 : 8, borderRadius: 5, backgroundColor: modelTag.color }} />
-                <Text variant={main ? 'labelMd' : 'labelSm'}>{it}</Text>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />
+                <Text variant="labelSm">{it}</Text>
               </View>
             );
           })}
