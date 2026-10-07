@@ -4493,6 +4493,7 @@ function HomeBento({
   const preDone = !!today;
   // แนวทางการรักษาจากแพทย์: ผลวินิจฉัย + หัตถการของครั้งล่าสุด (บันทึกการรักษาของคลินิก)
   const rec = sessionRecord(tc, tc.visits.length - 1);
+  const nextPlan = today ? preVisitSummary(tc, today) : { status: 'ok' as const, plan: [] as string[] };
   // ประเมินหลังนวดครั้งล่าสุดแล้วหรือยัง: บอกความรู้สึกหลังนวด / ส่งผลติดตาม / ประเมินก่อนนวดครั้งถัดไป (ถามอาการหลังนวดครั้งก่อนแล้ว)
   const needPost = last.selfPain === undefined;
   // ประเมินก่อนนวดเปิดได้ 1 วันก่อนนัด (เร็วกว่านั้นอาการอาจไม่ตรงวันที่มานวด) · ยังไม่เปิด = วันที่เปิด
@@ -4623,7 +4624,21 @@ function HomeBento({
 
       {/* 4) แนวทางการรักษา (แพทย์ทำอะไรให้) | ดูแลตัวเอง (ทำเองที่บ้าน) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-        <GuideTile width={halfW} title="แนวทางการรักษา" subtitle={rec.diagnoses?.[0] ?? tc.condition} items={rec.techniques} onPress={() => onHistory(tc.visits.length - 1)} />
+        {today && hasNext ? (
+          // ประเมินก่อนนวดครั้งถัดไปแล้ว → แนวทางของครั้งนั้น: แผนเดิมของแพทย์ + ข้อที่ปรับตามผลประเมินวันนี้ (ชุดเดียวกับผลประเมินก่อนนวด)
+          <GuideTile
+            width={halfW}
+            title={`แนวทางครั้งที่ ${nextNo}`}
+            subtitle={rec.diagnoses?.[0] ?? tc.condition}
+            items={nextPlan.status === 'red' ? [] : rec.techniques}
+            adjust={nextPlan.status === 'red' ? nextPlan.plan : nextPlan.plan.slice(1)}
+            danger={nextPlan.status === 'red'}
+            onAdjust={() => onHistory(tc.visits.length)}
+            onPress={() => onHistory(tc.visits.length)}
+          />
+        ) : (
+          <GuideTile width={halfW} title={`แนวทางครั้งที่ ${tc.visits.length}`} subtitle={rec.diagnoses?.[0] ?? tc.condition} items={rec.techniques} onPress={() => onHistory(tc.visits.length - 1)} />
+        )}
         <View style={{ width: halfW }}>
           <SelfCareTile groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare(tc.selfCare.groupId)} />
         </View>
@@ -4748,10 +4763,10 @@ const shortMethod = (m: string) =>
     .replace(/\s*ตามแนวเส้น.*$/, '')
     .replace(/\s*\(.*\)$/, '')
     .trim();
-function GuideTile({ width, title = 'แนวทางที่แนะนำ', subtitle, items, adjust, onAdjust, onPress }: { width: number; title?: string; subtitle: string; items: string[]; /** ผู้ให้บริการจะปรับ (ผลคัดกรอง) */ adjust?: string[]; onAdjust?: () => void; onPress?: () => void }) {
+function GuideTile({ width, title = 'แนวทางที่แนะนำ', subtitle, items, adjust, danger, onAdjust, onPress }: { width: number; title?: string; subtitle: string; items: string[]; /** ผู้ให้บริการจะปรับ (ผลคัดกรอง) */ adjust?: string[]; /** ควรพบแพทย์ก่อน → แถบแดง */ danger?: boolean; onAdjust?: () => void; onPress?: () => void }) {
   const { colors } = useTheme();
   const list = items.map(shortMethod).filter((m, i, arr) => m && arr.indexOf(m) === i).slice(0, 3);
-  const warn = colors.status.warning;
+  const warn = danger ? colors.status.danger : colors.status.warning;
   return (
     <Tile style={{ width, gap: space[3] }} onPress={onPress} accessibilityLabel={`${title} ดูรายละเอียด`}>
       <View>
