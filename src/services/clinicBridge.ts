@@ -46,8 +46,17 @@ export interface ClinicPatient {
   /** avatar ที่ผู้ใช้เลือก → คลินิกแสดงรูปเดียวกัน */
   avatar?: string;
 }
+/** แนวทางการรักษาที่แอปแนะนำตอนประเมิน (Knowledge Hub) — ผู้ให้บริการยืนยันอีกครั้งก่อนเริ่ม */
+export interface AppGuide {
+  condition?: string;
+  methods: string[];
+  points: string[];
+  caution?: string;
+  ref?: string;
+}
 export interface ClinicRequest {
   id: string;
+  guide?: AppGuide;
   patientId: string;
   serviceId: string;
   therapistId: string;

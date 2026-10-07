@@ -402,6 +402,13 @@ export interface CaseAppt {
   stage?: 'checked_in' | 'called' | 'in_service';
 }
 
+/** แนวทางการรักษาจากผลประเมินของใบร่าง (ส่งให้คลินิก) · ไม่มีอาการ / ควรพบแพทย์ = ไม่มีแนวทาง */
+const guideOfDraft = (d?: DraftCase) => {
+  if (!d || d.red || !d.symptoms.length) return undefined;
+  const g = guideFor(d.symptoms, d.radiate);
+  return { condition: g.condition, methods: g.methods, points: g.points, caution: [d.caution, g.caution].filter(Boolean).join('\n') || undefined, ref: g.ref };
+};
+
 const Ctx = createContext<JourneyState | null>(null);
 
 /* ---------- จำข้อมูลแอปข้ามการเปิดใหม่ (เว็บ + มือถือ · ต้นแบบ) ----------
@@ -601,6 +608,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           }
         : undefined,
       note: d?.caution,
+      // แนวทางการรักษาชุดเดียวกับที่ผู้ป่วยเห็นในแชท
+      guide: guideOfDraft(d),
       submittedAt: new Date().toISOString(),
       serviceLabel: b.service,
     };
@@ -814,7 +823,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // ประเมินเรื่องเดิมอีกครั้ง (จองแล้ว · ก่อนเช็กอิน) → ส่งเป็นรอบใหม่ให้คลินิก
     const old = latest.current.drafts.find((x) => x.id === d.id);
     if (old?.booking && d.booking && (old.pain !== d.pain || old.symptoms.join() !== d.symptoms.join() || old.title !== d.title))
-      pushReassess({ draftId: d.id }, { complaint: d.title, pain: d.pain, areas: d.symptoms, avoid: d.avoid && d.avoid !== 'ไม่มี' ? [d.avoid] : [], summary: `ประเมินใหม่: ${d.title} · ปวด ${d.pain}/10${d.caution ? ` · ${d.caution}` : ''}` });
+      pushReassess({ draftId: d.id }, { guide: guideOfDraft(d), complaint: d.title, pain: d.pain, areas: d.symptoms, avoid: d.avoid && d.avoid !== 'ไม่มี' ? [d.avoid] : [], summary: `ประเมินใหม่: ${d.title} · ปวด ${d.pain}/10${d.caution ? ` · ${d.caution}` : ''}` });
     setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -125,6 +125,8 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     start: request.start,
     assessment: {
       at: new Date().toISOString(),
+      // แนวทางการรักษาที่แอปแนะนำ (ชื่อโรค วิธี จุด ข้อควรระวัง) → คลินิกเห็นชุดเดียวกับผู้ป่วย
+      ...(request.guide ? { guide: request.guide } : {}),
       serviceId: request.serviceId,
       therapistId: request.therapistId || undefined,
       complaint,
@@ -149,6 +151,7 @@ export interface ReassessPatch {
   avoid?: string[];
   summary?: string;
   screening?: Record<string, boolean | number | undefined>;
+  guide?: import('./clinicBridge').AppGuide;
 }
 /**
  * ประเมินใหม่ก่อนเช็กอิน → รอบใหม่ (รอบเดิมเก็บไว้ใน rounds ไม่ทับ) · เช็กอินแล้ว/เริ่มรับบริการ = ไม่รับ (คืน false)
