@@ -517,6 +517,19 @@ export function HomeScreen() {
     [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor, caseToday],
   );
   const marks = React.useMemo(() => Object.values(sel).flatMap((pts) => pts ?? []), [sel]);
+  // ซ่อมข้อมูลจากบั๊กเดิม: แก้อาการในแชทเดิมแล้วเกิดเรื่องใหม่ซ้ำ (แชทเดียวกัน 2 เรื่อง) → รวมผลล่าสุดเข้าเรื่องที่มีนัด
+  React.useEffect(() => {
+    const byChat = new Map<string, DraftCase[]>();
+    for (const d of drafts) if (d.chatId) byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d]);
+    for (const group of byChat.values()) {
+      if (group.length < 2) continue;
+      const keep = group.find((d) => d.booking) ?? group[0];
+      const latest = group[group.length - 1];
+      if (latest.id !== keep.id) upsertDraft({ ...latest, id: keep.id, booking: keep.booking, stage: keep.stage, history: [...(keep.history ?? []), { at: '', pain: keep.pain, symptoms: keep.symptoms, caution: keep.caution }] });
+      for (const d of group) if (d.id !== keep.id) removeDraft(d.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drafts.length]);
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
   const modelTag = (() => {
     if (started || chatHome) return null;
@@ -967,7 +980,9 @@ export function HomeScreen() {
       // ใช้ครั้งเดียว: แก้อาการ/ประเมินซ้ำในแชทเดิมภายหลัง = เรื่องเดิม (ไม่สร้างแท็บใหม่อีก)
       delete freshFor.current[sid];
       const dupDraft = drafts.find((d) => same(d.symptoms, sym));
-      const old = fresh ? undefined : drafts.find((d) => d.title === topic) ?? dupDraft;
+      // แชทนี้เป็นของเรื่องไหนอยู่แล้ว (แก้อาการ/ทบทวนในแชทเดิม) → อัปเดตเรื่องนั้นเสมอ แม้เปลี่ยนบริเวณ (ไม่สร้างการรักษาใหม่)
+      const linked = drafts.find((d) => d.chatId === sid);
+      const old = fresh ? undefined : linked ?? drafts.find((d) => d.title === topic) ?? dupDraft;
       const id = old?.id ?? `d${Date.now()}`;
       if (fresh && dupDraft) {
         mergeFor.current[sid] = { newId: id, oldId: dupDraft.id };
