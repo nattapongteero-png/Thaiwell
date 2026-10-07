@@ -1,10 +1,11 @@
 import React from 'react';
 import { View } from 'react-native';
-import { AppBar, Button, Icon, Panel, ReplyChips, ScaleSelector, Screen, Text, TextField, TINT, space, useTheme } from '../../design-system';
+import { AppBar, Button, Icon, Panel, ReplyChips, Screen, Text, TextField, TINT, space, useTheme } from '../../design-system';
 import { ASSESS_LOCK_TEXT, assessLock, preVisitOpensOn } from '../../state/appointments';
 import { FU_ADVERSE, FU_RISK } from '../../data/homeFeed';
 import { preVisitRed, preVisitSummary } from '../../data/preVisit';
 import { useJourney } from '../../state/JourneyContext';
+import { PainPicker } from './home/PainPicker';
 import { useNav } from '../../navigation/types';
 import { NotFoundScreen } from './NotFound';
 
@@ -153,7 +154,7 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
       }
     >
       <Panel title="วันนี้ปวดเท่าไหร่">
-        <ScaleSelector value={pain} onChange={setPain} compareValue={last.selfPain ?? last.painAfter} compareLabel="หลังนวดครั้งก่อน" minLabel="ไม่ปวด" maxLabel="ปวดมาก" />
+        <PainPicker value={pain} onChange={setPain} compareValue={last.selfPain ?? last.painAfter} compareLabel="หลังนวดครั้งก่อน" />
       </Panel>
       <Panel title="หลังนวดครั้งก่อน มีอาการผิดปกติไหม">
         <ReplyChips options={FU_ADVERSE} selected={adverse} onPick={setAdverse} />

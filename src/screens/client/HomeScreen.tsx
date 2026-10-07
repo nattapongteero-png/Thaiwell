@@ -18,7 +18,6 @@ import {
   PainScoreCard,
   DeltaPill,
   ReplyChips,
-  ScaleSelector,
   useDockHeight,
   useHideTabs,
   useTabAccessory,
@@ -124,6 +123,7 @@ import { BookingEditSheet } from './home/BookingEditSheet';
 import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
 import { SafetySheet } from './home/SafetySheet';
 import { CourseSheet } from './CourseScreen';
+import { PainPicker } from './home/PainPicker';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
@@ -4809,7 +4809,7 @@ function ConfirmSheet({ visible, draft: d, onClose, onReassess }: { visible: boo
       {moved ? null : (
         <>
           <Panel title="วันนี้ปวดระดับไหน">
-            <ScaleSelector value={pain} onChange={setPain} compareValue={d.pain} compareLabel="ตอนประเมิน" minLabel="ไม่ปวด" maxLabel="ปวดมาก" />
+            <PainPicker value={pain} onChange={setPain} compareValue={d.pain} compareLabel="ตอนประเมิน" />
           </Panel>
           <Panel title="ช่วงนี้มีข้อใดต่อไปนี้ไหม">
             <ReplyChips options={FU_RISK} selected={risk} onPick={setRisk} />
