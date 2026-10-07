@@ -12,11 +12,11 @@ import { STRETCH_MOTION } from '../../../data/stretchMotion';
  * รายละเอียดการรักษา (bottom sheet จากแชท) — แทนการพาไปหน้ารายการประวัติ
  * สรุป (ดีขึ้นกี่ % · คอร์ส) → กราฟปวดก่อน/หลังทุกครั้ง → รายครั้ง → บริเวณที่รักษา · ผู้ให้บริการ · นัดถัดไป → ดูแลตัวเอง
  */
-export function TreatmentSheet({ tc, visible, onClose }: { tc: TreatmentCase | null; visible: boolean; onClose: () => void }) {
-  const [visit, setVisit] = React.useState<number | null>(null);
+export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { tc: TreatmentCase | null; visible: boolean; onClose: () => void; /** เปิดที่แท็บครั้งนั้น (การ์ดผลครั้งที่ N) · null = ภาพรวม (การ์ดแผนการรักษา) */ initialVisit?: number | null }) {
+  const [visit, setVisit] = React.useState<number | null>(initialVisit);
   React.useEffect(() => {
-    if (visible) setVisit(null);
-  }, [visible, tc?.id]);
+    if (visible) setVisit(initialVisit);
+  }, [visible, tc?.id, initialVisit]);
   if (!tc) return null;
   return (
     <BottomSheet

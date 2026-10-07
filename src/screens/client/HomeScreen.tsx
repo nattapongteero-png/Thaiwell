@@ -2206,6 +2206,7 @@ export function HomeScreen() {
   };
   /* ดูเพิ่มเติมจากแชท → bottom sheet: รายละเอียดการรักษา · ท่ายืด */
   const [sheetCaseId, setSheetCaseId] = React.useState<string | null>(null);
+  const [sheetVisit, setSheetVisit] = React.useState<number | null>(null);
   const [sheetStretch, setSheetStretch] = React.useState<string | null>(null);
   const dockH = useDockHeight();
   // คุยกับ AI (ไม่ใช่แชทหน้าแรกครั้งแรก) / ให้คะแนนบนหุ่น → ซ่อน tab menu ให้โฟกัส · ออกแล้วกลับมา
@@ -2758,7 +2759,10 @@ export function HomeScreen() {
                   tabs={null}
                   onCheckIn={() => nav.navigate('CheckIn', { caseId: tcase.id })}
                   // Pain Score / แผนการรักษา → รายละเอียดการรักษาของเรื่องนี้ (bottom sheet เดียวกับในแชท)
-                  onHistory={() => setSheetCaseId(tcase.id)}
+                  onHistory={(visit) => {
+                    setSheetVisit(visit ?? null);
+                    setSheetCaseId(tcase.id);
+                  }}
                   onFollowUp={followCaseChat}
                   onSelfCare={(groupId) => nav.navigate('SelfCare', groupId ? { groupId } : undefined)}
                   onEdit={() => nav.navigate('Booking', { caseId: tcase.id, clinic: caseClinic(tcase) })}
@@ -3099,7 +3103,7 @@ export function HomeScreen() {
           newChat();
         }}
       />
-      <TreatmentSheet tc={cases.find((c) => c.id === sheetCaseId) ?? null} visible={!!sheetCaseId} onClose={() => setSheetCaseId(null)} />
+      <TreatmentSheet tc={cases.find((c) => c.id === sheetCaseId) ?? null} visible={!!sheetCaseId} initialVisit={sheetVisit} onClose={() => setSheetCaseId(null)} />
       <StretchSheet groupId={sheetStretch} visible={!!sheetStretch} onClose={() => setSheetStretch(null)} />
       <SafetySheet
         card={safetyView?.card ?? null}
@@ -4432,7 +4436,8 @@ function HomeBento({
   tcase: TreatmentCase;
   tabs: React.ReactNode;
   onCheckIn: () => void;
-  onHistory: () => void;
+  /** รายละเอียดการรักษา (แผ่นเดียวกันทุกการ์ด) · visit = เปิดที่ครั้งนั้น */
+  onHistory: (visit?: number) => void;
   onFollowUp: () => void;
   /** groupId = เปิดท่าของเรื่องนี้ตรง ๆ · ไม่ระบุ = หน้ารวมท่า */
   onSelfCare: (groupId?: string) => void;
@@ -4558,12 +4563,16 @@ function HomeBento({
       {/* 3) ผลการรักษาที่ผ่านมา: คอร์สถึงไหน (ซ้าย) · ผลครั้งล่าสุด (ขวา) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         {/* คลินิกเปิดคอร์สให้ (บัญชีจริง) → ชื่อ/จำนวนครั้งตามคอร์สจริง แตะ = หน้าคอร์ส (นัดทั้งหมด + ประวัติ) */}
-        {clinicCourse ? (
-          <PlanTile width={halfW} plan={clinicCourse.name} done={Math.min(clinicCourse.used, clinicCourse.total)} total={clinicCourse.total} values={trendValues(tc)} onPress={() => nav.navigate('Course')} />
-        ) : (
-          <PlanTile width={halfW} plan={tc.plan} done={tc.course.done} total={tc.course.total} values={trendValues(tc)} onPress={onHistory} />
-        )}
-        <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={onHistory}>
+        {/* แผนการรักษา = รายละเอียดการรักษา (ภาพรวม) — แผ่นเดียวกับผลรายครั้ง · คอร์สจากคลินิกใช้ชื่อ/จำนวนครั้งจริง */}
+        <PlanTile
+          width={halfW}
+          plan={clinicCourse?.name ?? tc.plan}
+          done={clinicCourse ? Math.min(clinicCourse.used, clinicCourse.total) : tc.course.done}
+          total={clinicCourse?.total ?? tc.course.total}
+          values={trendValues(tc)}
+          onPress={() => onHistory()}
+        />
+        <Pressable accessibilityRole="button" accessibilityLabel={`ผลครั้งที่ ${tc.visits.length} ปวด ${last.painBefore} เหลือ ${after} ดูรายละเอียดการรักษา`} onPress={() => onHistory(tc.visits.length - 1)}>
           <View pointerEvents={needPost ? 'box-none' : 'none'}>
             <PainScoreCard
               // หลัง = คะแนนที่ผู้ใช้ประเมินหลังนวด · ยังไม่ประเมิน = ว่าง (–)
