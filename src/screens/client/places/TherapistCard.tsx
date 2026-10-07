@@ -61,7 +61,7 @@ export function TherapistCard({ t, selected, onPick, badge, compact, width, stat
 }
 
 /** ไม่ระบุแพทย์: รวมคิวว่างของทุกคนที่รับบริการนี้ · ระบบจัดคนที่ว่างให้ตอนยืนยัน */
-export function AnyTherapistCard({ slots, selected, onPick }: { slots: FreeSlot[]; selected: Sel; onPick: (day: string, time: string) => void }) {
+export function AnyTherapistCard({ slots, selected, onPick, compact }: { slots: FreeSlot[]; selected: Sel; onPick: (day: string, time: string) => void; /** ไม่มีคิวในการ์ด (เลือกวันเวลาแยกแล้ว) */ compact?: boolean }) {
   const { colors } = useTheme();
   return (
     <Frame selected={!!selected}>
@@ -78,7 +78,7 @@ export function AnyTherapistCard({ slots, selected, onPick }: { slots: FreeSlot[
           </Text>
         </View>
       </View>
-      <Slots slots={slots} who="ไม่ระบุแพทย์" selected={selected} onPick={onPick} />
+      {compact ? null : <Slots slots={slots} who="ไม่ระบุแพทย์" selected={selected} onPick={onPick} />}
     </Frame>
   );
 }
@@ -86,7 +86,7 @@ export function AnyTherapistCard({ slots, selected, onPick }: { slots: FreeSlot[
 function Frame({ selected, width, children }: { selected: boolean; width?: number; children: React.ReactNode }) {
   const { colors } = useTheme();
   return (
-    <View style={{ width: width ?? CARD_W, gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.brand.primary : colors.border.subtle }}>
+    <View style={{ width: width ?? CARD_W, flexGrow: 1, gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.brand.primary : colors.border.subtle }}>
       {children}
     </View>
   );

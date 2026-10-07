@@ -8,7 +8,7 @@ import { PLACES, callClinic, clinicPhone } from './PlacesScreen';
 import { isCloud, isoToLabel } from '../../services/clinicBridge';
 import { anyoneSlots, dayLabel, therapistsAt, type ServiceId } from '../../data/booking';
 import { caseClinic, serviceMismatch, useAllAppointments } from '../../state/appointments';
-import { ANY_THERAPIST } from './places/TherapistCard';
+import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard } from './places/TherapistCard';
 
 /* ============================================================ จองนวด
  * ต่อจากการประเมินกับ AI: สรุปอาการ + ข้อควรระวัง → เลือกบริการ (แนะนำจากแนวทาง) → วันเวลา → ผู้ให้บริการ → ยืนยัน
@@ -398,42 +398,18 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                   </View>
                 ) : null}
 
-                {/* ③ ผู้ให้บริการ: เฉพาะคนที่ว่างเวลานั้น · ไม่ระบุ = คลินิกจัดคนที่ว่าง */}
+                {/* ③ ผู้ให้บริการ: การ์ดแนวนอน เฉพาะคนที่ว่างเวลานั้น · ไม่ระบุ = คลินิกจัดคนที่ว่าง */}
                 {day !== null && time ? (
-                  <Panel flush>
-                    {[{ id: ANY_THERAPIST } as const, ...freeAt(day, time)].map((x, i, arr) => {
-                      const on = who === x.id;
-                      const t = 'name' in x ? x : null;
-                      return (
-                        <Pressable
-                          key={x.id}
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected: on }}
-                          accessibilityLabel={t ? t.name : 'ไม่ระบุแพทย์'}
-                          onPress={() => setWho(x.id)}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], padding: space[3], borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border.subtle }}
-                        >
-                          {t ? (
-                            <ProfileAvatar sex={t.sex} size={40} photo={t.photo} />
-                          ) : (
-                            <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.sunken }}>
-                              <Icon name="users" size="sm" color={colors.text.secondary} />
-                            </View>
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text variant="labelMd" numberOfLines={1}>
-                              {t ? t.name : 'ไม่ระบุ'}
-                            </Text>
-                            <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                              {t ? [t.role, t.years ? `${t.years} ปี` : ''].filter(Boolean).join(' · ') : 'คลินิกจัดผู้ที่ว่างให้'}
-                            </Text>
-                          </View>
-                          {t && t.id === preferred ? <Tag text="ดูแลอยู่" tone="good" /> : null}
-                          <Icon name={on ? 'check-circle' : 'circle'} size="sm" color={on ? colors.brand.primary : colors.border.strong} />
-                        </Pressable>
-                      );
-                    })}
-                  </Panel>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} snapToInterval={THERAPIST_CARD_W + space[3]} decelerationRate="fast" style={{ marginHorizontal: -space[4] }} contentContainerStyle={{ gap: space[3], paddingHorizontal: space[4] }}>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: any }} accessibilityLabel="ไม่ระบุแพทย์" onPress={() => setWho(ANY_THERAPIST)}>
+                      <AnyTherapistCard compact slots={[]} selected={any ? pick : null} onPick={() => undefined} />
+                    </Pressable>
+                    {freeAt(day, time).map((t) => (
+                      <Pressable key={t.id} accessibilityRole="radio" accessibilityState={{ selected: who === t.id }} accessibilityLabel={t.name} onPress={() => setWho(t.id)}>
+                        <TherapistCard t={t} compact badge={t.id === preferred ? 'ดูแลอยู่' : undefined} selected={who === t.id ? pick : null} />
+                      </Pressable>
+                    ))}
+                  </ScrollView>
                 ) : null}
               </>
             ) : (
