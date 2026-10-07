@@ -192,16 +192,44 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
       ) : null}
 
       {/* จองให้เรื่องไหน — มีหลายเรื่อง/ไม่ได้ระบุมา → เลือก (นัดไปอยู่ที่การ์ดของเรื่องนั้น) */}
+      {/* จองให้เรื่องไหน — แยกการ์ดทีละเรื่อง (เลือกได้หนึ่ง) · เรื่องที่ประเมินแล้วก่อน เรื่องใหม่ท้ายสุด */}
       {!fixed && pickable.length > 1 ? (
-        <Panel title="จองให้เรื่องไหน" flush>
-          {pickable.map((t, i) => (
-            <React.Fragment key={t.key}>
-              {/* เรื่องใหม่ (ยังไม่ได้ประเมิน) แยกจากเรื่องที่ประเมินแล้วด้วยแถบคั่น — ทางสำรอง ไม่ใช่ตัวเลือกแรก */}
-              {t.key === 'new' && i > 0 ? <View style={{ height: space[2], backgroundColor: colors.surface.sunken }} /> : null}
-              <Choice on={t.key === topicKey} title={t.title} sub={t.sub} onPress={() => pickTopic(t.key)} last={i === pickable.length - 1 || pickable[i + 1]?.key === 'new'} />
-            </React.Fragment>
-          ))}
-        </Panel>
+        <View style={{ gap: space[2] }}>
+          <Text variant="labelLg">จองให้เรื่องไหน</Text>
+          {pickable.map((t) => {
+            const on = t.key === topicKey;
+            return (
+              <Pressable
+                key={t.key}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`${t.title} ${t.sub ?? ''}`}
+                onPress={() => pickTopic(t.key)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: space[3],
+                  padding: space[4],
+                  borderRadius: 20,
+                  backgroundColor: colors.surface.default,
+                  borderWidth: on ? 2 : 1,
+                  borderColor: on ? colors.brand.primary : colors.border.subtle,
+                  opacity: pressed ? 0.85 : 1,
+                })}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text variant="labelMd">{t.title}</Text>
+                  {t.sub ? (
+                    <Text variant="bodyXs" tone="secondary">
+                      {t.sub}
+                    </Text>
+                  ) : null}
+                </View>
+                <Icon name={on ? 'check-circle' : 'circle'} size="sm" color={on ? colors.brand.primary : colors.text.tertiary} />
+              </Pressable>
+            );
+          })}
+        </View>
       ) : null}
       {/* การรักษาที่ทำอยู่ไม่อยู่ในรายการ → บอกเหตุผลสั้น ๆ */}
       {!fixed && cases.length ? (
