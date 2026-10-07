@@ -3922,7 +3922,18 @@ function DraftBento({
       <View style={{ gap: BENTO_GAP }}>
         {tabs}
         <SafetySheet visible={guideOpen} card={null} onClose={() => setGuideOpen(false)} onHospital={() => (setGuideOpen(false), onPlaces('doctor'))} />
-        <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
+        <FirstVisitCard
+          booking={b}
+          onCheckIn={onCheckIn}
+          onOpen={onOpen}
+          steps={
+            <>
+              {/* เลือกบริการเองไม่ตรงผลประเมิน → เตือน (ไม่บังคับ: แตะการ์ด = เปลี่ยนบริการ หรือกดใช้แผนเดิม) */}
+              {!d.keepService && serviceMismatch(b.service, d.caution) ? <StepRow warn text="บริการที่จองไม่ตรงผลประเมิน" /> : null}
+              <StepRow text={prep.join(' · ')} />
+            </>
+          }
+        />
         <TherapistTile name={b.therapist} width={width} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
           <SafetyTile width={halfW} extra={d.risk === 'มีประจำเดือน' ? ['งดนวดท้อง'] : undefined} onPress={() => setGuideOpen(true)} />
