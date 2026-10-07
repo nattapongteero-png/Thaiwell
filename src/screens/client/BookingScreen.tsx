@@ -92,7 +92,19 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
   /* ---------- บริการ ---------- */
   // ใบการรักษา = นวดเพื่อรักษาเท่านั้น (ไม่มีนวดผ่อนคลาย) · ข้อควรระวังเรื่องอบ/ประคบ → ไม่แนะนำประคบ
   const caution = draft?.caution ?? '';
-  const recommended: ServiceId = tc ? (tc.plan.includes('ประคบ') ? 'royal+compress' : 'royal') : draft && !/อบ|ประคบ/.test(caution) ? 'royal+compress' : 'royal';
+  /**
+   * บริการที่แนะนำของเรื่องนั้น — ตามแนวทางการรักษา (วิธีมีประคบ = นวด + ประคบ) เว้นแต่ข้อควรระวังให้งดประคบ/อบ
+   * การรักษาที่ทำอยู่ = ตามแผนของแพทย์ · เรื่องใหม่ (ยังไม่ประเมิน) = ไม่มีคำแนะนำ
+   */
+  const recommendedFor = (d?: typeof draft, c?: typeof tc): ServiceId | undefined => {
+    if (c) return c.plan.includes('ประคบ') ? 'royal+compress' : 'royal';
+    if (!d) return undefined;
+    const noCompress = /อบ|ประคบ/.test(d.caution ?? '');
+    const withCompress = d.guide ? d.guide.methods.some((m) => m.includes('ประคบ')) : true;
+    return withCompress && !noCompress ? 'royal+compress' : 'royal';
+  };
+  const recommended: ServiceId = recommendedFor(draft, tc) ?? 'royal';
+  const hasRecommendation = !!recommendedFor(draft, tc);
   const services = tc ? SERVICES.filter((x) => x.value !== 'relax') : SERVICES;
   const [service, setService] = React.useState<ServiceId>(pre?.service ?? recommended);
 
@@ -123,8 +135,10 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     setTopicKey(k);
     const t = topics.find((x) => x.key === k);
     const c = cases.find((x) => x.id === t?.caseId);
-    // ใบการรักษาไม่มีนวดผ่อนคลาย
-    if (c && service === 'relax') pickService(c.plan.includes('ประคบ') ? 'royal+compress' : 'royal');
+    const d = drafts.find((x) => x.id === t?.draftId);
+    // เลือกเรื่องที่ประเมินแล้ว → บริการตามแนวทางของเรื่องนั้น (เปลี่ยนเองได้) · ใบการรักษาไม่มีนวดผ่อนคลาย
+    const rec = recommendedFor(d, c);
+    if (rec && rec !== service) pickService(rec);
   };
   const pickLabel = pick ? `${any ? 'ไม่ระบุแพทย์' : picked?.name ?? ''} · ${pick.day} ${pick.time}` : null;
   // เวลาชนกับนัดอื่นของเรา (ไม่นับนัดเดิมของเรื่องนี้ที่กำลังเลื่อน) → จองซ้อนเวลาเดียวกันไม่ได้
@@ -301,7 +315,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
                 key={sv.value}
                 on={service === sv.value}
                 title={sv.label}
-                sub={[sv.style, sv.value === recommended && (draft || tc) ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
+                sub={[sv.style, sv.value === recommended && hasRecommendation ? 'แนะนำจากการประเมิน' : '', sv.uc ? 'บัตรทอง' : ''].filter(Boolean).join(' · ')}
                 onPress={() => pickService(sv.value)}
                 last={i === services.length - 1}
               />
