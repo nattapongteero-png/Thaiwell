@@ -15,6 +15,8 @@ export interface CloudUser {
 }
 
 const TH_ERRORS: [RegExp, string][] = [
+  [/EMAIL_NOT_FOUND/, 'ไม่พบบัญชีของอีเมลนี้ ตรวจอีเมลอีกครั้ง หรือสมัครบัญชี'],
+  [/WRONG_PASSWORD/, 'รหัสผ่านไม่ถูกต้อง'],
   [/invalid login credentials/i, 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'],
   [/already registered|already been registered|user already exists/i, 'อีเมลนี้สมัครไว้แล้ว ลองเข้าสู่ระบบ'],
   [/password should be at least|weak password/i, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'],
@@ -46,9 +48,30 @@ export async function signUp(email: string, password: string): Promise<{ user: C
   return { user: toUser(data.session?.user ?? null), needsConfirm: !data.session };
 }
 
+/**
+ * อีเมลนี้สมัครไว้หรือยัง (ฟังก์ชัน tw_email_registered ในฐานข้อมูล — docs/supabase/email-registered.sql)
+ * ไม่มีฟังก์ชัน/เชื่อมต่อไม่ได้ = null (ไม่รู้)
+ */
+async function emailRegistered(email: string): Promise<boolean | null> {
+  try {
+    const { data, error } = await cloud.rpc('tw_email_registered', { p_email: email.trim().toLowerCase() });
+    return error || typeof data !== 'boolean' ? null : data;
+  } catch {
+    return null;
+  }
+}
+
 export async function signIn(email: string, password: string): Promise<CloudUser> {
   const { data, error } = await cloud.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-  if (error) throw error;
+  if (error) {
+    // Supabase ตอบเหมือนกันทั้งอีเมลไม่มี/รหัสผิด → ถามว่าอีเมลนี้สมัครไว้ไหม เพื่อบอกให้ตรงจุด
+    if (/invalid login credentials/i.test(error.message)) {
+      const known = await emailRegistered(email);
+      if (known === false) throw new Error('EMAIL_NOT_FOUND');
+      if (known === true) throw new Error('WRONG_PASSWORD');
+    }
+    throw error;
+  }
   return toUser(data.user)!;
 }
 
