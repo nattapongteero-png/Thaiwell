@@ -419,7 +419,12 @@ function Choice({ on, title, sub, onPress, last, badge }: { on: boolean; title: 
             </Text>
           ) : null}
         </View>
-        {badge ? <Badge label={badge} tone="brand" /> : null}
+        {/* ป้ายทึบ (แถวที่เลือกพื้นเขียวอ่อน ป้ายพื้นอ่อนจะกลืนไป) */}
+        {badge ? (
+          <View style={{ alignSelf: 'center' }}>
+            <Badge label={badge} tone="brand" icon="star" solid />
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
