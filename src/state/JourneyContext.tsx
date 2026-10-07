@@ -137,7 +137,7 @@ export interface DraftCase {
   /** บริเวณที่ไม่ต้องการให้นวด */
   avoid?: string;
   /** แนวทางที่ AI แนะนำ (จากการ์ดแนวทางในแชท) — ยังไม่ใช่แผนของแพทย์ */
-  guide?: { condition?: string; methods: string[] };
+  guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string };
   radiate?: string;
   /** ผู้ใช้เลือกคงบริการที่จองไว้ แม้ไม่ตรงผลประเมิน (ไม่บังคับเปลี่ยน · ไม่เตือนซ้ำ) */
   keepService?: boolean;

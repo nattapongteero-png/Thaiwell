@@ -57,6 +57,7 @@ import {
   IconBox,
   TINT,
   BottomSheet,
+  Button,
 } from '../../design-system';
 import { useJourney, type DraftCase, type PlannedVisit } from '../../state/JourneyContext';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
@@ -486,17 +487,32 @@ export function HomeScreen() {
   const modelTag = (() => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บอกแค่จุดที่ปวด (ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ)
-    if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    if (selDraft) return { title: selDraft.symptoms.join(' ') || selDraft.title, sub: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : 'จุดที่ปวด', color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain), pin: selDraft.symptoms.map((c) => CHIP_PINS[c]?.[0]).find(Boolean) };
     if (selCase && cases.length) {
       const lv = tcase.visits[tcase.visits.length - 1];
       const t = caseToday[tcase.id];
       const v = t?.pain ?? lv?.selfPain ?? lv?.painAfter;
       if (v === undefined) return null;
-      const area = tcase.areas.slice(0, 2).map((a) => a.label).join(' ') || tcase.short;
-      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v) };
+      // ชื่อจุดที่ป้ายชี้ (จุดแรก) — ป้ายแคบ ไม่บังหุ่น
+      const area = tcase.areas[0]?.label ?? tcase.short;
+      return { title: `${area} · ปวด ${v}/10`, sub: t ? (t.red ? 'ควรพบแพทย์ก่อนนวด' : 'ประเมินก่อนนวดครั้งนี้') : `หลังนวดครั้งที่ ${tcase.visits.length}`, color: t?.red ? colors.status.danger.fg : painColorOf(v), pin: tcase.areas[0]?.pin };
     }
     return null;
   })();
+  /** ตำแหน่งบนจอของจุดที่ป้ายชี้ (หุ่นโหลด/ขยับเข้าที่ช้ากว่าหน้า → อ่านซ้ำช่วงแรก) */
+  const [tagAt, setTagAt] = React.useState<{ x: number; y: number } | null>(null);
+  const tagPin = modelTag?.pin;
+  React.useEffect(() => {
+    setTagAt(null);
+    if (!tagPin) return;
+    let n = 0;
+    const t = setInterval(() => {
+      const q = bodyRef.current?.projectPin(tagPin);
+      if (q) setTagAt((o) => (o && Math.abs(o.x - q.x) < 1 && Math.abs(o.y - q.y) < 1 ? o : q));
+      if (++n > 20) clearInterval(t);
+    }, 250);
+    return () => clearInterval(t);
+  }, [tagPin, started]);
 
   /** แตะบนหุ่น → เลือก chip ของส่วนนั้น (หรือเพิ่ม chip ใหม่) · แตะจุดเดิม → ยกเลิก · ใช้ได้ระหว่างถามอาการ/อาการร่วม */
   /** โหมด focus: mark ที่อยู่ใกล้ตำแหน่งแตะ (ระยะนิ้ว 44px) → ลำดับขั้น */
@@ -990,7 +1006,7 @@ export function HomeScreen() {
         radiate: after.radiate,
         guide: (() => {
           const g = results.find((r) => r.card?.type === 'guideline')?.card;
-          return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods } : old?.guide;
+          return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution } : old?.guide;
         })(),
       });
       setActiveDraftId(id);
@@ -2326,17 +2342,44 @@ export function HomeScreen() {
       </Animated.View>
       {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
       {modelTag ? (
-        <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4], maxWidth: winW * 0.42, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
-          <View style={{ flexShrink: 1 }}>
-            <Text variant="labelMd" numberOfLines={1}>
-              {modelTag.title}
-            </Text>
-            <Text variant="caption" tone="secondary" numberOfLines={1}>
-              {modelTag.sub}
-            </Text>
-          </View>
-        </View>
+        (() => {
+          // ป้ายอยู่ข้างจุดบนหุ่น + เส้นชี้ · จุดอยู่ครึ่งขวาของจอ → ป้ายไปซ้าย · ยังไม่รู้ตำแหน่ง = มุมขวาใต้แท็บ
+          const LINE = 24;
+          // ฝั่งที่มีที่ว่างพอ (ป้ายกว้างราว 170) · ไม่พอทั้งสองฝั่ง = ฝั่งที่กว้างกว่า แล้วตัดข้อความ
+          const roomR = tagAt ? winW - tagAt.x - 6 - LINE - space[4] : 0;
+          const roomL = tagAt ? tagAt.x - 6 - LINE - space[4] : 0;
+          const left = roomR >= 170 || roomR >= roomL;
+          const box = (
+            <View style={{ maxWidth: winW * 0.5, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: space[2], paddingVertical: space[2], paddingHorizontal: space[3], borderRadius: 16, backgroundColor: colors.surface.default, ...elevation[2] }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: modelTag.color }} />
+              <View style={{ flexShrink: 1 }}>
+                <Text variant="labelMd" numberOfLines={1}>
+                  {modelTag.title}
+                </Text>
+                <Text variant="caption" tone="secondary" numberOfLines={1}>
+                  {modelTag.sub}
+                </Text>
+              </View>
+            </View>
+          );
+          if (!tagAt) return <View style={{ position: 'absolute', top: headerBottom + space[3], right: space[4] }}>{box}</View>;
+          return (
+            <View
+              style={{
+                position: 'absolute',
+                top: Math.max(headerBottom + space[2], tagAt.y - 24),
+                height: 48,
+                justifyContent: 'center',
+                ...(left ? { left: tagAt.x + 6, right: space[4] } : { right: winW - tagAt.x + 6, left: space[4] }),
+                flexDirection: left ? 'row' : 'row-reverse',
+                alignItems: 'center',
+              }}
+            >
+              <View style={{ width: LINE, height: 1.5, backgroundColor: colors.text.tertiary }} />
+              {box}
+            </View>
+          );
+        })()
       ) : null}
       </Animated.View>
 
@@ -3845,6 +3888,7 @@ function DraftBento({
   const near = nearestClinic();
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
+  const [guideOpen, setGuideOpen] = React.useState(false);
 
   // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
   const avoid = d.caution ? d.caution.split(' · ') : [];
@@ -3870,10 +3914,11 @@ function DraftBento({
     return (
       <View style={{ gap: BENTO_GAP }}>
         {tabs}
+        <GuideSheet visible={guideOpen} onClose={() => setGuideOpen(false)} guide={d.guide} />
         <FirstVisitCard booking={b} onCheckIn={onCheckIn} onOpen={onOpen} steps={<StepRow text={prep.join(' · ')} />} />
         <TherapistTile name={b.therapist} width={width} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-          <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} />
+          <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} onPress={() => setGuideOpen(true)} />
           <View pointerEvents="none">
             <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           </View>
@@ -3916,6 +3961,16 @@ function DraftBento({
   return (
     <View style={{ gap: BENTO_GAP }}>
       {tabs}
+      <GuideSheet
+        visible={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        guide={d.guide}
+        onBook={() => {
+          setGuideOpen(false);
+          if (near) onBook(near.name);
+          else onPlaces();
+        }}
+      />
 
       {/* 1) การ์ดหลักเต็มแถว */}
       {d.red ? (
@@ -3989,7 +4044,7 @@ function DraftBento({
           served ? (
             <PlanTile width={halfW} plan="นวดราชสำนัก" done={1} total={6} values={d.after !== undefined ? [d.after] : []} />
           ) : (
-            <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} />
+            <GuideTile width={halfW} guide={d.guide} symptoms={d.symptoms} onPress={() => setGuideOpen(true)} />
           )
         )}
         <View pointerEvents="none">
@@ -4380,12 +4435,12 @@ function PlannedSheet({ visible, onClose, tc, visits }: { visible: boolean; onCl
  * แนวทางที่แนะนำ (ยังไม่ได้รักษา) — จากผลประเมินของ AI · ไม่ใช่แผนของแพทย์ จึงไม่มีจำนวนครั้ง
  * จำนวนครั้ง/ความถี่ แพทย์กำหนดหลังตรวจที่คลินิก (มาเป็นแผนการรักษาภายหลัง)
  */
-function GuideTile({ width, guide, symptoms }: { width: number; guide?: { condition?: string; methods: string[] }; symptoms: string[] }) {
+function GuideTile({ width, guide, symptoms, onPress }: { width: number; guide?: DraftCase['guide']; symptoms: string[]; /** เปิดแนวทางเต็ม (bottom sheet) */ onPress?: () => void }) {
   const { colors } = useTheme();
   // 2 ข้อแรก (สูงเท่าการ์ดผลประเมินข้าง ๆ) · รายละเอียดเต็มอยู่ในแชท
   const methods = (guide?.methods ?? []).slice(0, 2).map((m) => m.replace(/\s*\d+(?:[–-]\d+)?\s*(?:นาที|วินาที).*$/, '')); // ตัดเวลา (ดูเต็มในแชท)
   return (
-    <Tile style={{ width, gap: space[2] }}>
+    <Tile style={{ width, gap: space[2] }} onPress={guide ? onPress : undefined} accessibilityLabel="แนวทางที่แนะนำ ดูรายละเอียด">
       <TileTitle title="แนวทางที่แนะนำ" />
       <Text variant="titleSm" numberOfLines={2}>
         {guide?.condition ?? (symptoms.join(' ') || 'ตามผลประเมิน')}
@@ -4402,6 +4457,53 @@ function GuideTile({ width, guide, symptoms }: { width: number; guide?: { condit
         แพทย์วางแผนจำนวนครั้งหลังตรวจ
       </Text>
     </Tile>
+  );
+}
+
+/** แนวทางเต็ม (ชุดเดียวกับการ์ดแนวทางในแชท) — ดูก่อนตัดสินใจจองจากหน้าแรก */
+function GuideSheet({ visible, onClose, guide, onBook }: { visible: boolean; onClose: () => void; guide?: DraftCase['guide']; /** ยังไม่จอง → จองตามแนวทางนี้ */ onBook?: () => void }) {
+  const { colors } = useTheme();
+  if (!guide) return null;
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="แนวทางที่แนะนำ" footer={onBook ? <Button label="จองตามแนวทางนี้" iconLeft="calendar" onPress={onBook} /> : undefined}>
+      {guide.condition ? <Text variant="titleMd">{guide.condition}</Text> : null}
+      <Panel icon="clipboard" tint={TINT.green} title="วิธีรักษา">
+        {guide.methods.map((m) => (
+          <View key={m} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[2] }}>
+            <View style={{ marginTop: 3 }}>
+              <Icon name="check-circle" size="xs" color={colors.brand.primary} />
+            </View>
+            <Text variant="bodySm" style={{ flex: 1 }}>
+              {m}
+            </Text>
+          </View>
+        ))}
+      </Panel>
+      <Panel icon="target" tint={TINT.amber} title="จุดกดบำบัด">
+        {guide.points?.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
+            {guide.points.map((pt) => (
+              <View key={pt} style={{ paddingHorizontal: space[3], height: 30, justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.surface.sunken }}>
+                <Text variant="labelSm">{pt}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          // ตำราไม่ได้ระบุจุดสำหรับบริเวณนี้ → ไม่แต่งจุดขึ้นเอง
+          <Text variant="bodySm" tone="secondary">
+            แพทย์แผนไทยเลือกจุดกดให้หน้างาน
+          </Text>
+        )}
+      </Panel>
+      {guide.caution ? (
+        <Panel icon="alert-triangle" tint={TINT.amber} title="ข้อควรระวัง">
+          <Text variant="bodySm">{guide.caution}</Text>
+        </Panel>
+      ) : null}
+      <Text variant="bodyXs" tone="tertiary">
+        ผู้ให้บริการยืนยันอีกครั้งก่อนเริ่ม · แพทย์วางแผนจำนวนครั้งหลังตรวจ
+      </Text>
+    </BottomSheet>
   );
 }
 
