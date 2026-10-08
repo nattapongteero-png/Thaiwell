@@ -349,13 +349,16 @@ export function HomeScreen() {
   /** หัวข้อ "เรื่องเดิมหรืออาการใหม่" — ถามเฉพาะเมื่อมีใบอยู่แล้ว */
   /** ยังไม่มีข้อมูลอะไรเลย → หน้าแรกคือแชท (คำถามแนะนำ) · ไม่มีปุ่มออกจากแชท */
   // ยังไม่มีใบร่าง/ใบการรักษา
-  const noRecords = newPatient && drafts.length === 0 && promoted.length === 0;
+  /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
+  // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
+  // จบคอร์สแล้ว (ครบครั้งและไม่มีนัดค้าง) → ไม่อยู่บนแท็บหน้าแรก (ดูได้ที่ประวัติการรักษา "รักษาจบแล้ว")
+  const cases = React.useMemo(() => allCases.filter((c) => !c.finished), [allCases]);
+  // เรื่องที่จบคอร์สแล้วไม่นับ (ไม่มีเรื่องที่ดูแลอยู่ = หน้าต้อนรับ เริ่มประเมินเรื่องใหม่)
+  const noRecords = newPatient && drafts.length === 0 && !promoted.some((p) => !allCases.find((c) => c.id === p.id)?.finished);
   // จองไว้ก่อนประเมิน → หน้าแรกแบบปกติ (หุ่น + แผ่นการ์ด) แสดงเฉพาะข้อมูลนัด · ไม่มีอะไรเลย = หน้าต้อนรับ
   const bookedOnly = noRecords && looseBookings.length > 0;
   const chatHome = noRecords && !looseBookings.length;
-  /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
-  // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
   const allAppts = useAllAppointments();
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;

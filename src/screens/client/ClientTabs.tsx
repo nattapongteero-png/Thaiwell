@@ -47,8 +47,9 @@ export function ProgressScreen() {
   const { colors } = useTheme();
   // ใบการรักษาชุดเดียวกับหน้าแรก (รวมครั้งที่นวดเพิ่ม/นัดที่เปลี่ยน) · ยังไม่มีครั้งการรักษา = ไม่แสดงในประวัติ
   const { newPatient, cases } = useJourney();
-  const active = cases.filter((c) => c.visits.length > 0);
-  const done = newPatient ? [] : ARCHIVED_CASES;
+  const active = cases.filter((c) => c.visits.length > 0 && !c.finished);
+  // จบคอร์สแล้ว (ครบครั้ง ไม่มีนัดค้าง) → รักษาจบแล้ว · ล่าสุดก่อน
+  const done = [...cases.filter((c) => c.finished && c.visits.length > 0).reverse(), ...(newPatient ? [] : ARCHIVED_CASES)];
   /** การ์ดเรื่องที่รักษา (แบบรายการผู้มารับบริการของหลังบ้าน): ไอคอน · ชื่อ · ครั้ง/ช่วงวัน · ดีขึ้น % · ป้ายคะแนนหลังนวดล่าสุด */
   const Row = ({ c, finished }: { c: TreatmentCase; finished?: boolean }) => {
     const first = c.visits[0];

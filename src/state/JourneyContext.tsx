@@ -872,18 +872,25 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const cancelled = cancelledAppts.includes(c.id);
         const sp = selfPains[c.id];
         const visits = [...c.visits, ...extra].map((v, i) => (visitRecords[`${c.id}:${i}`] ? { ...v, record: visitRecords[`${c.id}:${i}`] } : v));
+        const done = Math.min(c.course.total, c.course.done + extra.length);
+        const appointment = cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage } : c.appointment;
+        // ครั้งที่ใช้ไป: นับจากในแอป หรือจากคลินิก (เรื่องที่ผูกกับคลินิก) แล้วแต่อันไหนมากกว่า — ชุดเดียวกับการ์ดแผนการรักษา
+        const bridged = Object.values(bridgedCase.current).includes(c.id);
+        const total = bridged && clinicCourse ? clinicCourse.total : c.course.total;
+        const used = Math.max(done, bridged && clinicCourse ? clinicCourse.used : 0);
         return {
+          finished: used >= total && appointment.date === '-',
           ...c,
           // คะแนนหลังนวดที่ผู้ใช้ประเมินเอง → ครั้งล่าสุด
           visits: sp && sp.n === visits.length ? visits.map((v, i) => (i === visits.length - 1 ? { ...v, selfPain: sp.v } : v)) : visits,
           // ครั้งที่นวดเพิ่ม → มีรอบติดตามผลของครั้งนั้น (ล่าสุดอยู่หน้า)
           pending: [...extra.map((v, i) => ({ id: `sess-${c.id}-${c.visits.length + i + 1}`, date: v.date, plan: c.plan, areas: c.areas })).reverse(), ...c.pending],
-          course: { ...c.course, done: Math.min(c.course.total, c.course.done + extra.length) },
+          course: { ...c.course, done },
           therapist: a?.therapist || c.therapist,
-          appointment: cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage } : c.appointment,
+          appointment,
         };
       }),
-    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains, visitRecords],
+    [newPatient, promoted, caseAppts, cancelledAppts, caseVisits, selfPains, visitRecords, clinicCourse],
   );
   casesRef.current = cases;
   const nowAt = () => {

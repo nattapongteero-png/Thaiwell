@@ -444,6 +444,8 @@ export interface PendingSession {
  */
 export interface TreatmentCase {
   id: string;
+  /** ครบคอร์สและไม่มีนัดค้าง → จบเรื่องนี้ (ย้ายไปประวัติ "รักษาจบแล้ว" · ไม่อยู่บนแท็บหน้าแรก) */
+  finished?: boolean;
   /** ชื่อโรค/ปัญหา */
   condition: string;
   /** ชื่อสั้นบนตัวเลือกใบการรักษา */
