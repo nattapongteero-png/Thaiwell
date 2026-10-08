@@ -4246,6 +4246,7 @@ function FirstVisitCard({
               <TilePill icon="file-text" label="รายละเอียด" dark={false} />
             </Pressable>
           )}
+          <CallIconButton clinic={b.clinic} />
         </View>
       ) : pending ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
@@ -4257,6 +4258,7 @@ function FirstVisitCard({
               <TilePill icon="edit-3" label="ประเมินอีกครั้ง" dark={false} />
             </Pressable>
           ) : null}
+          <CallIconButton clinic={b.clinic} />
         </View>
       ) : today ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
@@ -4271,6 +4273,7 @@ function FirstVisitCard({
             </Pressable>
           )}
           <NavIconButton clinic={b.clinic} />
+          <CallIconButton clinic={b.clinic} />
         </View>
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
@@ -4282,6 +4285,7 @@ function FirstVisitCard({
               <TilePill icon="edit-3" label="ประเมินอีกครั้ง" dark={false} />
             </Pressable>
           ) : null}
+          <CallIconButton clinic={b.clinic} />
         </View>
       )}
     </Tile>
@@ -4313,20 +4317,6 @@ function BookingBento({ width, booking: b, onCheckIn, onEdit, onAssess }: { widt
           </Text>
         </Tile>
       ) : null}
-      <Tile style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <TileTitle title="ติดต่อคลินิก" />
-          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-            {b.clinic}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-          <Icon name="phone" size="xs" color={colors.brand.primary} />
-          <Text variant="bodySm" color={colors.brand.primary}>
-            {clinicPhone(b.clinic)}
-          </Text>
-        </View>
-      </Tile>
     </View>
   );
 }
@@ -4595,7 +4585,7 @@ function DraftBento({
       </Tile>
     ) : null;
 
-  // จองแล้ว → โครงเดียวกับหลังรักษา (HomeBento): นัดเต็มแถว → แผนการรักษา | ผลประเมิน (สูงเท่ากัน) → ดูแลตัวเอง | ติดต่อคลินิก
+  // จองแล้ว → โครงเดียวกับหลังรักษา (HomeBento): นัดเต็มแถว (ปุ่มโทรหาคลินิกในการ์ดนัด) → แผนการรักษา | ผลประเมิน (สูงเท่ากัน) → ดูแลตัวเอง | ไม่ต้องการ
   if (booked && b) {
     return (
       <View style={{ gap: BENTO_GAP }}>
@@ -4640,15 +4630,6 @@ function DraftBento({
             <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           <View style={{ width: halfW, gap: BENTO_GAP }}>
-            <Tile style={{ gap: space[1], justifyContent: 'space-between' }} onPress={() => callClinic(b.clinic)} accessibilityLabel={`โทรหา ${b.clinic}`}>
-              <TileTitle title="ติดต่อคลินิก" />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
-                <Icon name="phone" size="xs" color={colors.brand.primary} />
-                <Text variant="bodyXs" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-                  {clinicPhone(b.clinic)}
-                </Text>
-              </View>
-            </Tile>
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
           </View>
         </View>
