@@ -56,6 +56,8 @@ export interface ClinicRequest {
   painScore: number;
   /** ประเมินอาการแล้วหรือยัง (จองก่อนประเมิน = false → ไม่ส่งค่าเริ่มต้น ให้หลังบ้านขึ้น "ไม่ได้ประเมิน") */
   assessed?: boolean;
+  /** ตอบข้อห้ามนวดแล้ว (ตอบ "ไม่มี" ก็นับ) → หลังบ้านแสดง "ไม่มี" รายข้อ ไม่ใช่ "ไม่ได้ประเมิน" */
+  screened?: boolean;
   screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
   intake?: {
     at: string;
@@ -75,6 +77,7 @@ export interface ClinicRequest {
     pressure: 'เบา' | 'ปานกลาง' | 'หนัก';
     injury?: string;
     surgery?: string;
+    allergy?: string;
   };
   note?: string;
   submittedAt: string;

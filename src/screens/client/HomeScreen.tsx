@@ -1100,6 +1100,8 @@ export function HomeScreen() {
         conditionsKnown: healthKnownOf(profile, 'conditions') || after.health !== undefined,
         medicationsKnown: healthKnownOf(profile, 'medications') || after.meds !== undefined,
         // ข้อห้ามช่วงนี้ → กฎใน safetyEngine (ผ่าตัด/บาดเจ็บ/ไข้/ตั้งครรภ์/แผล)
+        // แพ้น้ำมันนวด/สมุนไพร → บันทึกในประวัติแพ้ (หลังบ้านแสดงในข้อ "การแพ้")
+        allergies: after.risk === 'แพ้น้ำมันนวด/สมุนไพร' && !profile.allergies.includes(after.risk) ? [...profile.allergies, after.risk] : profile.allergies,
         surgeryWithin1Month: after.risk === RISK_OPTIONS[0],
         injuryWithin48h: after.risk === RISK_OPTIONS[1],
         pregnant: after.risk === RISK_OPTIONS[3],

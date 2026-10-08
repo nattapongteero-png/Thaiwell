@@ -151,6 +151,20 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
             conditions: it?.conditions ?? patient.conditions,
             pressure: it?.pressure ?? 'ปานกลาง',
             screening: request.screening,
+            // ตอบข้อห้ามแล้ว (รวม "ไม่มี") → หลังบ้านแสดงผลรายข้อ ไม่ใช่ "ไม่ได้ประเมิน"
+            ...(request.screened ? { screened: true } : {}),
+            // ข้อที่ถามในแชทแล้ว (ยา · ผิวหนัง · ชา/อ่อนแรง · บาดเจ็บ · ผ่าตัด · แพ้) — ส่งไว้ให้หลังบ้านอ่านได้
+            ...(it
+              ? {
+                  medications: it.medications,
+                  bloodThinner: it.bloodThinner,
+                  skin: it.skin,
+                  numbness: it.numbness,
+                  ...(it.injury ? { injury: it.injury } : {}),
+                  ...(it.surgery ? { surgery: it.surgery } : {}),
+                  ...(it.allergy ? { allergy: it.allergy } : {}),
+                }
+              : {}),
             summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
           },
   });
@@ -188,6 +202,8 @@ export async function cloudPreVisit(id: string, pv: { at: string; pain: number; 
     pain: pv.pain,
     summary: pv.summary,
     screening: { ...((top.screening as object) ?? {}), ...pv.screening },
+    // ตอบแบบคัดกรองก่อนนวดครั้งนี้แล้ว (ตอบ "ไม่มี" ก็นับ)
+    screened: true,
     previsit: { adverse: pv.adverse, risk: pv.risk, red: !!pv.red },
   };
   const { error } = await cloud.from('tw_appointments').update({ assessment }).eq('id', id);

@@ -607,6 +607,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       start: b.time,
       painScore: caseBk?.pain ?? d?.pain ?? 0,
       assessed: !!caseBk || !!d,
+      screened: !!d?.risk,
       screening: { fever: /ไข้/.test(risk), highBP: pf.conditions.some((c) => /ความดัน/.test(c)), menstruation: /ประจำเดือน/.test(risk), pregnant: /ตั้งครรภ์/.test(risk), recentSurgery: /ผ่าตัด/.test(risk), contagious: /โรคติดต่อ/.test(risk) },
       intake: d
         ? {
@@ -621,12 +622,13 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
             medications: pf.medications,
             bloodThinner: pf.medications.some((m) => /ละลายลิ่มเลือด|warfarin|aspirin/i.test(m)),
             skin: /แผล|ผื่น/.test(risk) ? 'มีแผลหรือผื่น' : 'ปกติ',
-            numbness: /ชา|อ่อนแรง/.test(d.radiate ?? ''),
+            numbness: /ชา|อ่อนแรง/.test(d.radiate ?? '') || (d.related ?? []).some((x) => /ชา|อ่อนแรง/.test(x)),
             fever: /ไข้/.test(risk),
             pregnant: /ตั้งครรภ์/.test(risk) ? true : null,
             pressure: d.pressure === 'หนัก' || d.pressure === 'เบา' ? d.pressure : 'ปานกลาง',
             injury: /บาดเจ็บ/.test(risk) ? risk : undefined,
             surgery: /ผ่าตัด/.test(risk) ? risk : undefined,
+            allergy: /แพ้/.test(risk) ? risk : pf.allergies.join(', ') || undefined,
           }
         : undefined,
       note: d?.caution,
