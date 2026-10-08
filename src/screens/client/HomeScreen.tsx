@@ -216,7 +216,7 @@ const THINK_MS = 1800;
 /** ขอแก้ข้อมูลที่ตอบไปแล้ว */
 const EDIT_ASK = /แก้|เปลี่ยน|ผิด|ไม่ใช่|จริง\s*ๆ|ที่จริง|อัปเดต|อัพเดท/;
 /** ขอดูผลการรักษา (เช่น "ขอผลครั้งที่ 1" "ผลการนวดเป็นยังไง") */
-const RESULT_ASK = /ผล\s*(การ)?\s*(รักษา|ประเมิน|นวด)|(ขอ|ดู|เปิด)\s*ผล|ผล\s*(ของ)?\s*ครั้ง/;
+const RESULT_ASK = /ผล\s*(การ)?\s*(รักษา|นวด)|(ขอ|ดู|เปิด)\s*ผล(?!\s*(การ)?\s*ประเมิน)|ผล\s*(ของ)?\s*ครั้ง/;
 /** สถานะในแถบเสียงของแชท */
 const VOICE_STATUS: Record<VoicePhase, string> = {
   off: '',
@@ -2180,7 +2180,7 @@ export function HomeScreen() {
     const pend = pendingNow();
     // แชทของเรื่องที่รักษาอยู่: ขอดูผลการรักษา (พิมพ์/พูดเมื่อไหร่ก็ได้ ไม่ต้องมีเมนูค้างอยู่) → การ์ดผลการรักษาเหมือนกดเมนู
     const cc = chatCase();
-    if (cc && (!pend || pend.item?.card?.type === 'intents') && RESULT_ASK.test(text))
+    if (cc && (!pend || pend.item?.card?.type === 'intents') && RESULT_ASK.test(text) && !EDIT_ASK.test(text))
       return aiReply(activeId, text, () => [{ id: `h-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `ผลการรักษา${cc.short}ค่ะ`, card: { type: 'history', caseId: cc.id } }]);
     const lastCard = thread[thread.length - 1]?.card;
     // ตอบข้อประเมิน/ติดตามผลแบบสั้น ๆ → ส่งเข้าข้อนั้นเลย
@@ -2271,7 +2271,9 @@ export function HomeScreen() {
           ]);
         }
         // ขอแก้ข้อมูลที่บันทึกไป (หน้าทบทวน / ประเมินเสร็จแล้ว) — พูดแบบถาม ("ช่วยแก้ปวดเป็น 5 ได้ไหม") ก็ถือเป็นการแก้
-        const editing = st === 'review' || (st === 'done' && !tc && EDIT_ASK.test(text));
+        // แชทของเรื่องที่รักษา: แก้ได้เมื่อแชทนี้มีผลประเมิน (ประเมินในแชทนี้แล้ว)
+        const assessedHere = thread.some((m) => m.card?.type === 'guideline' || m.card?.type === 'review' || m.card?.type === 'safety');
+        const editing = st === 'review' || (st === 'done' && (!tc || assessedHere) && EDIT_ASK.test(text));
         if (editing && (turn.kind === 'answer' || turn.kind === 'change' || turn.kind === 'question' || turn.kind === 'unclear')) {
           if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health }));
           setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
