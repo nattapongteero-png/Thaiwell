@@ -128,6 +128,7 @@ import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type Eleme
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
 import { Chip as DetailChip, afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
+import { EMERGENCY } from '../../data/emergency';
 import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
 
 /** Figma: image 1 — 232×583 วางชิดขวา (แทนด้วยหุ่น 3D) */
@@ -1272,7 +1273,7 @@ export function HomeScreen() {
     newChat();
   };
   /** มาจากเช็กอิน "ประเมินก่อนนวด" → เปิดเรื่องนั้นแล้วเริ่มถามในแชทของเรื่องนั้น */
-  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string } }>();
+  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string; voiceText?: string } }>();
   const assessFor = React.useRef<string | null>(null);
   React.useEffect(() => {
     const id = route.params?.assessCase;
@@ -2110,6 +2111,29 @@ export function HomeScreen() {
     if (pend && shortOk && isPlainAnswer(text, pend.options)) return routeAnswer(text);
     triage(text, pend);
   };
+  /**
+   * สรุปจากโหมดเสียง → แชทใหม่ แล้วส่งสรุปเหมือนผู้ใช้พิมพ์เล่า (ระบบดึงอาการ/คะแนน/ระยะเวลา แล้วถามข้อที่ยังขาด)
+   * แชทใหม่ไม่ถาม "เรื่องเดิมหรืออาการใหม่" (เล่ามาแล้วว่าเป็นอะไร)
+   */
+  const [voicePending, setVoicePending] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const v = route.params?.voiceText;
+    if (!v) return;
+    nav.setParams({ voiceText: undefined } as never);
+    setVoicePending(v);
+    newChat(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.voiceText]);
+  React.useEffect(() => {
+    if (!voicePending || active.items.some((m) => m.from === 'user')) return;
+    if (assess.step === 'topic') {
+      setAssess((a) => ({ ...a, step: 'idle' }));
+      return;
+    }
+    setVoicePending(null);
+    send(voicePending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voicePending, activeId, assess.step]);
   const triage = (text: string, pend: ReturnType<typeof pendingNow>) => {
     const sid = activeId;
     const time = nowTimeText();
@@ -3460,8 +3484,6 @@ export function HistoryBento({ tc, onAll }: { tc: TreatmentCase; onAll?: () => v
 }
 
 const PAIN_CHIPS = Array.from({ length: 11 }, (_, i) => `${i}`);
-/** อาการฉุกเฉินในข้อความ → เตือนทันทีโดยไม่รอ AI (สัญญาณเตือนหลอดเลือดสมอง/หัวใจ — หน้า RedFlag) */
-const EMERGENCY = /เจ็บหน้าอก|แน่นหน้าอก|หายใจไม่ออก|หายใจลำบาก|หายใจไม่ทัน|อ่อนแรงครึ่ง|แขนขาอ่อนแรงข้างเดียว|ชาครึ่งซีก|ปากเบี้ยว|หน้าเบี้ยว|พูดไม่ชัด|พูดลำบาก|ชักกระตุก|หมดสติ|ปวดหัวรุนแรงเฉียบพลัน|ปวดศีรษะรุนแรงเฉียบพลัน/;
 
 const nowTimeText = () => {
   const d = new Date();

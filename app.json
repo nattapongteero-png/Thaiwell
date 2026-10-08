@@ -18,7 +18,13 @@
     },
     "plugins": [
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "ใช้ไมค์เมื่อคุณเลือกเล่าอาการด้วยเสียงกับ ThaiWell AI (ถอดเสียงเป็นข้อความ ไม่เก็บไฟล์เสียง)"
+        }
+      ]
     ]
   }
 }
