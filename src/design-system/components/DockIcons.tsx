@@ -12,7 +12,7 @@ export type DockIconName = 'home' | 'places' | 'history' | 'profile' | 'queue' |
 const ACTIVE_FILL = 'rgba(21,128,61,0.16)';
 
 /**
- * ไอคอนแท็บเมนู = ชุด line-md · กดเลือกแท็บ (ไม่ได้เลือก → เลือก) = เล่น animation วาดเส้น 1 รอบ · เปิดแอปครั้งแรกไม่เล่น
+ * ไอคอนแท็บเมนู = ชุด Lucide (วาดเส้นทีละเส้น) · กดเลือกแท็บ (ไม่ได้เลือก → เลือก) = เล่น animation วาดเส้น 1 รอบ · เปิดแอปครั้งแรกไม่เล่น
  * ไม่มีใน line-md → ไอคอนเดิมของ dock
  */
 export function DockIcon(props: { name: DockIconName; color: string; size?: number; active?: boolean }) {
