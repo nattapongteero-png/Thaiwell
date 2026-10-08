@@ -213,6 +213,8 @@ const FOCUS_SCALE = 0.94;
 const DRAG_SLOP = 6;
 /** เวลาจำลองที่ AI ใช้คิดก่อนตอบ (ยังไม่เชื่อม AI จริง) */
 const THINK_MS = 1800;
+/** ขอดูผลการรักษา (เช่น "ขอผลครั้งที่ 1" "ผลการนวดเป็นยังไง") */
+const RESULT_ASK = /ผล\s*(การ)?\s*(รักษา|ประเมิน|นวด)|(ขอ|ดู|เปิด)\s*ผล|ผล\s*(ของ)?\s*ครั้ง/;
 /** สถานะในแถบเสียงของแชท */
 const VOICE_STATUS: Record<VoicePhase, string> = {
   off: '',
@@ -2167,6 +2169,10 @@ export function HomeScreen() {
       return reply(text, 'ส่งให้ผู้ให้บริการแล้วค่ะ ผลประเมินเดิมยังอยู่ ผู้ให้บริการจะเห็นข้อความนี้แยกไว้');
     }
     const pend = pendingNow();
+    // แชทของเรื่องที่รักษาอยู่: ขอดูผลการรักษา (พิมพ์/พูดเมื่อไหร่ก็ได้ ไม่ต้องมีเมนูค้างอยู่) → การ์ดผลการรักษาเหมือนกดเมนู
+    const cc = chatCase();
+    if (cc && (!pend || pend.item?.card?.type === 'intents') && RESULT_ASK.test(text))
+      return aiReply(activeId, text, () => [{ id: `h-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: `ผลการรักษา${cc.short}ค่ะ`, card: { type: 'history', caseId: cc.id } }]);
     const lastCard = thread[thread.length - 1]?.card;
     // ตอบข้อประเมิน/ติดตามผลแบบสั้น ๆ → ส่งเข้าข้อนั้นเลย
     const shortOk = !lastCard || !WAITING.includes(lastCard.type) || ['fuAsk', 'fuAdverse', 'fuRisk', 'fuWhere'].includes(lastCard.type) || cardOptions(lastCard).includes(text.trim());
