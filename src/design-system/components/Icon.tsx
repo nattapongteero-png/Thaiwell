@@ -1,9 +1,14 @@
 import React from 'react';
 import { Feather } from '@expo/vector-icons';
+import { SvgXml } from 'react-native-svg';
+import { LINE_ICONS } from './lineIcons';
 import { sizing } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
-/** ใช้ Feather (line icon 2px) — เหมาะกับ wireframe และเปลี่ยนเป็น icon set ของแบรนด์ได้ที่ไฟล์นี้ไฟล์เดียว */
+/**
+ * ไอคอนหลัก = Material Line Icons (line-md · Iconify) ภาพนิ่ง · ชื่อเดิมของ Feather (ไม่ต้องแก้ที่ใช้)
+ * ชื่อที่ line-md ไม่มี → Feather (เส้น 2px เหมือนกัน)
+ */
 export type IconName = React.ComponentProps<typeof Feather>['name'];
 
 export function Icon({
@@ -16,5 +21,9 @@ export function Icon({
   color?: string;
 }) {
   const { colors } = useTheme();
-  return <Feather name={name} size={sizing.icon[size]} color={color ?? colors.icon.primary} />;
+  const px = sizing.icon[size];
+  const c = color ?? colors.icon.primary;
+  const svg = LINE_ICONS[name];
+  if (svg) return <SvgXml xml={svg} width={px} height={px} color={c} />;
+  return <Feather name={name} size={px} color={c} />;
 }
