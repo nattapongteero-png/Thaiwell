@@ -2628,12 +2628,17 @@ export function HomeScreen() {
    * sheetBase = ขั้นปัจจุบัน (0 / sheetTop) · sheetDrag = ระยะนิ้วลาก (Animated.event native) · sheetOffset = ตำแหน่งจริง (หนีบในช่วง)
    * ปล่อยนิ้ว: ปัดเร็ว หรือเกิน 20% = ไปขั้นถัดไป ไม่งั้นเด้งกลับ (spring native) · ขั้น 2 เลื่อนรายการด้วย ScrollView ตามปกติ */
   const NATIVE_SHEET = Platform.OS !== 'web';
+  /* ขั้น 0 (ปัดลงจากขั้น 1): แผ่นการ์ดลงไปเหลือขอบบนโผล่ SHEET_PEEK เหนือ tab → เห็นหุ่นเต็มตัว
+   * = โหมดดูหุ่น: ลากหมุนรอบตัว 360° (เอียงขึ้นลงได้) · ถ่างนิ้วซูม · แตะจุดที่ปวด · ปัดแผ่นขึ้น = กลับขั้น 1 */
+  const SHEET_PEEK = 120;
+  const sheetDown = NATIVE_SHEET && !started && sheetTop > 0 ? Math.max(0, Math.round(winH - dockH - SHEET_PEEK - (headerBottom + space[4] + bentoGap - space[5]))) : 0;
   const sheetBase = React.useRef(new Animated.Value(0)).current;
   const sheetDrag = React.useRef(new Animated.Value(0)).current;
   const sheetOffset = React.useMemo(
-    () => Animated.add(sheetBase, Animated.multiply(sheetDrag, -1)).interpolate({ inputRange: [0, Math.max(1, sheetTop)], outputRange: [0, Math.max(1, sheetTop)], extrapolate: 'clamp' }),
-    [sheetBase, sheetDrag, sheetTop],
+    () => Animated.add(sheetBase, Animated.multiply(sheetDrag, -1)).interpolate({ inputRange: [-sheetDown - 1, Math.max(1, sheetTop)], outputRange: [-sheetDown - 1, Math.max(1, sheetTop)], extrapolate: 'clamp' }),
+    [sheetBase, sheetDrag, sheetTop, sheetDown],
   );
+  const [modelFocus, setModelFocus] = React.useState(false);
   const sheetAt = React.useRef(0);
   const moveSheet = React.useCallback(
     (to: number, from?: number) => {
@@ -2641,6 +2646,9 @@ export function HomeScreen() {
       sheetDrag.setValue(0);
       sheetAt.current = to;
       setOpen(to > 0);
+      setModelFocus(to < 0);
+      // ออกจากโหมดดูหุ่น → มุมกล้อง/ซูมกลับปกติ
+      if (to >= 0) bodyRef.current?.resetView();
       Animated.spring(sheetBase, { toValue: to, stiffness: 320, damping: 32, mass: 0.9, useNativeDriver: true }).start();
     },
     [sheetBase, sheetDrag, setOpen],
@@ -2649,9 +2657,15 @@ export function HomeScreen() {
   const onSheetState = (e: { nativeEvent: { state: number; translationY: number; velocityY: number } }) => {
     const { state, translationY: ty, velocityY: vy } = e.nativeEvent;
     if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
-    const cur = Math.min(sheetTop, Math.max(0, sheetAt.current - ty));
-    const up = vy < -350 || (vy <= 350 && cur > sheetTop * 0.2);
-    moveSheet(up ? sheetTop : 0, cur);
+    // สามขั้น: ดูหุ่น (-sheetDown) · ปกติ (0) · แผ่นขึ้น (sheetTop) — ปัดเร็ว หรือเกิน 20% ของระยะ = ไปขั้นติดกันตามทิศ
+    const stops = sheetDown > 0 ? [-sheetDown, 0, sheetTop] : [0, sheetTop];
+    const from = sheetAt.current;
+    const i = Math.max(0, stops.indexOf(from));
+    const cur = Math.min(sheetTop, Math.max(stops[0], from - ty));
+    let to = from;
+    if (cur > from && i < stops.length - 1 && (vy < -350 || cur - from > (stops[i + 1] - from) * 0.2)) to = stops[i + 1];
+    else if (cur < from && i > 0 && (vy > 350 || from - cur > (from - stops[i - 1]) * 0.2)) to = stops[i - 1];
+    moveSheet(to, cur);
   };
   // เริ่มแชท / ขนาดจอเปลี่ยน → กลับขั้น 1
   React.useEffect(() => {
@@ -2660,8 +2674,9 @@ export function HomeScreen() {
     sheetDrag.setValue(0);
     sheetAt.current = 0;
     setOpen(false);
+    setModelFocus(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, sheetTop]);
+  }, [started, sheetTop, sheetDown]);
   /** ความคืบหน้าของแผ่นข้อมูล (0 = ขั้น 1 → sheetTop = ขั้น 2) — มือถือใช้ transform · เว็บใช้ระยะเลื่อน */
   const sheetProgress = NATIVE_SHEET ? sheetOffset : scrollY;
   /** ผู้ใช้ใหม่: 0 = ลูกแก้วกลางจอ · 1 = ปุ่ม ThaiWell AI แถวแท็บ (ตามระยะดึงแผ่นการ์ดขึ้น) */
@@ -2754,6 +2769,25 @@ export function HomeScreen() {
     return Gesture.Simultaneous(pinch, Gesture.Race(pan, tap));
   }, []);
 
+  // โหมดดูหุ่น: ลากได้ทุกทิศ (แนวนอน = หมุนรอบตัว · แนวตั้ง = เอียงมองบน/ล่าง) · ถ่างนิ้ว = ซูม · แตะ = เลือกจุด
+  const focusGesture = React.useMemo(() => {
+    const pan = Gesture.Pan()
+      .runOnJS(true)
+      .minDistance(DRAG_SLOP)
+      .onStart(() => bodyRef.current?.beginRotate())
+      .onUpdate((e) => bodyRef.current?.rotateTo(e.translationX / 80, e.translationY / 160))
+      .onFinalize(() => bodyRef.current?.endRotate());
+    const tap = Gesture.Tap()
+      .runOnJS(true)
+      .maxDistance(DRAG_SLOP)
+      .onEnd((e, ok) => ok && onBodyTapRef.current(e.absoluteX, e.absoluteY));
+    const pinch = Gesture.Pinch()
+      .runOnJS(true)
+      .onStart(() => bodyRef.current?.beginZoom())
+      .onUpdate((e) => bodyRef.current?.zoomTo(e.scale));
+    return Gesture.Simultaneous(pinch, Gesture.Race(pan, tap));
+  }, []);
+
   const content = { width: '100%' as const, maxWidth: g.maxContentWidth, alignSelf: 'center' as const, paddingHorizontal: space[5] };
 
   return (
@@ -2813,6 +2847,12 @@ export function HomeScreen() {
       ) : null}
       </Animated.View>
 
+      {/* โหมดดูหุ่น (แผ่นการ์ดลงล่าง): พื้นที่เหนือแผ่นทั้งหมดรับการลาก/แตะ/ซูมให้หุ่น */}
+      {modelFocus ? (
+        <GestureDetector gesture={focusGesture}>
+          <View accessibilityLabel={BODY_TOUCH_LABEL} style={{ position: 'absolute', left: 0, right: 0, top: headerBottom, height: Math.max(0, winH - dockH - SHEET_PEEK - headerBottom), zIndex: 2 }} />
+        </GestureDetector>
+      ) : null}
       {/* ชั้นกลาง: เนื้อหาเลื่อนผ่านหน้าหุ่น · จางหายที่ขอบล่างของ header ด้วย mask (โปร่งจนเห็นหุ่น ไม่ใช่แผ่นทับ) */}
       {/* กรอบแผ่นข้อมูล (พื้น + ขอบโค้ง + ขีดจับ) — ไม่อยู่ในรายการที่เลื่อน: ขึ้นตามแผ่นจนถึงขั้น 2 แล้วค้างใต้แท็บ
        * ขั้น 2 เลื่อนเฉพาะการ์ดข้างใน (การ์ดจางหายใต้ขีดจับ) · ขั้น 1 พื้นโปร่ง เห็นหุ่น */}
@@ -2825,7 +2865,7 @@ export function HomeScreen() {
             right: 0,
             top: headerBottom + space[4] + bentoGap - space[5],
             height: winH,
-            transform: [{ translateY: sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop)], outputRange: [0, -Math.max(1, sheetTop)], extrapolate: 'clamp' }) }],
+            transform: [{ translateY: sheetProgress.interpolate({ inputRange: [-sheetDown - 1, Math.max(1, sheetTop)], outputRange: [sheetDown + 1, -Math.max(1, sheetTop)], extrapolate: 'clamp' }) }],
           }}
         >
           <Animated.View
