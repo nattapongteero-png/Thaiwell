@@ -2081,6 +2081,8 @@ export function HomeScreen() {
     // การ์ดที่ปกติให้แตะ: พิมพ์ตอบตรงตัวเลือก → ทำเหมือนแตะ
     const opt = turn?.option ?? (lastCard ? cardOptions(lastCard).find((o) => o === text.trim()) : undefined);
     if (opt && lastCard?.type === 'planChoice') return pickPlanChoice(lastCard, opt);
+    // "เรื่องใหม่" พร้อมเล่าอาการมาด้วย → เปิดแชทใหม่แล้วใช้สิ่งที่เล่า (ไม่ต้องเล่าซ้ำ)
+    if (opt === NEW_TOPIC_INTENT && lastCard?.type === 'intents' && text.trim() !== opt) return startNewWith(text);
     if (opt && lastCard?.type === 'intents') return pickIntent(opt);
     if (opt && lastCard?.type === 'slotPick') return pickSlot(lastCard.placeId, lastCard.therapistId, opt, text);
     if (opt && lastCard?.type === 'choice') return pickChoice(lastCard, opt);
@@ -2172,9 +2174,28 @@ export function HomeScreen() {
     triage(text, pend);
   };
   sendRef.current = send;
+  /** เปิดแชทใหม่ แล้วส่งข้อความเดิมเข้าแชทนั้น (เหมือนผู้ใช้เล่าในแชทใหม่) · ข้ามข้อ "เรื่องเดิม/อาการใหม่" เพราะบอกแล้วว่าใหม่ */
+  const [carry, setCarry] = React.useState<string | null>(null);
+  const carryRef = React.useRef<string | null>(null);
+  carryRef.current = carry;
+  const startNewWith = (text: string) => {
+    setCarry(text);
+    newChat(true);
+  };
+  React.useEffect(() => {
+    if (!carry || active.items.some((m) => m.from === 'user')) return;
+    if (assess.step === 'topic') {
+      setAssess((a) => ({ ...a, topic: NEW_TOPIC, step: 'idle' }));
+      return;
+    }
+    setCarry(null);
+    send(carry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carry, activeId, assess.step]);
   // แชทตอบแล้ว (ข้อความใหม่หลังจากที่พูด/แตะ) → อ่านออกเสียงข้อความสั้น ๆ แล้วฟังต่อ หรือพักถ้าต้องแตะการ์ด
   React.useEffect(() => {
-    if (voice.phase !== 'waiting' && voice.phase !== 'paused') {
+    // ยังไม่ได้ส่งข้อความเข้าแชทใหม่ → ยังไม่อ่าน (ข้อความต้อนรับของแชทใหม่ไม่ต้องอ่าน)
+    if ((voice.phase !== 'waiting' && voice.phase !== 'paused') || carry) {
       thread.forEach((m) => voiceSeen.current.add(m.id));
       return;
     }
@@ -2191,11 +2212,14 @@ export function HomeScreen() {
     }, 350);
     return () => clearTimeout(tm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread, voice.phase]);
+  }, [thread, voice.phase, carry]);
   // ออกจากแชท / เปลี่ยนแชท / ไปแท็บอื่น → ปิดไมค์
   const homeFocused = useIsFocused();
+  const prevChat = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!started || !homeFocused) void voice.off();
+    // เปิดแชทใหม่ต่อจากที่เล่า (startNewWith) = คุยต่อ ไม่ปิดไมค์
+    if (!started || !homeFocused || (!carryRef.current && prevChat.current !== activeId && prevChat.current !== null)) void voice.off();
+    prevChat.current = activeId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, homeFocused, activeId]);
   const triage = (text: string, pend: ReturnType<typeof pendingNow>) => {
