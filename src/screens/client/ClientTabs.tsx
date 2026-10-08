@@ -24,7 +24,7 @@ import {
   radius,
   space,
   useTheme,
-  type IconName, painColor, ScreenSkeleton, useScreenData, Panel, StatTile, Tag, RowLink, TINT, ProfileAvatar, ElementPill, BottomSheet, TextField, ReplyChips, InfoRow,
+  type IconName, ScreenSkeleton, useScreenData, Panel, StatTile, Tag, RowLink, TINT, ProfileAvatar, ElementPill, BottomSheet, TextField, ReplyChips, InfoRow,
 } from '../../design-system';
 import { NotFoundScreen } from './NotFound';
 import { birthElement, dominantElement } from '../../data/thaiMassageKnowledge';
@@ -51,87 +51,57 @@ export function ProgressScreen() {
   // จบคอร์สแล้ว (ครบครั้ง ไม่มีนัดค้าง) → รักษาจบแล้ว · ล่าสุดก่อน
   const done = [...cases.filter((c) => c.finished && c.visits.length > 0).reverse(), ...(newPatient ? [] : ARCHIVED_CASES)];
   /**
-   * การ์ดเรื่องที่รักษา: ชื่อ + แผน · ดีขึ้น % (ขวา) · ปวดก่อน → ล่าสุด (ตัวเลขใหญ่ สีตามระดับปวด) + แท่งคะแนนทุกครั้ง
-   * แถบคอร์ส (ครั้งที่ใช้ไป/ทั้งหมด) · กำลังรักษา = นัดถัดไป · จบแล้ว = ช่วงวันที่รักษา
+   * แถวเรื่องที่รักษา (รายการกระชับ 1 เรื่อง = 1 แถว): ไอคอน · ชื่อ + สถานะคอร์ส · ป้ายดีขึ้น % · ลูกศร
+   * กำลังรักษา = ครั้งที่ใช้ไป/ทั้งหมด + นัดถัดไป · จบแล้ว = ครบ N ครั้ง + ช่วงวันที่
    */
-  const Row = ({ c, finished }: { c: TreatmentCase; finished?: boolean }) => {
+  const Row = ({ c, finished, first: isFirst }: { c: TreatmentCase; finished?: boolean; first?: boolean }) => {
     const first = c.visits[0];
     const last = c.visits[c.visits.length - 1];
     const now = last.selfPain ?? last.painAfter;
     const pct = first.painBefore ? Math.round(((first.painBefore - now) / first.painBefore) * 100) : 0;
     const good = pct > 0;
-    const trend = [first.painBefore, ...c.visits.map((v) => v.selfPain ?? v.painAfter)];
     const used = Math.min(c.course.total, Math.max(c.course.done, c.visits.length));
     const hasNext = !finished && c.appointment.date !== '-';
-    const accent = finished ? colors.text.secondary : colors.brand.primary;
+    const sub = finished
+      ? `ครบ ${c.course.total} ครั้ง · ${first.date === last.date ? first.date : `${first.date} – ${last.date}`}`
+      : `ครั้งที่ ${used}/${c.course.total} · ${hasNext ? `นัด ${c.appointment.today ? 'วันนี้' : c.appointment.date}` : 'รอคลินิกนัด'}`;
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${c.short} ปวด ${first.painBefore} เหลือ ${now} ${good ? `ดีขึ้น ${pct}%` : ''} ${used}/${c.course.total} ครั้ง ดูรายละเอียด`}
+        accessibilityLabel={`${c.short} ${sub} ${pct ? (good ? `ดีขึ้น ${pct}%` : `ปวดเพิ่ม ${-pct}%`) : ''} ดูรายละเอียด`}
         onPress={() => nav.navigate('TreatmentHistory', { caseId: c.id })}
-        style={({ pressed }) => ({ gap: space[4], padding: space[4], borderRadius: 24, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.85 : 1 })}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[3], paddingHorizontal: space[4], borderTopWidth: isFirst ? 0 : 1, borderTopColor: colors.border.subtle, backgroundColor: pressed ? colors.surface.sunken : 'transparent' })}
       >
-        {/* ชื่อเรื่อง · ผลรวม */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: finished ? colors.surface.sunken : colors.brand.subtle }}>
-            <Icon name={finished ? 'check' : 'activity'} size="sm" color={accent} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text variant="labelLg" numberOfLines={1}>
-              {c.short}
-            </Text>
-            <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-              {c.plan}
-            </Text>
-          </View>
-          {pct !== 0 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 26, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: good ? colors.brand.subtle : colors.status.danger.bg }}>
-              <Icon name={good ? 'trending-down' : 'trending-up'} size="xs" color={good ? colors.brand.primary : colors.status.danger.fg} />
-              <Text variant="labelSm" color={good ? colors.brand.primary : colors.status.danger.fg}>
-                {good ? 'ดีขึ้น' : 'ปวดเพิ่ม'} {Math.abs(pct)}%
-              </Text>
-            </View>
-          ) : null}
+        <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: finished ? colors.surface.sunken : colors.brand.subtle }}>
+          <Icon name={finished ? 'check' : 'activity'} size="sm" color={finished ? colors.text.secondary : colors.brand.primary} />
         </View>
-
-        {/* ปวดก่อนเริ่ม → ล่าสุด · แท่งคะแนนทุกครั้ง */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space[3] }}>
-            <PainNum label="ก่อนเริ่ม" v={first.painBefore} muted />
-            <View style={{ marginBottom: 8 }}>
-              <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
-            </View>
-            <PainNum label="ล่าสุด" v={now} />
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 40 }}>
-            {trend.slice(-8).map((v, i, arr) => (
-              <View key={i} style={{ width: 8, height: Math.max(4, (v / 10) * 40), borderRadius: 3, backgroundColor: painColor(v), opacity: i === arr.length - 1 ? 1 : 0.45 }} />
-            ))}
-          </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text variant="labelLg" numberOfLines={1}>
+            {c.short}
+          </Text>
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            {sub}
+          </Text>
         </View>
-
-        {/* คอร์ส: ครั้งที่ใช้ไป · นัดถัดไป / ช่วงวันที่ */}
-        <View style={{ gap: space[2] }}>
-          <View style={{ flexDirection: 'row', gap: 3 }}>
-            {Array.from({ length: c.course.total }, (_, i) => (
-              <View key={i} style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: i < used ? accent : colors.border.subtle }} />
-            ))}
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text variant="labelSm" color={accent}>
-              {finished ? `ครบ ${c.course.total} ครั้ง` : `ครั้งที่ ${used}/${c.course.total}`}
+        {pct ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', height: 26, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: good ? colors.brand.subtle : colors.status.danger.bg }}>
+            <Text variant="labelSm" color={good ? colors.brand.primary : colors.status.danger.fg}>
+              {good ? `↘ ดีขึ้น ${pct}%` : `↗ ปวดเพิ่ม ${-pct}%`}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-              <Text variant="bodyXs" tone="tertiary">
-                {hasNext ? `นัดถัดไป ${c.appointment.today ? 'วันนี้' : c.appointment.date}` : first.date === last.date ? first.date : `${first.date} – ${last.date}`}
-              </Text>
-              <Icon name="chevron-right" size="xs" color={colors.text.tertiary} />
-            </View>
           </View>
-        </View>
+        ) : null}
+        <Icon name="chevron-right" size="sm" color={colors.text.tertiary} />
       </Pressable>
     );
   };
+  /** กลุ่มแถว: กรอบเดียว เส้นคั่นระหว่างแถว */
+  const Group = ({ items, finished }: { items: TreatmentCase[]; finished?: boolean }) => (
+    <View style={{ borderRadius: 20, borderWidth: 1, borderColor: colors.border.subtle, backgroundColor: colors.surface.default, overflow: 'hidden' }}>
+      {items.map((c, i) => (
+        <Row key={c.id} c={c} finished={finished} first={i === 0} />
+      ))}
+    </View>
+  );
   return (
     <Screen header={<AppBar title="ประวัติการรักษา" />}>
       {loading ? (
@@ -141,17 +111,13 @@ export function ProgressScreen() {
       {active.length ? (
         <>
           <SectionHeader title="กำลังรักษา" />
-          {active.map((c) => (
-            <Row key={c.id} c={c} />
-          ))}
+          <Group items={active} />
         </>
       ) : null}
       {done.length ? (
         <>
           <SectionHeader title="รักษาจบแล้ว" />
-          {done.map((c) => (
-            <Row key={c.id} c={c} finished />
-          ))}
+          <Group items={done} finished />
         </>
       ) : null}
       {!active.length && !done.length ? (
@@ -528,25 +494,5 @@ export function PrivacyScreen() {
         </Panel>
       ) : null}
     </Screen>
-  );
-}
-
-/** คะแนนปวดตัวเลขใหญ่ + ป้ายเล็ก (สีตามระดับปวด · muted = ค่าก่อนเริ่ม) */
-function PainNum({ label, v, muted }: { label: string; v: number; muted?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ gap: 2 }}>
-      <Text variant="caption" tone="tertiary">
-        {label}
-      </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-        <Text variant="headlineSm" color={muted ? colors.text.secondary : painColor(v)}>
-          {v}
-        </Text>
-        <Text variant="bodyXs" tone="tertiary">
-          /10
-        </Text>
-      </View>
-    </View>
   );
 }
