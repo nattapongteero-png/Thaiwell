@@ -3339,13 +3339,13 @@ export function HomeScreen() {
                 </Text>
               </View>
             </View>
-              <View pointerEvents="box-none" style={{ flexDirection: 'row' }}>
-                {/* pill ธาตุแบบ back-office: ไอคอนสีธาตุ + ป้าย + ชื่อธาตุ · ธาตุกำเนิด (คนไข้ใหม่) = ธาตุเจ้าเรือน · จากแบบประเมิน = ธาตุปัจจุบัน */}
-                {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น (หัวสั้นลง 1 บรรทัด) · หน้าแชท = ไม่แสดงธาตุ */}
-                {tagElement && !modelTag && !started ? (
+              {/* pill ธาตุแบบ back-office: ไอคอนสีธาตุ + ป้าย + ชื่อธาตุ · ธาตุกำเนิด (คนไข้ใหม่) = ธาตุเจ้าเรือน · จากแบบประเมิน = ธาตุปัจจุบัน */}
+              {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น · หน้าแชท = ไม่แสดงธาตุ → ไม่มีแถวนี้เลย (ไม่เหลือช่องว่าง ส่วนที่อยู่ล่างขยับขึ้น) */}
+              {tagElement && !modelTag && !started ? (
+                <View pointerEvents="box-none" style={{ flexDirection: 'row' }}>
                   <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
-                ) : null}
-              </View>
+                </View>
+              ) : null}
             </View>
             {/* แท็บเรื่องที่ดูแล — ตรึงใน header (เลื่อนดูช่องล่าง ๆ ก็ยังรู้ว่าดูเรื่องไหน และสลับได้ทันที) */}
             {/* แถวแท็บมีปุ่ม "ถาม AI" → แสดงเสมอเมื่อมีข้อมูล (จองไว้นัดเดียวก็แสดง) */}
