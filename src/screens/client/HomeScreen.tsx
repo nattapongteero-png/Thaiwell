@@ -216,6 +216,7 @@ const THINK_MS = 1800;
 /** สถานะในแถบเสียงของแชท */
 const VOICE_STATUS: Record<VoicePhase, string> = {
   off: '',
+  starting: 'กำลังเปิดไมค์…',
   listening: 'กำลังฟัง… พูดได้เลยค่ะ',
   transcribing: 'กำลังฟังให้ชัด…',
   waiting: 'กำลังคิด…',

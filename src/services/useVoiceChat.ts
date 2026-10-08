@@ -6,7 +6,7 @@ import { speak, transcribe } from './voiceAI';
  * คุยด้วยเสียงในแชท: ฟัง (จับช่วงเงียบตัดประโยค) → ถอดเสียง → ส่งเข้าแชทเหมือนพิมพ์ (onHeard)
  * → แชทตอบด้วยการ์ด/ข้อความแบบเดิม → say() อ่านข้อความสั้นออกเสียง → ฟังต่อเอง หรือพัก (การ์ดที่ต้องแตะ / ฉุกเฉิน)
  */
-export type VoicePhase = 'off' | 'listening' | 'transcribing' | 'waiting' | 'speaking' | 'paused' | 'error';
+export type VoicePhase = 'off' | 'starting' | 'listening' | 'transcribing' | 'waiting' | 'speaking' | 'paused' | 'error';
 
 /** WAV 16 kHz mono (Qwen3-ASR ต้องการ) · เปิดวัดระดับเสียงไว้จับช่วงเงียบ */
 const REC_OPTIONS = {
@@ -58,6 +58,8 @@ export function useVoiceChat(onHeard: (text: string) => void) {
   const listen = async () => {
     player.current?.pause();
     setHint(null);
+    // แสดงโหมดเสียงทันที (ไม่รอขอสิทธิ์/เตรียมไมค์ → ไม่ค้างตอนกด)
+    setPhase('starting');
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
       setHint('ยังไม่ได้อนุญาตไมโครโฟน');
@@ -65,13 +67,16 @@ export function useVoiceChat(onHeard: (text: string) => void) {
     }
     try {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (phaseRef.current !== 'starting') return;
       spoke.current = false;
       silentFor.current = 0;
       startedAt.current = Date.now();
+      lastTick.current = Date.now();
       floor.current = -50;
       await recorder.prepareToRecordAsync();
       recorder.record();
-      if (alive.current) setPhase('listening');
+      if (alive.current && phaseRef.current === 'starting') setPhase('listening');
+      else await recorder.stop().catch(() => undefined);
     } catch {
       if (alive.current) setPhase('error');
     }
@@ -148,14 +153,16 @@ export function useVoiceChat(onHeard: (text: string) => void) {
     const p = phaseRef.current;
     if (p === 'listening') void finishTurn(true);
     else if (p === 'speaking' || p === 'paused' || p === 'error' || p === 'off') void listen();
+    // starting / transcribing / waiting = รอ
   };
 
-  // จับช่วงเงียบ (ระดับเสียงมาจาก tick ทุก ~120ms — วัดใน component แถบเสียง ไม่ให้หน้าแชททั้งหน้า render ตาม)
+  // จับช่วงเงียบ (ระดับเสียงมาจาก tick ถี่ ๆ — วัดใน component ช่องแชท ไม่ให้หน้าแชททั้งหน้า render ตาม)
   // ระดับเสียงสูงกว่าพื้นหลังพอ = กำลังพูด · พูดแล้วเงียบนาน = จบประโยค
   const spoke = React.useRef(false);
   const silentFor = React.useRef(0);
   const startedAt = React.useRef(0);
   const floor = React.useRef(-50);
+  const lastTick = React.useRef(0);
   const tick = (metering: number | undefined) => {
     if (phaseRef.current !== 'listening' || !recorder.isRecording) return;
     const m = metering ?? -160;
@@ -163,7 +170,8 @@ export function useVoiceChat(onHeard: (text: string) => void) {
     if (m > Math.max(floor.current + 10, -42)) {
       spoke.current = true;
       silentFor.current = 0;
-    } else if (spoke.current) silentFor.current += 120;
+    } else if (spoke.current) silentFor.current += Date.now() - lastTick.current;
+    lastTick.current = Date.now();
     if ((spoke.current && silentFor.current >= SILENCE_MS) || Date.now() - startedAt.current > MAX_TURN_MS) void finishTurn();
   };
 

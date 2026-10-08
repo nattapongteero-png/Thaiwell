@@ -7,7 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { AIBall } from './AIBall';
 import { Icon, type IconName } from './Icon';
 import { Text } from './Text';
-import { VoiceRibbon } from './VoiceRibbon';
+import { Strands } from './Strands';
 
 /**
  * AI CHAT COMPONENTS (แชท AI บนหน้าแรก)
@@ -244,7 +244,7 @@ export type ComposerVoiceMode = 'listening' | 'busy' | 'speaking' | 'paused' | '
 export type ComposerVoice = {
   mode: ComposerVoiceMode;
   status: string;
-  /** ระดับเสียง 0–1 (ref อ่านทุกเฟรม) · halo = ค่าเดียวกันแบบ Animated สำหรับแสงรอบลูกแก้ว */
+  /** ระดับเสียง 0–1 (ref อ่านทุกเฟรม) · halo = ค่าเดียวกันแบบ Animated สำหรับแสงรอบช่องแชท */
   level: { current: number };
   halo: Animated.Value;
   muted: boolean;
@@ -255,7 +255,7 @@ export type ComposerVoice = {
 
 /**
  * ช่องคุยกับ AI ติดล่าง — ลูกแก้ว AI ทางซ้าย (ไมค์ / ส่ง) + ช่องพิมพ์
- * voice = คุยด้วยเสียงในช่องเดิม: ลูกแก้วเดิมเป็นปุ่มหลัก (เรืองตามเสียง) · ช่องพิมพ์จางออก ริบบิ้นคลี่ออกจากลูกแก้ว · ปุ่มเสียง/พิมพ์โผล่ทางขวา
+ * voice = คุยด้วยเสียงในช่องเดิม: ลูกแก้วเดิมเป็นปุ่มหลัก · ช่องพิมพ์จางออก เส้นแสง (Strands) คลี่ออกจากลูกแก้ว · แสงรอบทั้งช่องแชทตามเสียง (แบบ Siri) · ปุ่มเสียง/พิมพ์โผล่ทางขวา
  */
 export function ChatComposer({
   onSend,
@@ -331,13 +331,14 @@ export function ChatComposer({
   const inputShift = v.interpolate({ inputRange: [0, 1], outputRange: [0, 16] });
   const inputFade = v.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0], extrapolate: 'clamp' });
   const extraFade = v.interpolate({ inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp' });
-  const haloScale = vo ? vo.halo.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] }) : 1;
-  const haloOpacity = vo ? Animated.multiply(v, vo.halo.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.7] })) : 0;
+  const glowOpacity = vo ? Animated.multiply(v, vo.halo.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] })) : 0;
+  const [size, setSize] = React.useState({ w: 0, h: 0 });
 
   const onBall = voice ? voice.onMain : hasText ? send : onVoice;
   const ballLabel = voice ? (voice.mode === 'listening' ? 'ส่งที่พูด' : voice.mode === 'speaking' ? 'ขัดแล้วพูด' : 'พูด') : hasText ? 'ส่ง' : 'พูดกับผู้ช่วย';
   return (
     <View
+      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       style={[
         { height: t.height, flexDirection: 'row', alignItems: 'center', gap: t.gap },
         embedded
@@ -356,22 +357,18 @@ export function ChatComposer({
             },
       ]}
     >
-      {/* ริบบิ้นเสียงคลี่ออกจากกลางลูกแก้วไปทางขวา (อยู่หลังลูกแก้ว) */}
-      {vo ? (
-        <Animated.View
-          pointerEvents="none"
-          style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb / 2, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }], transformOrigin: 'left' }}
-        >
-          <VoiceRibbon level={vo.level} style={{ height: t.height }} />
-        </Animated.View>
-      ) : null}
+      {/* แสงรอบทั้งช่องแชท (แบบ Siri) — สว่าง/หนาขึ้นตามเสียง */}
+      {vo && size.w ? <EdgeGlow width={size.w} height={size.h} radius={embedded ? 0 : t.height / 2} opacity={glowOpacity} level={vo.halo} /> : null}
+      {/* เส้นแสงคลี่ออกจากกลางลูกแก้วไปทางขวา (อยู่หลังลูกแก้ว) · mount ไว้ตลอด เปิดไมค์แล้วไม่ต้องสร้าง GL ใหม่ */}
+      <Animated.View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb / 2, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }], transformOrigin: 'left' }}
+      >
+        <Strands level={vo?.level ?? 0} running={shown} span={{ x: 0.8, y: 0.42 }} style={{ height: t.height }} />
+      </Animated.View>
       {/* ลูกแก้ว AI = ปุ่มเดียวทางซ้าย: ยังไม่พิมพ์ → ไมค์ (คุยด้วยเสียง) · พิมพ์แล้ว → ส่ง · โหมดเสียง → ส่งที่พูด / ขัดแล้วพูด */}
       <Pressable accessibilityRole="button" accessibilityLabel={ballLabel} disabled={busy} onPress={onBall} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
         <Animated.View style={{ alignItems: 'center', justifyContent: 'center', transform: [{ scale: pop }] }}>
-          {/* แสงรอบลูกแก้ว ขยาย/สว่างตามเสียง */}
-          {vo ? (
-            <Animated.View pointerEvents="none" style={{ position: 'absolute', width: orb, height: orb, borderRadius: orb / 2, backgroundColor: '#22D3EE', opacity: haloOpacity, transform: [{ scale: haloScale }] }} />
-          ) : null}
           {/* ลูกแก้ว AI แบบเดียวกับปุ่ม AI (FAB) — ไม่มีดาว เพราะมีไอคอนไมค์/ส่งวางทับ */}
           <AIBall size={orb} stars={false} />
           <Animated.View pointerEvents="none" style={{ position: 'absolute', opacity: busy ? 0 : micOpacity, transform: [{ scale: micScale }, { rotate: micRotate }] }}>
@@ -415,6 +412,60 @@ export function ChatComposer({
         </Animated.View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * แสงรอบขอบช่องแชทแบบ Siri — เส้นขอบไล่สี (เขียว-ฟ้า-น้ำเงิน-ม่วง-ชมพู) ซ้อนหลายชั้นให้ฟุ้ง
+ * สีวนรอบขอบช้า ๆ (สลับสองชุดทิศไล่สี) · ความสว่าง/ความฟุ้งตามระดับเสียง
+ */
+const GLOW_PAD = 14;
+function EdgeGlow({ width, height, radius: r, opacity, level }: { width: number; height: number; radius: number; opacity: Animated.AnimatedInterpolation<number> | Animated.Value | Animated.AnimatedMultiplication<number> | number; level: Animated.Value }) {
+  const id = React.useId().replace(/[^a-zA-Z0-9]/g, '');
+  const turn = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const nd = Platform.OS !== 'web';
+    const loop = Animated.loop(Animated.sequence([Animated.timing(turn, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: nd }), Animated.timing(turn, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: nd })]));
+    loop.start();
+    return () => loop.stop();
+  }, [turn]);
+  const W = width + GLOW_PAD * 2;
+  const H = height + GLOW_PAD * 2;
+  // ชั้นนอกฟุ้งขึ้นเมื่อเสียงดัง
+  const outer = level.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] });
+  const layer = (grad: string) => (
+    <Svg width={W} height={H}>
+      <Defs>
+        <LinearGradient id={`${id}a`} x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor="#5FF0B8" />
+          <Stop offset="0.3" stopColor="#22D3EE" />
+          <Stop offset="0.55" stopColor="#3B82F6" />
+          <Stop offset="0.8" stopColor="#8B5CF6" />
+          <Stop offset="1" stopColor="#F472B6" />
+        </LinearGradient>
+        <LinearGradient id={`${id}b`} x1="1" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor="#F472B6" />
+          <Stop offset="0.25" stopColor="#8B5CF6" />
+          <Stop offset="0.5" stopColor="#3B82F6" />
+          <Stop offset="0.75" stopColor="#22D3EE" />
+          <Stop offset="1" stopColor="#5FF0B8" />
+        </LinearGradient>
+      </Defs>
+      {[
+        { w: 14, o: 0.07 },
+        { w: 9, o: 0.12 },
+        { w: 5, o: 0.22 },
+      ].map((l) => (
+        <Rect key={l.w} x={GLOW_PAD} y={GLOW_PAD} width={width} height={height} rx={r} fill="none" stroke={`url(#${id}${grad})`} strokeWidth={l.w} strokeOpacity={l.o} />
+      ))}
+      <Rect x={GLOW_PAD + 0.75} y={GLOW_PAD + 0.75} width={width - 1.5} height={height - 1.5} rx={Math.max(0, r - 0.75)} fill="none" stroke={`url(#${id}${grad})`} strokeWidth={1.5} />
+    </Svg>
+  );
+  return (
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', left: -GLOW_PAD - (r ? 1 : 0), top: -GLOW_PAD - (r ? 1 : 0), width: W, height: H, opacity }}>
+      <Animated.View style={{ position: 'absolute', opacity: outer }}>{layer('a')}</Animated.View>
+      <Animated.View style={{ position: 'absolute', opacity: Animated.multiply(outer, turn) }}>{layer('b')}</Animated.View>
+    </Animated.View>
   );
 }
 
