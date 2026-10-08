@@ -146,6 +146,8 @@ export interface DraftCase {
   assessedOn?: string;
   confirmedOn?: string;
   radiate?: string;
+  /** อาการร่วมที่ตอบไว้ (ชา อ่อนแรง …) */
+  related?: string[];
   /** ผู้ใช้เลือกคงบริการที่จองไว้ แม้ไม่ตรงผลประเมิน (ไม่บังคับเปลี่ยน · ไม่เตือนซ้ำ) */
   keepService?: boolean;
 }

@@ -45,6 +45,8 @@ import {
   REST_ANGLE,
   type Body3DHandle,
   type BodyPoint,
+  type BodyPin,
+  type IconName,
   type BodyRegion,
   stretchGif,
   LoadingImage,
@@ -175,6 +177,21 @@ const tint = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(',
 const radiateNow = (symptoms: string[], radiate?: string) => radiateForAll(symptoms)[radiateList(radiate).length] ?? radiateFor(symptoms);
 /** ชา / อ่อนแรง ร่วมด้วย (ถามทุกบริเวณ) — ⚠️ ตีความจาก CPG หน้า 139 ข้อ 3.1 "ปวดเกี่ยวกับระบบประสาท" (CPG ไม่ได้เขียนคำว่าชา/อ่อนแรงตรง ๆ) · รอแพทย์แผนไทยยืนยันเกณฑ์ */
 const NUMB = 'ชาบริเวณที่ปวด';
+/** บริเวณที่ไม่ให้นวด → ระบายสีเทาบนหุ่น */
+const AVOID_PINS: Record<string, BodyPin[]> = {
+  'ศีรษะ/ใบหน้า': ['head'],
+  คอ: ['neck', 'neckBack'],
+  ท้อง: ['belly'],
+  หลัง: ['back', 'lowerBack'],
+  'ขา/เท้า': ['thighLeft', 'thighRight', 'shinLeft', 'shinRight', 'footLeft', 'footRight'],
+};
+const AVOID_COLOR = '#94A3B8';
+/** วันที่ ISO → "วันนี้ / เมื่อวาน / N วันก่อน" */
+const agoText = (iso?: string) => {
+  if (!iso) return null;
+  const d = Math.round((new Date(todayISO()).getTime() - new Date(iso.slice(0, 10)).getTime()) / 86400000);
+  return d <= 0 ? 'วันนี้' : d === 1 ? 'เมื่อวาน' : `${d} วันก่อน`;
+};
 const WEAK = 'แขนหรือขาอ่อนแรง';
 /** สถานะวันนัดจากคลินิก → ช่องคิว · ขั้นตอน · ปุ่ม บนการ์ดนัด (ใช้ทั้งนัดครั้งแรกและนัดครั้งถัดไป) */
 type VisitStage = 'checked_in' | 'called' | 'in_service' | undefined;
@@ -569,6 +586,43 @@ export function HomeScreen() {
   /* สี mark ตามคะแนนปวด (เขียว → เหลือง → แดง แบบเดียวกับ Pain Score) · ยังไม่ได้ตอบระดับปวด = สีอาการเดิม */
   const painAnswered = assess.step === 'done' || ASSESS_ORDER.indexOf(assess.step as (typeof ASSESS_ORDER)[number]) > ASSESS_ORDER.indexOf('pain');
   const symptomColor = painAnswered ? painColorOf(assess.pain) : undefined;
+  /* ข้อมูลปัจจุบันบนหุ่น (นอกจากจุดที่ปวด): อาการร้าว · ชา/อ่อนแรง · บริเวณงดนวด · อาการหลังนวด · อัปเดตเมื่อไหร่
+   * ใบร่าง = จากผลประเมิน · ใบการรักษา = ผลประเมินตั้งต้น (ใบร่างเดิม) + ประเมินก่อนนวดล่าสุด */
+  const bodyInfo = (() => {
+    if (started || chatHome) return null;
+    const src = selDraft ?? (selCase ? drafts.find((d) => `case-${d.id}` === tcase.id) : undefined);
+    const today = selCase && !selDraft ? caseToday[tcase.id] : undefined;
+    const symptoms = selDraft?.symptoms ?? (selCase ? tcase.areas.map((a) => a.symptom) : []);
+    const rad = radiateAnswers(src?.symptoms ?? symptoms, src?.radiate).filter((a) => a.option && a.label !== NO_RADIATE);
+    const avoid = src?.avoid && src.avoid !== 'ไม่มี' ? src.avoid : undefined;
+    const period = src?.risk === 'มีประจำเดือน';
+    const related = (src?.related ?? []).filter((x) => x !== 'ไม่มี');
+    const adverse = today?.adverse && today.adverse !== 'ไม่มี' ? today.adverse : undefined;
+    const firstPin = (sym: string) => CHIP_PINS[sym]?.[0];
+    const extras: { key: string; icon: IconName; label: string; tone: 'info' | 'warn' | 'avoid'; pin?: BodyPin }[] = [
+      ...rad.map((a) => ({ key: `r-${a.label}`, icon: 'corner-down-right' as const, label: a.label, tone: (a.option?.level ? 'warn' : 'info') as 'warn' | 'info', pin: radiatePins(a.label, a.symptom)[0] })),
+      ...related.map((x) => ({ key: `n-${x}`, icon: 'zap' as const, label: x, tone: (x === NUMB || x === WEAK ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') })),
+      ...(avoid ? [{ key: 'avoid', icon: 'slash' as const, label: `ไม่นวด${avoid}`, tone: 'avoid' as const, pin: AVOID_PINS[avoid]?.[0] }] : []),
+      ...(period && avoid !== 'ท้อง' ? [{ key: 'period', icon: 'slash' as const, label: 'งดนวดท้อง', tone: 'avoid' as const, pin: 'belly' as BodyPin }] : []),
+      ...(adverse ? [{ key: 'adv', icon: 'alert-triangle' as const, label: `${adverse}หลังนวด`.replace(/^(.*)หลังนวดหลังนวด$/, '$1หลังนวด'), tone: 'warn' as const, pin: tcase.areas[0]?.pin }] : []),
+    ];
+    const updated = selDraft ? agoText(selDraft.confirmedOn ?? selDraft.assessedOn) : today ? 'วันนี้' : selCase ? tcase.visits[tcase.visits.length - 1]?.date ?? null : null;
+    const pins = [
+      ...rad.flatMap((a) => radiatePins(a.label, a.symptom)),
+    ];
+    const avoidPins = [...(avoid ? AVOID_PINS[avoid] ?? [] : []), ...(period && avoid !== 'ท้อง' ? (['belly'] as BodyPin[]) : [])];
+    return { extras, updated, radiatePins: pins, avoidPins };
+  })();
+
+  // จุดเพิ่มบนหุ่นหน้าแรก (คีย์เป็นข้อความ ไม่ให้ pins คำนวณใหม่ทุกครั้งที่ render)
+  const homeExtraKey = bodyInfo ? `${bodyInfo.radiatePins.join(',')}|${bodyInfo.avoidPins.join(',')}` : '';
+  const homeExtraPins = React.useMemo(() => {
+    if (!bodyInfo) return [];
+    const v = selDraft?.pain ?? (selCase ? caseToday[tcase.id]?.pain ?? tcase.visits[tcase.visits.length - 1]?.painAfter : undefined);
+    const c = v === undefined ? undefined : painColorOf(v);
+    return [...bodyInfo.radiatePins.map((at) => ({ at, tone: 'symptom' as const, color: c })), ...bodyInfo.avoidPins.map((at) => ({ at, tone: 'symptom' as const, color: AVOID_COLOR }))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeExtraKey, selDraft?.pain, selCase, tcase.id]);
   const pins = React.useMemo(
     () => [
       ...Object.entries(sel)
@@ -595,8 +649,10 @@ export function HomeScreen() {
             return { at: a.pin, tone: 'point' as const, color: v === undefined ? undefined : painColorOf(v) };
           })
         : []),
+      // หน้าแรก: แนวที่ร้าวไป (สีเดียวกับจุดที่ปวด) · บริเวณงดนวด (สีเทา)
+      ...(homeExtraPins ?? []),
     ],
-    [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor, caseToday],
+    [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor, caseToday, homeExtraPins],
   );
   const marks = React.useMemo(() => Object.values(sel).flatMap((pts) => pts ?? []), [sel]);
   // ซ่อมข้อมูลจากบั๊กเดิม: แก้อาการในแชทเดิมแล้วเกิดเรื่องใหม่ซ้ำ (แชทเดียวกัน 2 เรื่อง) → รวมผลล่าสุดเข้าเรื่องที่มีนัด
@@ -613,10 +669,16 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts.length]);
   /** ป้ายบนหุ่นของแท็บที่เลือก: จุดที่รักษา + ระดับปวดล่าสุด · ใบการรักษา = ประเมินก่อนนวดวันนี้ ถ้าไม่มี = หลังนวดครั้งล่าสุด */
-  const modelTag = ((): { items: string[]; note?: string; /** good = ดีขึ้น (พื้นเขียว) */ noteTone?: 'good' | 'bad'; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean } | null => {
+  /** ชื่อบริเวณ → จุดบนหุ่น (ตรงชื่ออาการก่อน แล้วค่อยหาชื่อที่มีคำนั้น) */
+  const pinOfRegion = (r: string, syms: string[]): BodyPin | undefined => {
+    const key = [r, `ปวด${r}`, ...syms.filter((x) => x.includes(r) || r.includes(x.replace(/^ปวด/, '')))].find((k) => CHIP_PINS[k]?.length);
+    return key ? CHIP_PINS[key]![0] : Object.entries(CHIP_PINS).find(([k]) => k.includes(r.replace(/^ปวด/, '')))?.[1]?.[0];
+  };
+  const facePinOf = (pin?: BodyPin) => pin && bodyRef.current?.facePin(pin);
+  const modelTag = ((): { items: string[]; note?: string; /** good = ดีขึ้น (พื้นเขียว) */ noteTone?: 'good' | 'bad'; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean; /** จุดบนหุ่นของแต่ละป้าย (แตะ → หันไปหา) */ pins?: (BodyPin | undefined)[] } | null => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บริเวณที่ปวด (บริเวณหลักก่อน) · ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ
-    if (selDraft) return { items: draftRegions(selDraft), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    if (selDraft) return { items: draftRegions(selDraft), pins: draftRegions(selDraft).map((r) => pinOfRegion(r, selDraft.symptoms)), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     // จองแล้วแต่ยังไม่เคยประเมิน → ยังไม่รู้จุดที่ปวด
     if (selLoose) return { items: [], note: 'ยังไม่ได้บอกจุดที่ปวด', color: colors.border.default };
     if (selCase && cases.length) {
@@ -629,6 +691,7 @@ export function HomeScreen() {
       const pct = first ? Math.round(((first - v) / first) * 100) : 0;
       return {
         items: tcase.areas.map((a) => a.label),
+        pins: tcase.areas.map((a) => a.pin),
         note: t?.red ? 'ควรพบแพทย์ก่อนนวด' : pct > 0 ? `↘ ดีขึ้น ${pct}%` : pct < 0 ? `↗ ปวดเพิ่ม ${-pct}%` : 'เท่าเดิม',
         noteTone: t?.red || pct < 0 ? 'bad' : pct > 0 ? 'good' : undefined,
         color: t?.red ? colors.status.danger.fg : painColorOf(v),
@@ -1178,6 +1241,7 @@ export function HomeScreen() {
         pressure: after.pressure,
         avoid: after.avoid,
         radiate: after.radiate,
+        related: rel,
         assessedOn: todayISO(),
         confirmedOn: undefined,
         // ประเมินซ้ำเรื่องเดิม → เก็บรอบก่อนไว้ (ไม่ลบ) ให้เห็นว่าเปลี่ยนจากอะไร
@@ -2814,37 +2878,6 @@ export function HomeScreen() {
       >
         <Body3D ref={bodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={introW} height={introH} restAngle={started && !leaving ? REST_ANGLE : chatHome ? WELCOME_ANGLE : 0} />
       </Animated.View>
-      {/* ป้ายบนหุ่น: การรักษาของแท็บนี้ — จุดที่รักษา + ระดับปวดล่าสุด (สีเดียวกับจุดบนหุ่น) */}
-      {modelTag ? (
-        // ป้ายบนหุ่น: ชิดซ้ายเรียงลงมา — จุดที่ปวดทีละบริเวณ (หลักบนสุด) แล้วจึงข้อมูลอื่นต่อท้าย
-        <View style={{ position: 'absolute', top: headerBottom + space[3], left: space[4], alignItems: 'flex-start', gap: space[1] }}>
-          {modelTag.items.map((it, i) => (
-            <React.Fragment key={it}>
-              {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) · ป้ายหน้าตาเดียวกันทั้งหมด */}
-              {modelTag.ranked && i < 2 ? (
-                <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
-                  {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
-                </Text>
-              ) : null}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />
-                <Text variant="labelSm">{it}</Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-      ) : null}
-      {/* ข้อมูลอื่น (ระดับปวด · ครั้งที่) ชิดขวา แถวเดียวกับป้ายจุดแรก — ป้ายจุดที่ปวดอยู่ซ้าย */}
-      {modelTag?.note ? (
-        <View style={{ position: 'absolute', top: headerBottom + space[3] + (modelTag.ranked ? 18 : 0), right: space[4] }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
-            {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
-            <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
-              {modelTag.note}
-            </Text>
-          </View>
-        </View>
-      ) : null}
       </Animated.View>
 
       {/* โหมดดูหุ่น (แผ่นการ์ดลงล่าง): พื้นที่เหนือแผ่นทั้งหมดรับการลาก/แตะ/ซูมให้หุ่น */}
@@ -3190,6 +3223,60 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
+      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = จุดที่ปวด + ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + อัปเดตเมื่อไหร่ · ขวา = ธาตุ + แนวโน้ม
+       * แตะป้าย → หุ่นหันไปหาจุดนั้น · แผ่นการ์ดขึ้น = ป้ายจางหาย (ไม่ทับการ์ด) */}
+      {modelTag ? (
+        <Animated.View
+          pointerEvents={sheetOpen ? 'none' : 'box-none'}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: headerBottom + space[3],
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            paddingHorizontal: space[4],
+            opacity: Animated.multiply(bodyIn, sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.35)], outputRange: [1, 0], extrapolate: 'clamp' })),
+          }}
+        >
+          <View pointerEvents="box-none" style={{ alignItems: 'flex-start', gap: space[1], flexShrink: 1 }}>
+            {modelTag.items.map((it, i) => (
+              <React.Fragment key={it}>
+                {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
+                {modelTag.ranked && i < 2 ? (
+                  <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
+                    {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
+                  </Text>
+                ) : null}
+                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
+              </React.Fragment>
+            ))}
+            {bodyInfo?.extras.length ? <View style={{ height: space[1] }} /> : null}
+            {bodyInfo?.extras.map((x) => (
+              <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
+            ))}
+            {bodyInfo?.updated ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="อัปเดตอาการวันนี้" onPress={openAI} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: space[1], marginLeft: space[1] }}>
+                <Text variant="caption" tone="tertiary">
+                  {`อัปเดต${/^(วันนี้|เมื่อวาน)$|ก่อน$/.test(bodyInfo.updated) ? '' : ' '}${bodyInfo.updated}`}
+                </Text>
+                <Icon name="chevron-right" size="xs" color={colors.text.tertiary} />
+              </Pressable>
+            ) : null}
+          </View>
+          <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1], marginTop: modelTag.ranked ? 18 : 0 }}>
+            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+            {modelTag.note ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
+                {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
+                <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
+                  {modelTag.note}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Animated.View>
+      ) : null}
       {/* ยังไม่มีข้อมูล: ลูกแก้ว ThaiWell AI กลางจอ + ข้อความชวน (ทางเริ่มเดียว) · จางเมื่อดึงแผ่นการ์ดขึ้น/เข้าแชท */}
       {chatHome && !started && sheetTop > 0 ? (
         <Animated.View
@@ -3246,7 +3333,8 @@ export function HomeScreen() {
             </View>
               <View pointerEvents="box-none" style={{ flexDirection: 'row' }}>
                 {/* pill ธาตุแบบ back-office: ไอคอนสีธาตุ + ป้าย + ชื่อธาตุ · ธาตุกำเนิด (คนไข้ใหม่) = ธาตุเจ้าเรือน · จากแบบประเมิน = ธาตุปัจจุบัน */}
-                {tagElement ? (
+                {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น (หัวสั้นลง 1 บรรทัด) */}
+                {tagElement && !modelTag ? (
                   <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
                 ) : null}
               </View>
@@ -5967,5 +6055,26 @@ function ChatHistorySheet({
         </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+/** ป้ายบนหุ่นหน้าแรก: จุด (สีตามระดับปวด) หรือไอคอน + คำสั้น · warn = ส้ม · avoid = เทา */
+function BodyTagPill({ dot, icon, label, tone, onPress }: { dot?: string; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const fg = tone === 'warn' ? colors.status.warning.fg : tone === 'avoid' ? colors.text.secondary : colors.text.primary;
+  const bg = tone === 'warn' ? colors.status.warning.bg : colors.surface.default;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
+    >
+      {dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
+      {icon ? <Icon name={icon} size="xs" color={fg} /> : null}
+      <Text variant="labelSm" numberOfLines={1} color={fg}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
