@@ -130,21 +130,32 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
     service,
     date: request.date,
     start: request.start,
-    assessment: {
-      serviceId: request.serviceId,
-      therapistId: request.therapistId || undefined,
-      complaint,
-      pain: request.painScore,
-      areas: it?.focusAreas ?? [],
-      avoid: it?.avoidAreas ?? [],
-      conditions: it?.conditions ?? patient.conditions,
-      pressure: it?.pressure ?? 'ปานกลาง',
-      screening: request.screening,
-      summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
-    },
+    // จองก่อนประเมิน: ไม่ส่งคะแนนปวด/โรคประจำตัว/แรงนวด/คัดกรอง (ค่าเริ่มต้นทำให้หลังบ้านขึ้นว่า "ไม่มี" ทั้งที่ยังไม่ได้ถาม)
+    // → หลังบ้านแสดง "ไม่ได้ประเมิน" และให้คัดกรองที่เคาน์เตอร์
+    assessment:
+      request.assessed === false
+        ? {
+            serviceId: request.serviceId,
+            therapistId: request.therapistId || undefined,
+            assessed: false,
+            complaint,
+            summary: 'ยังไม่ได้ประเมินอาการ (จองก่อน)',
+          }
+        : {
+            serviceId: request.serviceId,
+            therapistId: request.therapistId || undefined,
+            complaint,
+            pain: request.painScore,
+            areas: it?.focusAreas ?? [],
+            avoid: it?.avoidAreas ?? [],
+            conditions: it?.conditions ?? patient.conditions,
+            pressure: it?.pressure ?? 'ปานกลาง',
+            screening: request.screening,
+            summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
+          },
   });
   if (error) throw error;
-  await logEvent('booking.requested', request.id, patient.name, `ประเมินอาการแล้ว ส่งคำขอจอง ${service} ${request.date} ${request.start} น.`);
+  await logEvent('booking.requested', request.id, patient.name, `${request.assessed === false ? 'จองโดยยังไม่ประเมินอาการ' : 'ประเมินอาการแล้ว'} ส่งคำขอจอง ${service} ${request.date} ${request.start} น.`);
 }
 
 /** มาถึงคลินิก → checked_in (คลินิกออกเลขคิวแล้วเขียนกลับมาใน queue_no) */

@@ -54,6 +54,8 @@ export interface ClinicRequest {
   date: string; // YYYY-MM-DD
   start: string; // HH:mm
   painScore: number;
+  /** ประเมินอาการแล้วหรือยัง (จองก่อนประเมิน = false → ไม่ส่งค่าเริ่มต้น ให้หลังบ้านขึ้น "ไม่ได้ประเมิน") */
+  assessed?: boolean;
   screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
   intake?: {
     at: string;
