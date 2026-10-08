@@ -3255,12 +3255,16 @@ export function HomeScreen() {
             {bodyInfo?.extras.map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
-            {bodyInfo?.updated ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="อัปเดตอาการวันนี้" onPress={openAI} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: space[1], marginLeft: space[1] }}>
+            {/* ข้อมูลบนหุ่นเก่าแล้ว (ไม่ใช่วันนี้) → บอกว่าเป็นข้อมูลเมื่อไหร่ + ปุ่มเล่าอาการวันนี้ · วันนี้ = ไม่ต้องแสดง */}
+            {bodyInfo?.updated && bodyInfo.updated !== 'วันนี้' ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="เล่าอาการวันนี้" onPress={openAI} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: space[1], marginLeft: space[1] }}>
                 <Text variant="caption" tone="tertiary">
-                  {`อัปเดต${/^(วันนี้|เมื่อวาน)$|ก่อน$/.test(bodyInfo.updated) ? '' : ' '}${bodyInfo.updated}`}
+                  {`ข้อมูล${/^เมื่อวาน$|ก่อน$/.test(bodyInfo.updated) ? '' : 'วันที่ '}${bodyInfo.updated} · `}
                 </Text>
-                <Icon name="chevron-right" size="xs" color={colors.text.tertiary} />
+                <Text variant="caption" color={colors.brand.primary}>
+                  อาการวันนี้
+                </Text>
+                <Icon name="chevron-right" size="xs" color={colors.brand.primary} />
               </Pressable>
             ) : null}
           </View>
