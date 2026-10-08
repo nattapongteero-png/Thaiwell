@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import React from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -79,7 +80,8 @@ export function RootNavigator() {
     <NavigationContainer
       theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.surface.canvas, primary: colors.brand.primary } }}
     >
-      <Stack.Navigator initialRouteName="Auth" screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      {/* ทดสอบอัตโนมัติ (เว็บ + ?e2e): เข้าหน้าแรกด้วยบัญชีตัวอย่างในเครื่อง (ไม่ผูกบัญชีจริง) */}
+      <Stack.Navigator initialRouteName={__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('e2e') ? 'ClientTabs' : 'Auth'} screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
         <Stack.Screen name="Auth" component={AuthScreen} />
         <Stack.Screen name="Identity" component={IdentityScreen} options={{ gestureEnabled: false }} />
         <Stack.Screen name="ClientTabs" component={ClientTabs} />

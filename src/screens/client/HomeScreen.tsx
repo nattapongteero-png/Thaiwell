@@ -73,7 +73,7 @@ import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
 import type { HeardContext } from '../../services/voiceAI';
 import { VoiceChatDock } from './home/VoiceChatDock';
-import { EMPTY_FIELDS, classifyTurn, evidenced, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
+import { DANGER_WORDS, REPEAT_ASK, UNSURE, EMPTY_FIELDS, HEALTH_WORDS, causeOf, pressureOf, classifyTurn, durationOf, extractHealth, grounded, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
@@ -1011,7 +1011,7 @@ export function HomeScreen() {
   };
 
   /** ตอบหัวข้อประเมินปัจจุบัน → ถามหัวข้อถัดไป · ครบแล้ว → สรุป + แนวทางการรักษา */
-  const answerStep = (answer: string, patch?: Partial<Assessment>, userExtra?: Partial<ThreadItem>, fromStep?: AssessStep) => {
+  const answerStep = (answer: string, patch?: Partial<Assessment>, userExtra?: Partial<ThreadItem>, fromStep?: AssessStep, noted?: string[]) => {
     const sid = activeId;
     // แก้ข้อเดียวจากข้อมูลชุดเดิม → กลับไปหน้าทบทวน (ไม่ถามข้อถัดไป)
     if (assess.editing && !fromStep) {
@@ -1065,14 +1065,16 @@ export function HomeScreen() {
         // อาการร่วมที่เล่ามาแล้ว (ชา อ่อนแรง …) → เลือกให้ ข้ามข้อนี้
         const rel = prefillRelated.current[sid];
         if (!rel?.length) break;
-        setSel((cur) => ({ ...cur, ...Object.fromEntries(rel.map((x) => [x, null])) }));
-        skipped.push(rel.join(', '));
+        // บอกมาแล้วว่าไม่มีอาการร่วม → ข้ามโดยไม่เลือกอะไร
+        const relSel = rel.filter((x) => x !== 'ไม่มี');
+        setSel((cur) => ({ ...cur, ...Object.fromEntries(relSel.map((x) => [x, null])) }));
+        skipped.push(relSel.length ? relSel.join(', ') : 'ไม่มีอาการร่วม');
         delete prefillRelated.current[sid];
       } else {
         const k = nextStep as keyof Assessment;
         if (nextStep === 'symptoms' || pf[k] === undefined) break;
         patch = { ...patch, [k]: pf[k] };
-        skipped.push(k === 'pain' ? `ปวด ${pf.pain}/10` : String(pf[k]));
+        skipped.push(notedText(k, pf[k]));
         delete pf[k];
       }
       nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
@@ -1081,7 +1083,8 @@ export function HomeScreen() {
         nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
       }
     }
-    const lead = skipped.length ? `รับทราบค่ะ (${skipped.join(' · ')})` : 'รับทราบค่ะ';
+    // เล่ายาวมา: บอกทุกข้อที่จดไว้ (รวมข้อที่ยังไม่ถึง) · ไม่ใช่ = บอกเฉพาะข้อที่ข้ามไป
+    const lead = noted?.length ? ackLead('รับทราบค่ะ', noted) : skipped.length ? `รับทราบค่ะ (${skipped.join(' · ')})` : 'รับทราบค่ะ';
     const step = nextStep ?? ('done' as const);
     const after = { ...assess, ...patch, step };
     // functional update — ไม่ทับ sel ที่เพิ่งเลือกจาก chip/หุ่นในจังหวะเดียวกัน
@@ -1968,17 +1971,34 @@ export function HomeScreen() {
   /** ข้อมูลข้ออื่นที่บอกมาในข้อความเดียวกัน → เก็บไว้ข้ามตอนถึงข้อนั้น · คืนสรุปสั้น ๆ */
   const keepPrefill = (st: AssessStep, f: TurnFields & { related?: string[] | null }): string[] => {
     const extra: Partial<Assessment> = {};
-    (['pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid', 'radiate'] as const).forEach((k) => {
+    (['pain', 'duration', 'cause', 'health', 'meds', 'allergy', 'risk', 'pressure', 'avoid', 'radiate'] as const).forEach((k) => {
       if (k !== st && f[k] !== null && f[k] !== undefined) (extra as Record<string, unknown>)[k] = f[k];
     });
     // ข้อที่ผ่านมาแล้วไม่เก็บ (ถ้าจะแก้ = ขอแก้คำตอบ)
     const at = ASSESS_ORDER.indexOf(st as (typeof ASSESS_ORDER)[number]);
     Object.keys(extra).forEach((k) => ASSESS_ORDER.indexOf(k as (typeof ASSESS_ORDER)[number]) < at && delete (extra as Record<string, unknown>)[k]);
-    const rel = st !== 'related' && at < ASSESS_ORDER.indexOf('related') ? (f.related ?? []).filter((x) => HOME_CONTENT.related.includes(x)) : [];
+    const rel = st !== 'related' && at < ASSESS_ORDER.indexOf('related') ? (f.related ?? []).filter((x) => HOME_CONTENT.related.includes(x) || x === 'ไม่มี') : [];
     if (rel.length) prefillRelated.current[activeId] = rel;
-    if (!Object.keys(extra).length) return rel.length ? [rel.join(', ')] : [];
+    const relText = rel.length ? [rel.includes('ไม่มี') && rel.length === 1 ? 'ไม่มีอาการร่วม' : rel.filter((x) => x !== 'ไม่มี').join(', ')] : [];
+    if (!Object.keys(extra).length) return relText;
     prefill.current[activeId] = { ...prefill.current[activeId], ...extra };
-    return [...(rel.length ? [rel.join(', ')] : []), ...Object.entries(extra).map(([k, v]) => (k === 'pain' ? `ปวด ${v}/10` : String(v)))];
+    return [...relText, ...Object.entries(extra).map(([k, v]) => notedText(k, v))];
+  };
+  /** ข้อที่จดไว้ → ข้อความสั้นที่อ่านรู้เรื่อง (ไม่ใช่ "ไม่มี · ไม่มี") */
+  const notedText = (k: string, v: unknown): string => {
+    const t = String(v);
+    const no = t === 'ไม่มี';
+    switch (k) {
+      case 'pain': return `ปวด ${t}/10`;
+      case 'duration': return `เป็นมา ${t}`;
+      case 'health': return no ? 'ไม่มีโรคประจำตัว' : `โรคประจำตัว ${t}`;
+      case 'meds': return no ? 'ไม่มียาประจำ' : `ยา ${t}`;
+      case 'allergy': return no ? 'ไม่แพ้อะไร' : t;
+      case 'risk': return no ? 'ไม่มีข้อห้ามนวด' : t;
+      case 'pressure': return t === PRESSURE_OPTIONS[3] ? t : `แรงนวด${t}`;
+      case 'avoid': return no ? 'นวดได้ทุกส่วน' : `ไม่นวด${t}`;
+      default: return t;
+    }
   };
   /** ตอบรับ + บอกว่าจดอะไรไว้แล้วบ้าง (เล่ายาวทีเดียว ให้เห็นว่าจับได้ครบไหม) */
   const ackLead = (head: string, noted: string[]) => (noted.length ? `${head}\nจดไว้แล้ว: ${noted.join(' · ')}` : head);
@@ -1987,6 +2007,15 @@ export function HomeScreen() {
     const noted = turn ? keepPrefill(st, turn.fields) : [];
     try {
       // คัดแยกแล้วได้คำตอบของข้อนี้มาเลย → ไม่ต้องถาม AI ซ้ำ
+      // ไม่แน่ใจ / ไม่รู้ → รับไว้แล้วไปข้อถัดไป (ไม่ถามข้อเดิมวนซ้ำ) · ความปวดยังต้องการตัวเลข · โรค/ยา/แพ้ = ยังไม่บันทึกลงโปรไฟล์
+      if (UNSURE.test(text) && st !== 'pain' && st !== 'symptoms') {
+        const v: Partial<Assessment> =
+          st === 'pressure' ? { pressure: PRESSURE_OPTIONS[3] } : st === 'avoid' ? { avoid: 'ไม่มี' } : st === 'health' || st === 'meds' || st === 'allergy' || st === 'related' ? {} : ({ [st]: 'ไม่แน่ใจ' } as Partial<Assessment>);
+        return answerStep(text, v);
+      }
+      // ระยะเวลา / สาเหตุ: อ่านจากคำโดยตรงก่อน (AI เลือกผิดบ่อย)
+      const direct = st === 'duration' ? durationOf(text) : st === 'cause' ? causeOf(text) : st === 'pressure' ? pressureOf(text) : null;
+      if (direct) return answerStep(text, { [st]: direct } as Partial<Assessment>);
       if (turn) {
         if (st === 'pain' && turn.fields.pain !== null) return answerStep(text, { pain: turn.fields.pain }, { pain: turn.fields.pain });
         const v = turn.option ?? (turn.fields as unknown as Record<string, string | null>)[st];
@@ -1994,7 +2023,8 @@ export function HomeScreen() {
         if (st !== 'pain' && st !== 'symptoms' && st !== 'related' && st !== 'health' && st !== 'meds' && st !== 'allergy' && typeof v === 'string' && opts[st].includes(v)) return answerStep(text, { [st]: v } as Partial<Assessment>);
         if (st === 'symptoms' && turn.fields.symptoms?.length) {
           pickSymptoms(turn.fields.symptoms);
-          return answerStep(text);
+          // บอกว่าจดอะไรไว้แล้วบ้าง (เล่ายาว) แล้วถามข้อถัดไปที่ยังไม่ได้บอก
+          return answerStep(text, undefined, undefined, undefined, noted.length ? [turn.fields.symptoms!.join(', '), ...noted] : undefined);
         }
       }
       if (st === 'pain') {
@@ -2113,6 +2143,21 @@ export function HomeScreen() {
     });
   };
 
+  /** อธิบายคำถามแต่ละข้อ (ผู้ใช้ไม่เข้าใจ / ขอให้ถามใหม่) */
+  const STEP_EXPLAIN: Partial<Record<AssessStep, string>> = {
+    symptoms: 'บอกตำแหน่งที่ปวดได้เลยค่ะ เช่น คอ บ่า หลัง เข่า หรือแตะบนหุ่นตรงที่ปวดก็ได้',
+    radiate: 'หมายถึงความปวดแล่นจากจุดที่ปวดไปที่อื่นไหมคะ เช่น จากหลังลงขา ถ้าปวดอยู่ที่เดียว ตอบว่าไม่ร้าวได้เลย',
+    related: 'มีอาการอื่นมาด้วยไหมคะ เช่น ชา อ่อนแรง ปวดหัว ถ้าไม่มี ตอบว่าไม่มีได้เลย',
+    pain: 'ให้คะแนนความปวดตอนนี้ค่ะ 0 คือไม่ปวด 10 คือปวดมากที่สุด เช่น ปวดพอทนได้ประมาณ 4 ถึง 5',
+    duration: 'ปวดมาตั้งแต่เมื่อไหร่คะ เช่น เมื่อวาน สามวัน สองอาทิตย์',
+    cause: 'ช่วงนี้ทำอะไรที่น่าจะทำให้ปวดไหมคะ เช่น นั่งทำงานนาน ยกของหนัก นอนน้อย ถ้าไม่รู้ ตอบว่าไม่แน่ใจได้',
+    health: 'มีโรคที่เป็นอยู่ประจำไหมคะ เช่น ความดัน เบาหวาน ถ้าไม่มี ตอบว่าไม่มีได้เลย',
+    meds: 'มียาที่กินเป็นประจำไหมคะ เช่น ยาความดัน ยาละลายลิ่มเลือด ถ้าไม่มี ตอบว่าไม่มีได้เลย',
+    allergy: 'เคยแพ้อะไรไหมคะ เช่น แพ้ยา แพ้สมุนไพร แพ้น้ำมันนวด ถ้าไม่แพ้ ตอบว่าไม่มีได้เลย',
+    risk: 'ช่วงนี้มีข้อไหนไหมคะ เช่น เพิ่งผ่าตัด บาดเจ็บ มีไข้ ตั้งครรภ์ ข้อเหล่านี้อาจยังนวดไม่ได้ ถ้าไม่มี ตอบว่าไม่มีได้เลย',
+    pressure: 'ชอบให้นวดแรงแค่ไหนคะ เบา ปานกลาง หนัก หรือให้ผู้ให้บริการเลือกก็ได้',
+    avoid: 'มีส่วนไหนที่ไม่อยากให้นวดไหมคะ เช่น ท้อง ศีรษะ ถ้านวดได้ทุกส่วน ตอบว่าไม่มีได้เลย',
+  };
   /** หลังได้อาการ: อาการนั้นมีรูปแบบการร้าว → ถามว่าร้าวไปไหน · ไม่มี → ข้ามไปอาการร่วม (อ่านอาการล่าสุดของแชท ณ ตอนตอบ) */
   /** answered = ถามอาการร้าวไปแล้วกี่บริเวณ → ถามบริเวณถัดไปที่มีรูปแบบการร้าว · ครบ = อาการร่วม */
   const radiateOrNext = (sid: string, picked?: string[], lead = 'รับทราบค่ะ', answered = 0): ThreadItem[] => {
@@ -2343,10 +2388,22 @@ export function HomeScreen() {
     const lastCard = thread[thread.length - 1]?.card;
     // ตอบข้อประเมิน/ติดตามผลแบบสั้น ๆ → ส่งเข้าข้อนั้นเลย
     const shortOk = !lastCard || !WAITING.includes(lastCard.type) || ['fuAsk', 'fuAdverse', 'fuRisk', 'fuWhere'].includes(lastCard.type) || cardOptions(lastCard).includes(text.trim());
+    // ทักทาย / ขอบคุณ → ทักกลับ แล้วถามข้อที่ค้าง (ไม่ตีความเป็นคำตอบ)
+    if (/^(สวัสดี|หวัดดี|ดีค่ะ|ดีครับ|ขอบคุณ|ขอบใจ|โอเคค่ะ|โอเคครับ)/.test(text.trim()) && text.trim().length <= 20 && assess.step !== 'review')
+      return aiReply(activeId, text, () => {
+        const thanks = /ขอบ/.test(text);
+        const again = resumeItems(thanks ? 'ยินดีค่ะ' : 'สวัสดีค่ะ');
+        return again.length ? again : [aiText(thanks ? 'ยินดีค่ะ มีอะไรให้ช่วยอีกบอกได้เลยนะคะ' : 'สวัสดีค่ะ วันนี้ปวดเมื่อยตรงไหน เล่าให้ฟังได้เลยค่ะ')];
+      });
+    // ไม่เข้าใจคำถาม / ขอให้ถามใหม่ (สั้น ๆ เช่น "พูดอีกที") → อธิบายแล้วถามข้อเดิม
+    if (REPEAT_ASK.test(text) && STEP_EXPLAIN[assess.step] && text.trim().length <= 25) return aiReply(activeId, text, () => resumeItems(STEP_EXPLAIN[assess.step]!));
     if (pend && shortOk && isPlainAnswer(text, pend.options)) return routeAnswer(text);
     triage(text, pend);
   };
   sendRef.current = send;
+  // ทดสอบอัตโนมัติ (เว็บ + ?e2e เท่านั้น): สคริปต์ป้อนข้อความเข้าแชทแล้วอ่านผล (ข้อมูลที่จดได้ · ข้อความที่ AI ตอบ)
+  if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('e2e'))
+    (window as unknown as { __tw: unknown }).__tw = { send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short) };
   // บริบทให้ถอดเสียง/ตรวจคำที่ได้ยิน: ข้อความล่าสุดของผู้ช่วย + ตัวเลือกของข้อที่ถามอยู่ + ที่ผู้ใช้พูดก่อนหน้า
   ctxRef.current = () => {
     const lastAi = [...thread].reverse().find((m) => m.from === 'ai' && m.text);
@@ -2458,9 +2515,16 @@ export function HomeScreen() {
     // เล่ายาว (หลายข้อในทีเดียว) → ดึงข้อมูลแต่ละข้อแบบเจาะจงคู่ขนาน แล้วรวมกับผลตัวคัดแยก
     const long = text.trim().length >= 25;
     const st0 = assess.step;
-    Promise.all([classifyTurn(text, pend, ENUMS, SYMPTOM_PROMPT), long ? extractStory(text, { ...ENUMS, related: HOME_CONTENT.related }, SYMPTOM_PROMPT, STEP_HINT).catch(() => null) : null])
+    // โรค / ยา / การแพ้ ในเรื่องเล่า → ดึงแยก (ข้อที่ถามอยู่ตอนนี้ใช้ตัวอ่านของข้อนั้นแทน)
+    const healthToo = HEALTH_WORDS.test(text) && !['health', 'meds', 'allergy'].includes(assess.step);
+    Promise.all([
+      classifyTurn(text, pend, ENUMS, SYMPTOM_PROMPT),
+      long ? extractStory(text, { ...ENUMS, related: HOME_CONTENT.related }, SYMPTOM_PROMPT, STEP_HINT).catch(() => null) : null,
+      healthToo ? extractHealth(text).catch(() => null) : null,
+    ])
       // ตัดข้อที่ข้อความไม่ได้พูดถึงจริง · อาการชา/อ่อนแรงตอนตอบข้ออาการร่วม/อาการร้าว = คำตอบข้อนั้น (กฎคัดกรองตัดสิน) ไม่ใช่เหตุฉุกเฉินจาก AI
-      .then(([t0, story]) => ({ ...t0, danger: t0.danger && !(st0 === 'related' || st0 === 'radiate'), fields: evidenced(mergeFields(t0.fields, story), text) }))
+      .then(([t0, story, hl]) => ({ ...t0, fields: grounded({ ...mergeFields(t0.fields, story), ...(hl ?? {}), health: hl?.health ?? null }, text) }))
+      .then((t0) => ({ ...t0, danger: t0.danger && DANGER_WORDS.test(text) && !(st0 === 'related' || st0 === 'radiate') }))
       .then(async (turn) => {
         const tc = chatCase();
         const st = assess.step;
@@ -2482,6 +2546,12 @@ export function HomeScreen() {
           setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
           return editReviewByText(text);
         }
+        // พูดแก้คำตอบข้อก่อนหน้าระหว่างประเมิน ("จริง ๆ ปวด 7 นะ") → แก้ข้อนั้น ไม่ใช่คำตอบของข้อที่ถามอยู่
+        const atNow = ASSESS_ORDER.indexOf(st as (typeof ASSESS_ORDER)[number]);
+        const fixesEarlier = Object.entries(turn.fields).some(([k, v]) => v != null && (v as unknown[]).length !== 0 && ASSESS_ORDER.indexOf(k as (typeof ASSESS_ORDER)[number]) >= 0 && ASSESS_ORDER.indexOf(k as (typeof ASSESS_ORDER)[number]) < atNow);
+        if (assessing && st !== 'review' && turn.kind === 'answer' && EDIT_ASK.test(text) && fixesEarlier) turn.kind = 'change';
+        // ไม่เข้าใจคำถาม / ขอให้ถามใหม่ → อธิบายข้อที่ถามอยู่ แล้วถามข้อเดิม
+        if (assessing && REPEAT_ASK.test(text) && STEP_EXPLAIN[st]) return put(resumeItems(STEP_EXPLAIN[st]));
         switch (turn.kind) {
           case 'question':
             return put([...(await freeAnswer(text, turn.about)), ...resumeItems('กลับมาที่คำถามค่ะ')]);
@@ -2504,18 +2574,34 @@ export function HomeScreen() {
             const f = turn.fields;
             const patch: Partial<Assessment> = {};
             const done: string[] = [];
-            (['pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid', 'radiate'] as const).forEach((k) => {
-              if (f[k] === null || f[k] === undefined) return;
-              (patch as Record<string, unknown>)[k] = f[k];
-              done.push(k === 'pain' ? `ปวด ${f.pain}/10` : String(f[k]));
+            // ข้อที่ผ่านมาแล้ว → แก้เลย (โรค/ยา/แพ้ บอก "ด้วย/เพิ่ม" = เพิ่มจากเดิม) · ข้อที่ยังไม่ถึง → จดไว้ (keepPrefill ด้านล่าง)
+            const at = ASSESS_ORDER.indexOf(st as (typeof ASSESS_ORDER)[number]);
+            (['pain', 'duration', 'cause', 'health', 'meds', 'allergy', 'risk', 'pressure', 'avoid', 'radiate'] as const).forEach((k) => {
+              const v = f[k];
+              if (v === null || v === undefined || ASSESS_ORDER.indexOf(k as (typeof ASSESS_ORDER)[number]) >= at) return;
+              const old = assess[k as keyof Assessment];
+              const add = (k === 'health' || k === 'meds' || k === 'allergy') && /ด้วย|เพิ่ม/.test(text) && typeof old === 'string';
+              (patch as Record<string, unknown>)[k] = add ? answerOfList([...new Set([...listOfAnswer(old as string), ...listOfAnswer(String(v))])]) : v;
+              done.push(notedText(k, (patch as Record<string, unknown>)[k]));
             });
             if (f.symptoms?.length) {
               setSel((cur) => ({ ...Object.fromEntries(Object.entries(cur).filter(([k]) => HOME_CONTENT.related.includes(k))), ...Object.fromEntries(f.symptoms!.map((x) => [x, null])) }));
               done.push(f.symptoms.join(', '));
             }
             // ข้อที่ยังไม่ถึง → เก็บไว้ข้ามตอนถึง · ข้อที่ผ่านแล้ว → แก้เลย
-            keepPrefill(st, f);
+            done.push(...keepPrefill(st, f));
             setAssess((a) => ({ ...a, ...patch }));
+            // บอกคำตอบของข้อที่ถามอยู่มาด้วย → ตอบข้อนั้นเลย (แก้ข้อก่อนหน้าแล้วไปต่อ)
+            const cur = (f as Record<string, unknown>)[st];
+            if (cur !== null && cur !== undefined && st !== 'symptoms' && st !== 'related' && st !== 'radiate') {
+              setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
+              return answerStep(text, { ...patch, [st]: cur } as Partial<Assessment>, undefined, undefined, done.length ? done : undefined);
+            }
+            // เปลี่ยนตำแหน่งที่ปวดตอนถามอาการร้าว/อาการร่วม → ถามของตำแหน่งใหม่ (ไม่ถามของตำแหน่งเดิม)
+            if (f.symptoms?.length && (st === 'radiate' || st === 'related')) {
+              setAssess((a) => ({ ...a, radiate: undefined }));
+              return put(radiateOrNext(sid, f.symptoms, `แก้ให้แล้วค่ะ (${done.join(' · ')})`));
+            }
             return put(resumeItems(done.length ? `แก้ให้แล้วค่ะ (${done.join(' · ')})` : 'อยากแก้ข้อไหนคะ พิมพ์บอกได้เลย เช่น "ปวด 5"'));
           }
           case 'switch': {
