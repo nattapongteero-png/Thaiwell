@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows, fetchPatientRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { cloudAddendum, cloudAfterPain, cloudReassess, cloudStatusOf, clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -310,6 +310,8 @@ interface JourneyState {
    */
   caseToday: Record<string, CaseToday>;
   setCaseToday: (caseId: string, v: CaseToday) => void;
+  /** หลังเช็กอิน: แจ้งอาการเพิ่ม → แปะกับนัดนั้นในคลินิก (ไม่แก้ผลประเมิน) · หานัดไม่เจอ = ส่งเป็นข้อความถึงคลินิก */
+  addSymptomNote: (target: { caseId?: string; draftId?: string; looseId?: string }, title: string, text: string) => void;
   /** แจ้งเตือนจากคลินิก: เลื่อน/ยกเลิกนัดของการรักษา (ผู้ใช้เปลี่ยนเองไม่ได้ — หลังบ้านโรงพยาบาลแก้แล้วแจ้งมา) */
   apptNotices: ApptNotice[];
   /** อ่านแล้ว (ยังอยู่ในรายการ) */
@@ -425,6 +427,13 @@ export interface CaseAppt {
   therapist: string;
   stage?: 'checked_in' | 'called' | 'in_service';
 }
+
+/** แนวทางการรักษาจากผลประเมินของใบร่าง (ส่งให้คลินิก) · ไม่มีอาการ / ควรพบแพทย์ = ไม่มีแนวทาง */
+const guideOfDraft = (d?: DraftCase) => {
+  if (!d || d.red || !d.symptoms.length) return undefined;
+  const g = guideFor(d.symptoms, d.radiate);
+  return { condition: g.condition, methods: g.methods, points: g.points, caution: [d.caution, g.caution].filter(Boolean).join('\n') || undefined, ref: g.ref };
+};
 
 const Ctx = createContext<JourneyState | null>(null);
 
@@ -582,6 +591,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     sendNote(title, `${patientOf().name} · ${body}`, patientOf().id, patientOf().name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const addSymptomNote = (target: { caseId?: string; draftId?: string; looseId?: string }, title: string, text: string) => {
+    const ref = isCloud() ? refOf(target) : undefined;
+    const fallback = () => notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${title}: ${text}`);
+    if (!ref) return fallback();
+    void cloudAddendum(ref, text)
+      .then((ok) => !ok && fallback())
+      .catch(fallback);
+  };
   /** ส่งคำขอจอง + แบบประเมินก่อนรับบริการ ไปหลังบ้าน (รูปแบบ BookingRequest ของหลังบ้าน) */
   const sendRequest = (target: { draftId?: string; looseId?: string; caseId?: string }, label: string, caseBk?: { date: string; time: string; service: string; therapist: string; title: string; pain: number }) => {
     const { drafts: ds, looseBookings: ls, profile: pf } = latest.current;
@@ -609,6 +626,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       painScore: caseBk?.pain ?? d?.pain ?? 0,
       assessed: !!caseBk || !!d,
       screened: !!d?.risk,
+      answers: d ? { duration: d.duration, health: d.health, meds: d.meds, allergy: d.allergy, risk: d.risk, radiate: d.radiate, related: d.related, pressure: d.pressure } : undefined,
       screening: { fever: /ไข้/.test(risk), highBP: pf.conditions.some((c) => /ความดัน/.test(c)), menstruation: /ประจำเดือน/.test(risk), pregnant: /ตั้งครรภ์/.test(risk), recentSurgery: /ผ่าตัด/.test(risk), contagious: /โรคติดต่อ/.test(risk) },
       intake: d
         ? {
@@ -633,6 +651,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
           }
         : undefined,
       note: d?.caution,
+      // แนวทางการรักษาชุดเดียวกับที่ผู้ป่วยเห็นในแชท
+      guide: guideOfDraft(d),
       submittedAt: new Date().toISOString(),
       serviceLabel: b.service,
     };
@@ -845,10 +865,21 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // ใบร่างนี้ไม่มีแล้ว → ไม่ให้การจองครั้งถัดไปไปผูกกับใบที่หายไป
     setActiveDraftId((id) => (id === draftId ? null : id));
   }, []);
-  const upsertDraft = useCallback(
-    (d: DraftCase) => setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d])),
-    [],
-  );
+  const upsertDraft = useCallback((d: DraftCase) => {
+    // ประเมินเรื่องเดิมอีกครั้งหลังจอง (ก่อนเช็กอิน) → ส่งเป็นรอบใหม่ให้คลินิก (รอบเดิมเก็บไว้) · เช็กอินแล้วคลินิกไม่รับ → แจ้งผู้ใช้
+    const old = latest.current.drafts.find((x) => x.id === d.id);
+    if (isCloud() && old?.booking && d.booking && (old.pain !== d.pain || old.symptoms.join() !== d.symptoms.join() || old.title !== d.title || old.risk !== d.risk)) {
+      const ref = refOf({ draftId: d.id });
+      if (ref)
+        void cloudReassess(ref, { guide: guideOfDraft(d), complaint: d.title, pain: d.pain, areas: d.symptoms, avoid: d.avoid && d.avoid !== 'ไม่มี' ? [d.avoid] : [], summary: `ประเมินใหม่: ${d.title} · ปวด ${d.pain}/10${d.caution ? ` · ${d.caution}` : ''}` })
+          .then((ok) => {
+            if (!ok) setApptNotices((all) => [{ id: `n-ra-${Date.now()}`, draftId: d.id, kind: 'reminder', text: 'ส่งผลประเมินใหม่ไม่ได้ · คลินิกเริ่มขั้นตอนของนัดนี้แล้ว · แจ้งอาการเพิ่มได้ที่หน้านัด', at: nowAtLabel() }, ...all]);
+          })
+          .catch(() => undefined);
+    }
+    setDrafts((all) => (all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [...all, d]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const removeDraft = useCallback((id: string) => setDrafts((all) => all.filter((x) => x.id !== id)), []);
   const log = useCallback((actor: string, action: string) => {
     const d = new Date();
@@ -916,7 +947,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       // ก่อนนวด = ประเมินก่อนนวดวันนี้ / หลังนวดครั้งก่อน · หลังนวด = คลินิกบันทึก (จำลอง)
       const painBefore = tc ? caseToday[tc.id]?.pain ?? tc.visits[tc.visits.length - 1].painAfter : d!.pain;
       // คะแนนจากหลังบ้าน (นวดเสร็จ) · ไม่มี = จำลอง
-      const painAfter = clinicPainAfter ?? Math.max(0, painBefore - 2);
+      // คลินิกข้ามการประเมินหลังนวด (ไม่บังคับ) → ไม่เดาคะแนนเอง ใช้เท่าก่อนนวด แล้วให้ผู้ใช้ประเมินเองในแอป
+      const painAfter = clinicPainAfter ?? (isCloud() ? painBefore : Math.max(0, painBefore - 2));
       const no = tc ? tc.visits.length + 1 : 1;
       if (tc) recordCaseVisit(tc.id, painBefore, painAfter);
       else promoteDraft(d!.id, painAfter, opts?.diagnosis);
@@ -940,6 +972,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // คะแนนหลังนวดของครั้งล่าสุด (นับจากจำนวนครั้ง ณ ตอนประเมิน → ครั้งใหม่ไม่รับค่าเก่า)
     const n = cases.find((c) => c.id === caseId)?.visits.length ?? 0;
     setSelfPains((m) => ({ ...m, [caseId]: { n, v: pain } }));
+    // นัดครั้งล่าสุดของเรื่องนี้ที่คลินิกบันทึกการรักษาแล้ว → ส่งคะแนนหลังนวดให้คลินิกใส่ในนัดนั้น
+    if (isCloud()) {
+      const done = ['recorded', 'billed', 'paid', 'closed'];
+      const ref = [...Object.keys(bridgeRefs.current).filter((k) => bridgeRefs.current[k].caseId === caseId), ...Object.keys(caseLinks.current).filter((k) => caseLinks.current[k].caseId === caseId)]
+        .filter((k) => done.includes(cloudStatusOf(k) ?? ''))
+        .pop();
+      if (ref) void cloudAfterPain(ref, pain).catch(() => undefined);
+    }
   }, [cases]);
 
   const sendFollowUp = useCallback(
@@ -1396,13 +1436,26 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setBills([]);
     setCareStage('new');
     if (clinicReset.all) {
+      // รีเซ็ตทั้งระบบ: เหมือนเพิ่งเริ่มใช้แอป — ล้างข้อมูลสุขภาพ ธาตุ ประวัติ (บัญชี/การเข้าสู่ระบบยังอยู่)
       setDrafts([]);
       setActiveDraftId(null);
       setLastAssess(null);
       setSelfPains({});
+      setProfile((pf) => ({ ...pf, flags: Object.fromEntries(Object.keys(pf.flags ?? {}).map((k) => [k, false])) as typeof pf.flags, conditions: [], medications: [], allergies: [], healthKnown: false, conditionsKnown: false, medicationsKnown: false, allergiesKnown: false, phrSource: undefined, pregnant: false, surgeryWithin1Month: false, injuryWithin48h: false, bp: undefined, temperature: undefined, pulse: undefined }));
+      setElementsDone(false);
+      setNewPatient(true);
+      setAudit([]);
+      setClinicCourse(null);
+      setClinicVisits([]);
     } else setDrafts((all) => all.map((d) => (d.booking || d.stage !== 'assessed' ? { ...d, booking: undefined, stage: 'assessed' } : d)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredTick, clinicReset]);
+  // สำรอง: ตรวจคอร์ส/สัญญาณล้างข้อมูลจากคลินิกทุก 20 วินาที (ล้างข้อมูลในคลินิกไม่มีเหตุการณ์ส่งมา)
+  React.useEffect(() => {
+    if (!account?.userId || !isCloud()) return;
+    const t = setInterval(refreshCourse, 20000);
+    return () => clearInterval(t);
+  }, [account?.userId, refreshCourse]);
   const persisted = { profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
   const uid = account?.userId;
   React.useEffect(() => {
@@ -1529,6 +1582,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     issueQueue,
     caseToday,
     setCaseToday,
+    addSymptomNote,
     // แจ้งเตือนเฉพาะเรื่องที่มีอยู่จริงของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
     apptNotices: apptNotices.filter((n) => (n.caseId ? cases.some((c) => c.id === n.caseId) : n.draftId ? drafts.some((d) => d.id === n.draftId) : n.looseId ? looseBookings.some((b) => b.id === n.looseId) : true)),
     dismissNotice,

@@ -358,7 +358,7 @@ export function HomeScreen() {
   // ยังไม่มีใบร่าง/ใบการรักษา
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote } = useJourney();
   // จบคอร์สแล้ว (ครบครั้งและไม่มีนัดค้าง) → ไม่อยู่บนแท็บหน้าแรก (ดูได้ที่ประวัติการรักษา "รักษาจบแล้ว")
   const cases = React.useMemo(() => allCases.filter((c) => !c.finished), [allCases]);
   // เรื่องที่จบคอร์สแล้วไม่นับ (ไม่มีเรื่องที่ดูแลอยู่ = หน้าต้อนรับ เริ่มประเมินเรื่องใหม่)
@@ -2311,7 +2311,9 @@ export function HomeScreen() {
     const noteTopic = noteFor.current[activeId];
     if (noteTopic) {
       delete noteFor.current[activeId];
-      notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${noteTopic}: ${text}`);
+      const cc1 = chatCase();
+      const own1 = drafts.find((d) => d.chatId === activeId);
+      addSymptomNote(cc1 ? { caseId: cc1.id } : own1 ? { draftId: own1.id } : {}, noteTopic, text);
       log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${noteTopic}): ${text}`);
       return reply(text, 'ส่งให้ผู้ให้บริการแล้วค่ะ ผลประเมินเดิมยังอยู่ ผู้ให้บริการจะเห็นข้อความนี้แยกไว้');
     }

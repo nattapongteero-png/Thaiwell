@@ -51,6 +51,8 @@ export const cloudOnline = () => online;
 
 /** แถวล่าสุดที่แอปเห็น — ใช้หาความเปลี่ยนแปลง และดูบิลตอนจ่าย */
 const rows = new Map<string, CloudRow>();
+/** สถานะล่าสุดของนัดใน cloud (ตามที่คลินิกทำจริง) */
+export const cloudStatusOf = (id: string) => rows.get(id)?.status;
 
 /* จำแถวที่เห็นล่าสุด → เปิดแอปใหม่ได้รับสิ่งที่คลินิกทำระหว่างปิดแอป (ไม่เล่นซ้ำของที่รับไปแล้ว) */
 export const SEEN_KEY = 'thaiwell.cloud.seen';
@@ -142,6 +144,9 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
             summary: 'ยังไม่ได้ประเมินอาการ (จองก่อน)',
           }
         : {
+            at: new Date().toISOString(),
+            // แนวทางการรักษาที่แอปแนะนำ (ชื่อโรค วิธี จุด ข้อควรระวัง) → คลินิกเห็นชุดเดียวกับผู้ป่วย
+            ...(request.guide ? { guide: request.guide } : {}),
             serviceId: request.serviceId,
             therapistId: request.therapistId || undefined,
             complaint,
@@ -156,6 +161,7 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
             // ข้อที่ถามในแชทแล้ว (ยา · ผิวหนัง · ชา/อ่อนแรง · บาดเจ็บ · ผ่าตัด · แพ้) — ส่งไว้ให้หลังบ้านอ่านได้
             ...(it
               ? {
+                  duration: it.duration,
                   medications: it.medications,
                   bloodThinner: it.bloodThinner,
                   skin: it.skin,
@@ -165,11 +171,65 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
                   ...(it.allergy ? { allergy: it.allergy } : {}),
                 }
               : {}),
+            // ข้อที่ผู้ป่วยตอบจริง → ข้ออื่นคลินิกแสดง "ไม่ได้ประเมิน" (ไม่เดาว่า "ไม่มี")
+            answered: [
+              ...(it ? ['complaint', 'pain', 'focusAreas', 'avoidAreas'] : ['complaint', 'pain']),
+              ...(request.answers?.duration ? ['duration'] : []),
+              ...(request.answers?.health ? ['conditions'] : []),
+              ...(request.answers?.meds ? ['medications', 'bloodThinner'] : []),
+              // การแพ้: หลังบ้านยังไม่อ่านค่า allergy → ถ้าบอกว่าตอบแล้ว หลังบ้านจะขึ้น "ไม่แพ้น้ำมันนวด" แทนของจริง · ส่งค่าไว้ แต่ยังไม่นับว่าตอบ
+              ...(request.answers?.risk ? ['screening', 'skin', 'injury', 'surgery'] : []),
+              ...(request.answers?.radiate || request.answers?.related ? ['numbness'] : []),
+              ...(request.answers?.pressure ? ['pressure'] : []),
+            ],
             summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
           },
   });
   if (error) throw error;
   await logEvent('booking.requested', request.id, patient.name, `${request.assessed === false ? 'จองโดยยังไม่ประเมินอาการ' : 'ประเมินอาการแล้ว'} ส่งคำขอจอง ${service} ${request.date} ${request.start} น.`);
+}
+
+/** ข้อมูลประเมินที่เปลี่ยนได้ในรอบใหม่ */
+export interface ReassessPatch {
+  complaint?: string;
+  pain?: number;
+  areas?: string[];
+  avoid?: string[];
+  summary?: string;
+  screening?: Record<string, boolean | number | undefined>;
+  guide?: import('./clinicBridge').AppGuide;
+}
+/**
+ * ประเมินใหม่ก่อนเช็กอิน → รอบใหม่ (รอบเดิมเก็บไว้ใน rounds ไม่ทับ) · เช็กอินแล้ว/เริ่มรับบริการ = ไม่รับ (คืน false)
+ * คลินิกใช้ผลรอบล่าสุด และเห็นว่าเปลี่ยนจากเดิมตรงไหน
+ */
+export async function cloudReassess(id: string, patch: ReassessPatch) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status,queue_no').eq('id', id).maybeSingle();
+  if (!cur || !['requested', 'confirmed'].includes(cur.status as string) || cur.queue_no) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown> & { rounds?: Record<string, unknown>[]; addenda?: unknown[] };
+  const { rounds, addenda, ...prev } = old;
+  const next = { ...prev, ...patch, at: new Date().toISOString(), rounds: [...(rounds ?? []), prev], ...(addenda ? { addenda } : {}) };
+  const { data, error } = await cloud.from('tw_appointments').update({ assessment: next }).eq('id', id).in('status', ['requested', 'confirmed']).is('queue_no', null).select('id');
+  if (error) throw error;
+  return !!data?.length;
+}
+/** ผู้ป่วยประเมินความปวดหลังนวดเองในแอป (คลินิกข้ามไว้) → ใส่ให้นัดครั้งนั้น */
+export async function cloudAfterPain(id: string, pain: number, note?: string) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status').eq('id', id).maybeSingle();
+  if (!cur || !['recorded', 'billed', 'paid', 'closed', 'in_service'].includes(cur.status as string)) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown>;
+  const { error } = await cloud.from('tw_appointments').update({ assessment: { ...old, after: { pain, at: new Date().toISOString(), ...(note ? { note } : {}) } } }).eq('id', id);
+  if (error) throw error;
+  return true;
+}
+/** หลังเช็กอิน: แจ้งอาการเพิ่ม (แปะไว้กับรอบเดิม ไม่แก้ผลประเมิน) */
+export async function cloudAddendum(id: string, text: string) {
+  const { data: cur } = await cloud.from('tw_appointments').select('assessment,status').eq('id', id).maybeSingle();
+  if (!cur || !['checked_in', 'called', 'in_service'].includes(cur.status as string)) return false;
+  const old = (cur.assessment ?? {}) as Record<string, unknown> & { addenda?: { at: string; text: string }[] };
+  const { error } = await cloud.from('tw_appointments').update({ assessment: { ...old, addenda: [...(old.addenda ?? []), { at: new Date().toISOString(), text }] } }).eq('id', id);
+  if (error) throw error;
+  return true;
 }
 
 /** มาถึงคลินิก → checked_in (คลินิกออกเลขคิวแล้วเขียนกลับมาใน queue_no) */
@@ -319,6 +379,8 @@ export interface ClinicCourse {
   used: number;
   startedOn: string;
   expiresOn: string;
+  /** prepaid = จ่ายคอร์สล่วงหน้าแล้ว · perVisit = ชำระรายครั้งที่มารักษา */
+  billing?: 'prepaid' | 'perVisit';
 }
 /** ครั้งที่รักษาที่คลินิก (คลินิกบันทึก) */
 export interface ClinicVisit {

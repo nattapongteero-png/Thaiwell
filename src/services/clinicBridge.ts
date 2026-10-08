@@ -46,8 +46,17 @@ export interface ClinicPatient {
   /** avatar ที่ผู้ใช้เลือก → คลินิกแสดงรูปเดียวกัน */
   avatar?: string;
 }
+/** แนวทางการรักษาที่แอปแนะนำตอนประเมิน (Knowledge Hub) — ผู้ให้บริการยืนยันอีกครั้งก่อนเริ่ม */
+export interface AppGuide {
+  condition?: string;
+  methods: string[];
+  points: string[];
+  caution?: string;
+  ref?: string;
+}
 export interface ClinicRequest {
   id: string;
+  guide?: AppGuide;
   patientId: string;
   serviceId: string;
   therapistId: string;
@@ -58,6 +67,8 @@ export interface ClinicRequest {
   assessed?: boolean;
   /** ตอบข้อห้ามนวดแล้ว (ตอบ "ไม่มี" ก็นับ) → หลังบ้านแสดง "ไม่มี" รายข้อ ไม่ใช่ "ไม่ได้ประเมิน" */
   screened?: boolean;
+  /** คำตอบดิบจากแบบประเมิน → คลินิกรู้ว่าข้อไหนตอบแล้ว (answered) */
+  answers?: { duration?: string; health?: string; meds?: string; allergy?: string; risk?: string; radiate?: string; related?: string[]; pressure?: string };
   screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
   intake?: {
     at: string;

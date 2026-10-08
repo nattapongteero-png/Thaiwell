@@ -16,7 +16,7 @@ import { NotFoundScreen } from './NotFound';
 export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string } } }) {
   const nav = useNav();
   const { colors } = useTheme();
-  const { cases, caseToday, caseAppts, setCaseToday, log, notifyClinic } = useJourney();
+  const { cases, caseToday, caseAppts, setCaseToday, log, addSymptomNote } = useJourney();
   const [note, setNote] = React.useState('');
   const [noteSent, setNoteSent] = React.useState(false);
   const tc = cases.find((c) => c.id === route?.params?.caseId);
@@ -128,7 +128,7 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
                     variant="secondary"
                     disabled={!note.trim()}
                     onPress={() => {
-                      notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${tc.short} ครั้งที่ ${no}: ${note.trim()}`);
+                      addSymptomNote({ caseId: tc.id }, `${tc.short} ครั้งที่ ${no}`, note.trim());
                       log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${tc.short}): ${note.trim()}`);
                       setNoteSent(true);
                     }}
