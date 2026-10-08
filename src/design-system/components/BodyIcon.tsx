@@ -1,5 +1,7 @@
 import React from 'react';
+import { Image, View } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, Path, Rect } from 'react-native-svg';
+import { BODY_ICON_IMAGES } from './bodyIconImages';
 import type { BodyPin } from './Body3D';
 
 /**
@@ -94,7 +96,7 @@ const boundsOf = (sh: Shape): [number, number, number, number] =>
 /**
  * ไอคอนวงกลม: พื้นวงกลมสีจางตามสีที่ระบาย · หุ่นถูกตัดเป็นวงกลม · ซูมเข้าบริเวณที่ปวด (เห็นส่วนรอบ ๆ พอให้รู้ว่าตรงไหนของร่างกาย)
  */
-export function BodyIcon({ pins, color, size = 24, bodyColor = BODY_FILL }: { pins: (BodyPin | undefined)[]; color: string; size?: number; bodyColor?: string }) {
+export function BodyIconSvg({ pins, color, size = 24, bodyColor = BODY_FILL }: { pins: (BodyPin | undefined)[]; color: string; size?: number; bodyColor?: string }) {
   const id = React.useId().replace(/[^a-zA-Z0-9]/g, '');
   const specs = pins.map((p) => (p ? SPEC[p] : undefined)).filter((x): x is Spec => !!x);
   // มุมหลัง = ทุกบริเวณอยู่ด้านหลัง · ปนกัน = มุมหน้า
@@ -134,5 +136,24 @@ export function BodyIcon({ pins, color, size = 24, bodyColor = BODY_FILL }: { pi
         {back ? <Path d="M12 9.4 V18.6" stroke="#FFFFFF" strokeWidth={0.5} opacity={0.9} /> : null}
       </G>
     </Svg>
+  );
+}
+
+/** สีจาง (พื้นวงกลม) จาก rgb()/hex */
+const soft = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(', 'rgba(').replace(')', `,${a})`) : c.startsWith('#') && c.length === 7 ? `${c}${Math.round(a * 255).toString(16).padStart(2, '0')}` : c);
+
+/**
+ * BodyIcon — รูปหุ่น 3D จริงซูมเข้าจุดที่ปวด ในวงกลม · บริเวณที่ปวดระบายสีตามระดับปวด (mask + tintColor)
+ * หลายบริเวณ = ใช้บริเวณแรก (บริเวณหลัก) · ไม่มีรูปของจุดนั้น = ไอคอนหุ่นวาด (BodyIconSvg)
+ */
+export function BodyIcon({ pins, color, size = 24 }: { pins: (BodyPin | undefined)[]; color: string; size?: number }) {
+  const pin = pins.find((p): p is BodyPin => !!p && !!BODY_ICON_IMAGES[p]);
+  if (!pin) return <BodyIconSvg pins={pins} color={color} size={size} />;
+  const img = BODY_ICON_IMAGES[pin];
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: soft(color, 0.14) }}>
+      <Image source={img.base} style={{ width: size, height: size }} />
+      <Image source={img.mask} style={{ position: 'absolute', left: 0, top: 0, width: size, height: size, tintColor: color, opacity: 0.88 }} />
+    </View>
   );
 }
