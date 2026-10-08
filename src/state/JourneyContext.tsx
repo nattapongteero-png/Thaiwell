@@ -513,6 +513,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const clinicHnRef = React.useRef<string | null>(null);
   const [clinicCourse, setClinicCourse] = useState<ClinicCourse | null>(null);
   const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
+  /** หลังบ้านสั่งล้างข้อมูลของผู้ป่วยนี้ล่าสุดเมื่อไร · resetSeen = ล้างตามไปแล้วถึงครั้งไหน (เก็บกับบัญชี) */
+  const [clinicReset, setClinicReset] = useState<{ at: string; all: boolean } | null>(null);
+  const resetSeen = React.useRef<string | null>(null);
   /** อ่านคอร์สจากคลินิกใหม่ (คลินิกลงนัด/นวดเสร็จ → จำนวนครั้งที่ใช้เปลี่ยน) */
   const refreshCourse = useCallback(() => {
     const id = latest.current.account?.userId;
@@ -521,6 +524,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         .then((r) => {
           setClinicCourse(r.course);
           setClinicVisits(r.visits);
+          setClinicReset(r.reset);
         })
         .catch(() => undefined);
   }, []);
@@ -1366,10 +1370,41 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     void missingAppointments(ids).then((gone) => gone?.forEach((id) => onDeleted(id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredTick]);
+  /* หลังบ้านล้างข้อมูลผู้ป่วยนี้ (ลบนัด/ประวัติ) → ในแอปล้างตาม ให้ตรงกับหลังบ้าน · ล้างครั้งละ 1 รอบต่อคำสั่ง (resetSeen)
+   * ล้างเฉพาะผู้ป่วย = นัด เรื่องที่รักษา บิล แจ้งเตือน (ผลประเมินที่ยังไม่จองยังอยู่) · ล้างทั้งระบบ = เหมือนเพิ่งเริ่มใช้ */
+  React.useEffect(() => {
+    if (!restoredTick || !clinicReset || clinicReset.at === resetSeen.current) return;
+    resetSeen.current = clinicReset.at;
+    bridgeRefs.current = {};
+    bridgedCase.current = {};
+    caseLinks.current = {};
+    pendingPlan.current = {};
+    setLooseBookings([]);
+    setPromoted([]);
+    setCancelledAppts([]);
+    setCaseAppts({});
+    setCaseVisits({});
+    setCaseTodayState({});
+    setVisitRecords({});
+    setPlannedVisits({});
+    setFollowUps([]);
+    setApptNotices([]);
+    setBills([]);
+    setCareStage('new');
+    if (clinicReset.all) {
+      setDrafts([]);
+      setActiveDraftId(null);
+      setLastAssess(null);
+      setSelfPains({});
+    } else setDrafts((all) => all.map((d) => (d.booking || d.stage !== 'assessed' ? { ...d, booking: undefined, stage: 'assessed' } : d)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoredTick, clinicReset]);
   const persisted = { profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
   const uid = account?.userId;
   React.useEffect(() => {
     restoredFor.current = null;
+    resetSeen.current = null;
+    setClinicReset(null);
     setClinicHn(null);
     if (!uid || !isCloud()) {
       // ไม่มีบัญชีจริง → ฟังนัดตามที่จำไว้ในเครื่อง
@@ -1386,6 +1421,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         bridgeRefs.current = (st.bridgeRefs as typeof bridgeRefs.current) ?? {};
         bridgedCase.current = (st.bridgedCase as typeof bridgedCase.current) ?? {};
         caseLinks.current = (st.caseLinks as typeof caseLinks.current) ?? {};
+        resetSeen.current = (st.resetSeen as string | undefined) ?? null;
       } else {
         // บัญชีใหม่: ไม่มีบิล/แจ้งเตือน/ประวัติตัวอย่าง
         setBills([]);
@@ -1411,7 +1447,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!uid || restoredFor.current !== uid) return;
     const t = setTimeout(() => {
-      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, caseLinks: caseLinks.current, seen: seenRows() }).catch(() => undefined);
+      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, caseLinks: caseLinks.current, resetSeen: resetSeen.current, seen: seenRows() }).catch(() => undefined);
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

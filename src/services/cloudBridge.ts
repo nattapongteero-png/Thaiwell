@@ -319,10 +319,11 @@ export interface ClinicVisit {
   advice?: string;
 }
 /** คอร์ส + ประวัติการรักษาที่คลินิกส่งให้ (tw_patients.profile) */
-export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[] }> {
+export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[]; reset: { at: string; all: boolean } | null }> {
   const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
-  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[] };
-  return { course: p.course ?? null, visits: p.visits ?? [] };
+  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[]; resetAt?: string; resetAll?: boolean };
+  // หลังบ้านล้างข้อมูลผู้ป่วยนี้ (resetAt) · resetAll = ล้างทั้งระบบ เหมือนเพิ่งเริ่มใช้
+  return { course: p.course ?? null, visits: p.visits ?? [], reset: p.resetAt ? { at: p.resetAt, all: !!p.resetAll } : null };
 }
 /** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
 export async function fetchMyHn(userId: string): Promise<string | null> {
