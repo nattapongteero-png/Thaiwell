@@ -7,6 +7,7 @@ import { useNav } from '../../navigation/types';
 import { AudioQuality, IOSOutputFormat, createAudioPlayer, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, type AudioPlayer } from 'expo-audio';
 import { friendReply, heardSoFar, speak, summarizeTalk, transcribe, type Heard, type VoiceTurn } from '../../services/voiceAI';
 import { EMERGENCY } from '../../data/emergency';
+import { Strands } from '../../design-system/components/Strands';
 
 /**
  * คุยด้วยเสียงกับ ThaiWell AI — เหมือนคุยกับเพื่อนเพื่อระบายอาการ แล้ว AI สรุปให้ในรอบเดียว
@@ -263,9 +264,9 @@ export function AIVoiceScreen() {
               <AIOrb size="lg" listening={phase === 'listening' || busy} />
             </Animated.View>
           </View>
-          {phase === 'listening' ? (
-            <Wave level={level} color={colors.brand.primary} />
-          ) : busy ? (
+          {/* เส้นแสงตามระดับเสียง: ฟัง = ตามเสียงผู้ใช้ (รู้ว่าเสียงเข้า) · ไทยเวลพูด = พลิ้วกลาง ๆ · อื่น ๆ = นิ่ง */}
+          <Strands level={phase === 'listening' ? level : phase === 'speaking' ? 0.45 : 0} active={phase === 'listening' || phase === 'speaking'} style={{ height: 96, marginTop: -space[4] }} />
+          {busy ? (
             <LatticeLoader status="working" label={STATUS[phase].replace('…', '')} fontSize={14} cellSize={6} />
           ) : (
             <Text variant="labelMd" align="center" color={phase === 'emergency' || phase === 'error' ? colors.status.danger.fg : colors.text.secondary}>
@@ -358,18 +359,6 @@ export function AIVoiceScreen() {
           <SideAction icon="check" label="สรุป" disabled={!canSummarize} onPress={() => void summarize()} />
         </View>
       )}
-    </View>
-  );
-}
-
-/** คลื่นเสียงจากระดับไมค์จริง (5 แท่ง) */
-function Wave({ level, color }: { level: number; color: string }) {
-  const k = [0.5, 0.8, 1, 0.8, 0.5];
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 28 }}>
-      {k.map((m, i) => (
-        <View key={i} style={{ width: 5, height: 6 + 22 * Math.min(1, level * m * (0.8 + ((i * 37) % 5) / 10)), borderRadius: 3, backgroundColor: color }} />
-      ))}
     </View>
   );
 }
