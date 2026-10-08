@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AIBall, GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
 import { useNav } from '../../navigation/types';
@@ -209,6 +210,8 @@ export function AIVoiceScreen() {
   const canSummarize = turns.some((x) => x.from === 'user') && !busy && phase !== 'summary' && phase !== 'emergency';
   // คลื่นเสียงจากไมค์จริง (dBFS → 0–1)
   const level = phase === 'listening' ? Math.max(0, Math.min(1, ((rec.metering ?? -60) + 55) / 40)) : 0;
+  // ระดับที่ใช้กับแสง: ฟัง = เสียงผู้ใช้จริง · ไทยเวลพูด = กลาง ๆ · อื่น ๆ = เงียบ (เส้นนิ่ง ขยับนิดเดียว)
+  const vol = phase === 'listening' ? level : phase === 'speaking' ? 0.5 : 0;
   const scrollRef = React.useRef<ScrollView>(null);
   // ชิปสิ่งที่จับได้ (ว่าง = เส้นประ ยังไม่ได้เล่า)
   const chips: { key: keyof Heard; label: string; value: string | null }[] = [
@@ -233,13 +236,26 @@ export function AIVoiceScreen() {
           {/* เส้นแสงออกจากลูกแก้ว: วางหลังลูกแก้วเต็มความกว้าง (shader สว่างตรงกลาง จางไปทางขอบ) · ระดับตามเสียง */}
           <View style={{ alignSelf: 'stretch', height: BALL * 1.7, alignItems: 'center', justifyContent: 'center', marginHorizontal: -space[4] }}>
             <Strands
-              level={phase === 'listening' ? level : phase === 'speaking' ? 0.45 : 0}
-              active={phase === 'listening' || phase === 'speaking'}
+              level={vol}
+              active
               colors={['#5FF0B8', '#14A37A', '#3B82F6', '#8B5CF6']}
               style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, height: undefined }}
             />
+            {/* ออร่าเชื่อมลูกแก้วกับเส้นแสง (สีเดียวกัน) — สว่างขึ้นตามเสียง ให้ดูเป็นชิ้นเดียว */}
+            <View pointerEvents="none" style={{ position: 'absolute', width: BALL * 2.4, height: BALL * 2.4, opacity: 0.35 + vol * 0.55, transform: [{ scale: 0.9 + vol * 0.25 }] }}>
+              <Svg width="100%" height="100%" viewBox="0 0 100 100">
+                <Defs>
+                  <RadialGradient id="aura" cx="50" cy="50" r="50" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0.3" stopColor="#5FF0B8" stopOpacity={0.55} />
+                    <Stop offset="0.6" stopColor="#3B82F6" stopOpacity={0.18} />
+                    <Stop offset="1" stopColor="#8B5CF6" stopOpacity={0} />
+                  </RadialGradient>
+                </Defs>
+                <Circle cx="50" cy="50" r="50" fill="url(#aura)" />
+              </Svg>
+            </View>
             {/* ลูกแก้ว AI ตัวเดียวกับในแชท · ขยายเล็กน้อยตามเสียง */}
-            <View style={{ transform: [{ scale: 1 + (phase === 'listening' ? level * 0.12 : 0) }] }}>
+            <View style={{ transform: [{ scale: 1 + vol * 0.1 }] }}>
               <AIBall size={BALL} />
             </View>
           </View>

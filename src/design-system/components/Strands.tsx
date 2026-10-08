@@ -168,10 +168,11 @@ export function Strands({
       last = now;
       const { level: lv, active: on } = target.current;
       const l = on ? Math.max(0, Math.min(1, lv)) : 0;
-      // นิ่ง = เส้นบางเกือบตรง · เสียงดัง = คลื่นสูง สว่าง เร็ว
-      const tAmp = on ? 0.35 + l * 1.9 : 0.15;
-      const tInt = on ? 0.35 + l * 0.65 : 0.2;
-      const tSpd = on ? 0.5 + l * 1.2 : 0.25;
+      // เงียบ = เส้นเกือบตรง ขยับนิดเดียวพอให้รู้ว่ามีชีวิต · เสียงดัง = คลื่นสูง สว่าง เร็ว (ไม่ฟัง/ไม่พูด = แบบเงียบ)
+      const e = l * l * (3 - 2 * l); // ค่อย ๆ ขึ้นช่วงเสียงเบา แล้วชัดขึ้นเมื่อพูดจริง
+      const tAmp = 0.06 + e * 2.2;
+      const tInt = 0.3 + e * 0.7;
+      const tSpd = 0.12 + e * 1.4;
       const k = Math.min(1, dt * 10);
       amp += (tAmp - amp) * k;
       inten += (tInt - inten) * k;
