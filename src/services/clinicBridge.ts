@@ -66,6 +66,8 @@ export interface ClinicRequest {
   screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
   /** ผู้ป่วยตอบคำถามข้อห้าม/ความเสี่ยงแล้ว (ไม่ได้ตอบ = คลินิกแสดง "ไม่ได้ประเมิน" แทน "ไม่มี") */
   screened?: boolean;
+  /** คำตอบดิบจากแบบประเมิน (คำถามรวมกลุ่ม) → คลินิกรู้ว่าข้อไหนตอบแล้ว */
+  answers?: { duration?: string; health?: string; risk?: string; radiate?: string; pressure?: string };
   intake?: {
     at: string;
     goal: string;

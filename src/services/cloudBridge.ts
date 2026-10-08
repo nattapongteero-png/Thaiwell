@@ -140,6 +140,26 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
       screening: request.screening,
       // ตอบข้อห้ามแล้วหรือยัง → คลินิกไม่แสดง "ไม่มี" แทนข้อที่ไม่ได้ถาม
       screened: !!request.screened,
+      // คำตอบครบตามแบบประเมิน (เดิมส่งไม่ครบ → คลินิกขึ้น "ไม่ได้ประเมิน")
+      ...(it
+        ? {
+            duration: it.duration,
+            skin: it.skin,
+            numbness: it.numbness,
+            injury: it.injury,
+            surgery: it.surgery,
+            bloodThinner: it.bloodThinner,
+            medications: it.medications,
+          }
+        : {}),
+      answered: [
+        ...(it ? ['complaint', 'pain', 'focusAreas', 'avoidAreas'] : ['complaint', 'pain']),
+        ...(request.answers?.duration ? ['duration'] : []),
+        ...(request.answers?.health ? ['conditions', 'bloodThinner'] : []),
+        ...(request.answers?.risk ? ['screening', 'skin', 'injury', 'surgery'] : []),
+        ...(request.answers?.radiate ? ['numbness'] : []),
+        ...(request.answers?.pressure ? ['pressure'] : []),
+      ],
       summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
     },
   });
