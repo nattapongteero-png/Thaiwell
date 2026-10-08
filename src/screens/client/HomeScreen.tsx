@@ -2011,12 +2011,13 @@ export function HomeScreen() {
       } else if (st === 'health' || st === 'meds' || st === 'allergy') {
         // โรค / ยา / สิ่งที่แพ้: พิมพ์ชื่ออะไรก็ได้ (ไม่จำกัดตัวเลือก) · ตรงตัวเลือกให้ใช้ชื่อตัวเลือก
         const what = st === 'health' ? 'โรคประจำตัว' : st === 'meds' ? 'ยาที่ใช้ประจำ' : 'สิ่งที่แพ้ (ขึ้นต้นด้วย แพ้ เช่น แพ้กุ้ง แพ้ยาแอสไพริน)';
-        const r = await extractAI<{ items: string[] }>(
-          `ดึงรายการ${what}ที่ผู้ใช้บอก · ถ้าตรงกับตัวเลือกให้ใช้ชื่อนี้: ${opts[st].filter((o) => o !== 'ไม่มี').join(', ')}${STEP_HINT[st] ?? ''} · ปฏิเสธ (ไม่มี ไม่แพ้ ไม่ได้กินยา) = ["ไม่มี"] · ไม่เกี่ยวเลย = []`,
+        // ข้อความคั่นด้วย , (รายการอิสระแบบ array ทำให้โมเดลวนเว้นวรรคจนหมด token)
+        const r = await extractAI<{ items: string | null }>(
+          `ดึงรายการ${what}ที่ผู้ใช้บอก คั่นด้วย , · ใช้ชื่อตามที่ผู้ใช้บอก (ไม่แปลงเป็นกลุ่มกว้าง) ถ้าตรงกับตัวเลือกให้ใช้ชื่อนี้: ${opts[st].filter((o) => o !== 'ไม่มี').join(', ')}${STEP_HINT[st] ?? ''} · ปฏิเสธ (ไม่มี ไม่แพ้ ไม่ได้กินยา) = ไม่มี · ไม่เกี่ยวเลย = null`,
           text,
-          { type: 'object', properties: { items: { type: 'array', items: { type: 'string' } } }, required: ['items'] },
+          { type: 'object', properties: { items: { type: ['string', 'null'] } }, required: ['items'] },
         );
-        if (r.items.length) return answerStep(text, { [st]: answerOfList(r.items.filter((x) => x && x !== 'ไม่มี')) } as Partial<Assessment>);
+        if (r.items) return answerStep(text, { [st]: answerOfList(listOfAnswer(r.items)) } as Partial<Assessment>);
       } else {
         const r = await extractAI<{ value: string | null }>(`เลือกคำตอบที่ตรงกับข้อความจาก: ${opts[st].join(', ')}${STEP_HINT[st] ?? ''} ถ้าไม่เกี่ยวเลยให้เป็น null`, text, { type: 'object', properties: { value: { type: ['string', 'null'], enum: [...opts[st], null] } }, required: ['value'] });
         if (r.value) return answerStep(text, { [st]: r.value } as Partial<Assessment>);
@@ -2029,12 +2030,19 @@ export function HomeScreen() {
   };
 
   /** หน้าทบทวนข้อมูลชุดเดิม: เล่าว่าอะไรเปลี่ยน → AI แก้ให้ */
+  const LIST_EDIT_KEYS = ['health_add', 'health_remove', 'meds_add', 'meds_remove', 'allergy_add', 'allergy_remove'] as const;
   const editReviewByText = (text: string) => {
     setThread((t) => t.filter((m) => m.card?.type !== 'review'));
     aiReplyAsync(activeId, text, async () => {
-      type Edit = { symptoms: string[] | null; related: string[] | null; radiate: string | null; pain: number | null; duration: string | null; cause: string | null; health: string | null; risk: string | null; pressure: string | null; avoid: string | null };
+      type Edit = { symptoms: string[] | null; related: string[] | null; radiate: string | null; pain: number | null; duration: string | null; cause: string | null; risk: string | null; pressure: string | null; avoid: string | null } & Record<`${'health' | 'meds' | 'allergy'}_${'add' | 'remove'}`, string | null>;
+      // รายการเดิม (คำตอบในแชทนี้ หรือในโปรไฟล์) → ผู้ใช้บอก "เพิ่ม/เอาออก" ได้ ไม่ต้องพูดใหม่ทั้งชุด
+      const cur = {
+        health: listOfAnswer(assess.health ?? answerOfList(profile.conditions)),
+        meds: listOfAnswer(assess.meds ?? answerOfList(profile.medications)),
+        allergy: listOfAnswer(assess.allergy ?? answerOfList(profile.allergies)),
+      };
       const r = await extractAI<Edit>(
-        `ผู้ใช้ขอแก้ข้อมูลการประเมินที่ตอบไปแล้ว (อาจพูดยาว พูดเป็นคำถาม หรือพูดตัวเลขเป็นคำ เช่น "ห้า" = 5) ดึงเฉพาะค่าใหม่ที่ผู้ใช้บอก ข้อที่ไม่ได้พูดถึงให้เป็น null ห้ามเดา · symptoms = ตำแหน่งที่ปวดชุดใหม่ทั้งหมด (เลือกจาก: ${ALL_SYMPTOMS.join(', ')}) · related = อาการร่วมชุดใหม่ทั้งหมด (บอกว่าไม่มีอาการร่วมแล้ว = ["ไม่มี"]) · ${Object.values(STEP_HINT).join(' ')}`,
+        `ผู้ใช้ขอแก้ข้อมูลการประเมินที่ตอบไปแล้ว (อาจพูดยาว พูดเป็นคำถาม หรือพูดตัวเลขเป็นคำ เช่น "ห้า" = 5) ดึงเฉพาะค่าใหม่ที่ผู้ใช้บอก ข้อที่ไม่ได้พูดถึงให้เป็น null ห้ามเดา · symptoms = ตำแหน่งที่ปวดชุดใหม่ทั้งหมด (เลือกจาก: ${ALL_SYMPTOMS.join(', ')}) · related = อาการร่วมชุดใหม่ทั้งหมด (บอกว่าไม่มีอาการร่วมแล้ว = ["ไม่มี"]) · โรคประจำตัว (health) / ยาที่ใช้ประจำ (meds) / สิ่งที่แพ้ (allergy): ตอนนี้ โรค ${cur.health.join(', ') || 'ไม่มี'} · ยา ${cur.meds.join(', ') || 'ไม่มี'} · แพ้ ${cur.allergy.join(', ') || 'ไม่มี'} — X_add = ชื่อที่ผู้ใช้บอกว่ามี/เป็น/แพ้ (คั่นด้วย ,) · X_remove = ชื่อเดิมที่ผู้ใช้บอกว่าไม่มีแล้ว/เอาออก (บอกว่าไม่มีเลย หรือบอกว่าเป็นอย่างอื่นแทน = ทั้งหมด) · ไม่ได้พูดถึง = null · ใช้ชื่อตามที่ผู้ใช้บอก เช่น แพ้กุ้ง (ไม่แปลงเป็นกลุ่มกว้าง) ถ้าตรงตัวเลือกให้ใช้ชื่อตัวเลือก (โรค: ${HEALTH_OPTIONS.join(', ')} · ยา: ${MED_OPTIONS.join(', ')} · แพ้: ${ALLERGY_OPTIONS.join(', ')}) · การแพ้ (แพ้น้ำมันนวด แพ้ยา แพ้อาหาร) ไม่ใช่ข้อห้ามนวด (risk) · ${Object.values(STEP_HINT).join(' ')}`,
         text,
         {
           type: 'object',
@@ -2045,13 +2053,16 @@ export function HomeScreen() {
             pain: { type: ['integer', 'null'], minimum: 0, maximum: 10 },
             duration: { type: ['string', 'null'], enum: [...DURATION_OPTIONS, null] },
             cause: { type: ['string', 'null'], enum: [...CAUSE_OPTIONS, null] },
-            health: { type: ['string', 'null'], enum: [...HEALTH_OPTIONS, null] },
             risk: { type: ['string', 'null'], enum: [...RISK_OPTIONS, null] },
             pressure: { type: ['string', 'null'], enum: [...PRESSURE_OPTIONS, null] },
             avoid: { type: ['string', 'null'], enum: [...AVOID_OPTIONS, null] },
+            // ไว้ท้ายสุด + เป็นข้อความ (รายการอิสระแบบ array ทำให้โมเดลวนเว้นวรรคจนหมด token)
+            ...Object.fromEntries(LIST_EDIT_KEYS.map((k) => [k, { type: ['string', 'null'] }])),
           },
-          required: ['symptoms', 'related', 'radiate', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid'],
+          required: ['symptoms', 'related', 'radiate', 'pain', 'duration', 'cause', 'risk', 'pressure', 'avoid', ...LIST_EDIT_KEYS],
         },
+        'result',
+        400,
       );
       const patch: Partial<Assessment> = {};
       const done: string[] = [];
@@ -2074,7 +2085,23 @@ export function HomeScreen() {
       if (r.pain !== null) (patch.pain = r.pain), done.push(`ความปวด ${r.pain}/10`);
       if (r.duration) (patch.duration = r.duration), done.push(`ระยะเวลา ${r.duration}`);
       if (r.cause) (patch.cause = r.cause), done.push(`สาเหตุ ${r.cause}`);
-      if (r.health) (patch.health = r.health), (patch.reuseHealth = r.health), done.push(`โรคประจำตัว ${r.health}`);
+      // โรคประจำตัว / ยา / การแพ้ → แก้ในแชท + บันทึกลงโปรไฟล์ทันที
+      const lists = { health: 'โรคประจำตัว', meds: 'ยาที่ใช้ประจำ', allergy: 'การแพ้' } as const;
+      const prof: Partial<typeof profile> = {};
+      (Object.keys(lists) as (keyof typeof lists)[]).forEach((k) => {
+        const add = listOfAnswer(r[`${k}_add`] ?? undefined).filter((x) => x !== 'ทั้งหมด');
+        const rm = listOfAnswer(r[`${k}_remove`] ?? undefined);
+        if (!add.length && !rm.length) return;
+        const kept = rm.includes('ทั้งหมด') ? [] : cur[k].filter((x) => !rm.includes(x));
+        const list = [...new Set([...kept, ...add])];
+        const ans = answerOfList(list);
+        patch[k] = ans;
+        if (k === 'health') (patch.reuseHealth = ans), (prof.conditions = list), (prof.conditionsKnown = true);
+        if (k === 'meds') (patch.reuseMeds = ans), (prof.medications = list), (prof.medicationsKnown = true);
+        if (k === 'allergy') (patch.reuseAllergy = ans), (prof.allergies = list), (prof.allergiesKnown = true);
+        done.push(`${lists[k]} ${list.join(', ') || 'ไม่มี'}`);
+      });
+      if (Object.keys(prof).length) setProfile({ ...profile, ...prof, healthKnown: true });
       setAssess((a) => ({ ...a, ...patch }));
       return [reviewItem(done.length ? `แก้ให้แล้วค่ะ: ${done.join(' · ')} มีข้ออื่นอีกไหม หรือยืนยันได้เลย` : 'ยังไม่เจอข้อที่เปลี่ยนค่ะ แตะข้อที่ต้องการแก้ได้เลย')];
     });
