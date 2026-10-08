@@ -213,6 +213,8 @@ const FOCUS_SCALE = 0.94;
 const DRAG_SLOP = 6;
 /** เวลาจำลองที่ AI ใช้คิดก่อนตอบ (ยังไม่เชื่อม AI จริง) */
 const THINK_MS = 1800;
+/** ขอแก้ข้อมูลที่ตอบไปแล้ว */
+const EDIT_ASK = /แก้|เปลี่ยน|ผิด|ไม่ใช่|จริง\s*ๆ|ที่จริง|อัปเดต|อัพเดท/;
 /** ขอดูผลการรักษา (เช่น "ขอผลครั้งที่ 1" "ผลการนวดเป็นยังไง") */
 const RESULT_ASK = /ผล\s*(การ)?\s*(รักษา|ประเมิน|นวด)|(ขอ|ดู|เปิด)\s*ผล|ผล\s*(ของ)?\s*ครั้ง/;
 /** สถานะในแถบเสียงของแชท */
@@ -1925,14 +1927,15 @@ export function HomeScreen() {
   const editReviewByText = (text: string) => {
     setThread((t) => t.filter((m) => m.card?.type !== 'review'));
     aiReplyAsync(activeId, text, async () => {
-      type Edit = { symptoms: string[] | null; radiate: string | null; pain: number | null; duration: string | null; cause: string | null; health: string | null; risk: string | null; pressure: string | null; avoid: string | null };
+      type Edit = { symptoms: string[] | null; related: string[] | null; radiate: string | null; pain: number | null; duration: string | null; cause: string | null; health: string | null; risk: string | null; pressure: string | null; avoid: string | null };
       const r = await extractAI<Edit>(
-        `ดึงเฉพาะข้อมูลที่ผู้ใช้บอกว่าเปลี่ยน ข้อที่ไม่ได้พูดถึงให้เป็น null · symptoms = ตำแหน่งที่ปวดชุดใหม่ทั้งหมด (เลือกจาก: ${ALL_SYMPTOMS.join(', ')}) · ระยะเวลาที่ไม่ตรงตัวเลือกให้เลือกที่ใกล้ที่สุด`,
+        `ผู้ใช้ขอแก้ข้อมูลการประเมินที่ตอบไปแล้ว (อาจพูดยาว พูดเป็นคำถาม หรือพูดตัวเลขเป็นคำ เช่น "ห้า" = 5) ดึงเฉพาะค่าใหม่ที่ผู้ใช้บอก ข้อที่ไม่ได้พูดถึงให้เป็น null ห้ามเดา · symptoms = ตำแหน่งที่ปวดชุดใหม่ทั้งหมด (เลือกจาก: ${ALL_SYMPTOMS.join(', ')}) · related = อาการร่วมชุดใหม่ทั้งหมด (บอกว่าไม่มีอาการร่วมแล้ว = ["ไม่มี"]) · ${Object.values(STEP_HINT).join(' ')}`,
         text,
         {
           type: 'object',
           properties: {
             symptoms: { type: ['array', 'null'], items: { type: 'string', enum: ALL_SYMPTOMS } },
+            related: { type: ['array', 'null'], items: { type: 'string', enum: [...HOME_CONTENT.related, 'ไม่มี'] } },
             radiate: { type: ['string', 'null'], enum: [...ALL_RADIATE_OPTIONS, null] },
             pain: { type: ['integer', 'null'], minimum: 0, maximum: 10 },
             duration: { type: ['string', 'null'], enum: [...DURATION_OPTIONS, null] },
@@ -1942,7 +1945,7 @@ export function HomeScreen() {
             pressure: { type: ['string', 'null'], enum: [...PRESSURE_OPTIONS, null] },
             avoid: { type: ['string', 'null'], enum: [...AVOID_OPTIONS, null] },
           },
-          required: ['symptoms', 'radiate', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid'],
+          required: ['symptoms', 'related', 'radiate', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid'],
         },
       );
       const patch: Partial<Assessment> = {};
@@ -1952,6 +1955,12 @@ export function HomeScreen() {
         setSel((cur) => ({ ...Object.fromEntries(Object.entries(cur).filter(([k]) => HOME_CONTENT.related.includes(k))), ...Object.fromEntries(r.symptoms!.map((x) => [x, null])) }));
         setExtraSymptoms(() => r.symptoms!.filter((x) => !HOME_CONTENT.symptoms.includes(x)));
         done.push(`อาการ ${r.symptoms.join(', ')}`);
+      }
+      if (r.related?.length) {
+        // อาการร่วมชุดใหม่แทนชุดเดิม (เก็บตำแหน่งที่ปวดไว้)
+        const rel = r.related.filter((x) => x !== 'ไม่มี');
+        setSel((cur) => ({ ...Object.fromEntries(Object.entries(cur).filter(([k]) => !HOME_CONTENT.related.includes(k))), ...Object.fromEntries(rel.map((x) => [x, null])) }));
+        done.push(rel.length ? `อาการร่วม ${rel.join(', ')}` : 'ไม่มีอาการร่วม');
       }
       if (r.radiate) (patch.radiate = r.radiate), done.push(`อาการร้าว ${r.radiate}`);
       if (r.risk) (patch.risk = r.risk), done.push(`ข้อห้ามนวด ${r.risk}`);
@@ -2260,6 +2269,13 @@ export function HomeScreen() {
             aiText('อาการที่เล่ามาควรให้แพทย์ตรวจก่อนนวดค่ะ ถ้าเป็นเฉียบพลันหรือรุนแรง โทร 1669', { type: 'action', label: 'ดูคำแนะนำ', to: 'RedFlag' }),
             ...resumeItems('ถ้าไม่ใช่อาการเฉียบพลัน ตอบข้อนี้ต่อได้ค่ะ'),
           ]);
+        }
+        // ขอแก้ข้อมูลที่บันทึกไป (หน้าทบทวน / ประเมินเสร็จแล้ว) — พูดแบบถาม ("ช่วยแก้ปวดเป็น 5 ได้ไหม") ก็ถือเป็นการแก้
+        const editing = st === 'review' || (st === 'done' && !tc && EDIT_ASK.test(text));
+        if (editing && (turn.kind === 'answer' || turn.kind === 'change' || turn.kind === 'question' || turn.kind === 'unclear')) {
+          if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health }));
+          setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
+          return editReviewByText(text);
         }
         switch (turn.kind) {
           case 'question':
