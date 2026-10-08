@@ -19,14 +19,14 @@ const REC_OPTIONS = {
   android: { extension: '.m4a', outputFormat: 'mpeg4' as const, audioEncoder: 'aac' as const },
   web: { mimeType: 'audio/webm' },
 };
-/** เงียบหลังพูดนานเท่านี้ = จบประโยค (ms) · พูดยาวสุดต่อรอบ · รอแชทตอบนานสุด */
-const SILENCE_MS = 1400;
+/** เงียบหลังพูดนานเท่านี้ = จบประโยค (ms · เผื่อหยุดคิดกลางประโยค) · พูดยาวสุดต่อรอบ · รอแชทตอบนานสุด */
+const SILENCE_MS = 2300;
 /** วัดเสียงพื้นหลังหลังเปิดไมค์ (ms) · ดังกว่าพื้นหลังกี่ dB = พูด · ต่ำกว่ากี่ dB = เงียบ · ดังต่อเนื่องนานเท่าไหร่ถึงนับว่าพูด */
 const CALIBRATE_MS = 350;
 const SPEAK_DB = 12;
 const QUIET_DB = 6;
 const MIN_SPEECH_MS = 250;
-const MAX_TURN_MS = 25000;
+const MAX_TURN_MS = 60000;
 const MAX_WAIT_MS = 60000;
 
 export function useVoiceChat(onHeard: (text: string) => void) {
@@ -184,7 +184,10 @@ export function useVoiceChat(onHeard: (text: string) => void) {
       return;
     }
     // ลงเร็ว (เงียบลง) · ขึ้นช้ามาก (ไม่ให้เสียงพูดดันพื้นหลังขึ้นมา)
-    floor.current = m < floor.current ? floor.current * 0.6 + m * 0.4 : floor.current + Math.min(m - floor.current, 6) * (spoke.current ? 0.004 : 0.03) * (dt / 50);
+    // ขึ้นเฉพาะตอนไม่ได้พูด (เดิมขึ้นช้า ๆ ระหว่างพูดด้วย → เล่านาน ๆ พื้นหลังสูงจนเสียงพูดกลายเป็น "เงียบ" แล้วถูกตัด)
+    const over0 = m - floor.current;
+    if (m < floor.current) floor.current = floor.current * 0.6 + m * 0.4;
+    else if (over0 < QUIET_DB && loudFor.current === 0) floor.current += Math.min(over0, 4) * 0.03 * (dt / 50);
     const over = m - floor.current;
     if (over >= SPEAK_DB) {
       loudFor.current += dt;
