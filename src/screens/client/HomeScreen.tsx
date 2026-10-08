@@ -95,7 +95,9 @@ import {
   healthAnswerToProfile,
   healthKnownOf,
   answerOfList,
+  listOfAnswer,
   MED_OPTIONS,
+  ALLERGY_OPTIONS,
   NEW_TOPIC,
   INTENTS,
   ASSESS_ASK,
@@ -1047,7 +1049,9 @@ export function HomeScreen() {
         ? (assess.reuseHealth ?? (healthKnownOf(profile, 'conditions') ? answerOfList(profile.conditions) : undefined))
         : st === 'meds'
           ? (assess.reuseMeds ?? (healthKnownOf(profile, 'medications') ? answerOfList(profile.medications) : undefined))
-          : undefined;
+          : st === 'allergy'
+            ? (assess.reuseAllergy ?? (healthKnownOf(profile, 'allergies') ? answerOfList(profile.allergies) : undefined))
+            : undefined;
     while (nextStep && known(nextStep) !== undefined) {
       patch = { ...patch, [nextStep]: known(nextStep) };
       nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
@@ -1100,8 +1104,9 @@ export function HomeScreen() {
         conditionsKnown: healthKnownOf(profile, 'conditions') || after.health !== undefined,
         medicationsKnown: healthKnownOf(profile, 'medications') || after.meds !== undefined,
         // ข้อห้ามช่วงนี้ → กฎใน safetyEngine (ผ่าตัด/บาดเจ็บ/ไข้/ตั้งครรภ์/แผล)
-        // แพ้น้ำมันนวด/สมุนไพร → บันทึกในประวัติแพ้ (หลังบ้านแสดงในข้อ "การแพ้")
-        allergies: after.risk === 'แพ้น้ำมันนวด/สมุนไพร' && !profile.allergies.includes(after.risk) ? [...profile.allergies, after.risk] : profile.allergies,
+        // การแพ้ → ประวัติแพ้ในโปรไฟล์ (หลังบ้านแสดงในข้อ "การแพ้")
+        allergies: after.allergy === undefined ? profile.allergies : listOfAnswer(after.allergy),
+        allergiesKnown: healthKnownOf(profile, 'allergies') || after.allergy !== undefined,
         surgeryWithin1Month: after.risk === RISK_OPTIONS[0],
         injuryWithin48h: after.risk === RISK_OPTIONS[1],
         pregnant: after.risk === RISK_OPTIONS[3],
@@ -1256,6 +1261,7 @@ export function HomeScreen() {
         chatId: sid,
         health: after.health,
         meds: after.meds,
+        allergy: after.allergy,
         risk: after.risk,
         pressure: after.pressure,
         avoid: after.avoid,
@@ -1588,6 +1594,7 @@ export function HomeScreen() {
       cause: d.cause,
       health: d.health,
       meds: d.meds,
+      allergy: d.allergy,
       risk: d.risk,
       pressure: d.pressure,
       avoid: d.avoid,
@@ -1595,6 +1602,7 @@ export function HomeScreen() {
       topic: d.title,
       reuseHealth: d.health,
       reuseMeds: d.meds,
+      reuseAllergy: d.allergy,
     };
     const text = 'ข้อมูลที่ประเมินไว้ครั้งก่อนค่ะ แตะข้อที่อยากแก้ หรือพิมพ์บอกได้เลย';
     // ประเมินซ้ำ = เรื่องนี้ (ไม่ใช่เรื่องใหม่ แม้แชทนี้เคยเริ่มจาก "ประเมินเรื่องใหม่")
@@ -1951,7 +1959,7 @@ export function HomeScreen() {
     radiate: ' · ไม่ร้าว/ปวดที่เดียว = ไม่ร้าว · ร้าวถึงน่อง เท้า หรือนิ้วเท้า = ร้าวเลยเข่า · อ่อนแรง ยกขา/แขนไม่ขึ้น = ตัวเลือกที่มีคำว่าอ่อนแรง (ชาอย่างเดียวไม่ใช่)',
   };
   /** กำลังถามข้อหนึ่งอยู่ แต่ผู้ใช้พิมพ์ตอบเอง → AI แปลงเป็นคำตอบของข้อนั้น (แปลงไม่ได้ = ถามซ้ำพร้อมตัวเลือก) */
-  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, meds: MED_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
+  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, meds: MED_OPTIONS, allergy: ALLERGY_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
   /** ข้อมูลข้ออื่นที่บอกมาในข้อความเดียวกัน → เก็บไว้ข้ามตอนถึงข้อนั้น · คืนสรุปสั้น ๆ */
   const keepPrefill = (st: AssessStep, f: TurnFields & { related?: string[] | null }): string[] => {
     const extra: Partial<Assessment> = {};
@@ -2000,6 +2008,15 @@ export function HomeScreen() {
           }
           return answerStep(text);
         }
+      } else if (st === 'health' || st === 'meds' || st === 'allergy') {
+        // โรค / ยา / สิ่งที่แพ้: พิมพ์ชื่ออะไรก็ได้ (ไม่จำกัดตัวเลือก) · ตรงตัวเลือกให้ใช้ชื่อตัวเลือก
+        const what = st === 'health' ? 'โรคประจำตัว' : st === 'meds' ? 'ยาที่ใช้ประจำ' : 'สิ่งที่แพ้ (ขึ้นต้นด้วย แพ้ เช่น แพ้กุ้ง แพ้ยาแอสไพริน)';
+        const r = await extractAI<{ items: string[] }>(
+          `ดึงรายการ${what}ที่ผู้ใช้บอก · ถ้าตรงกับตัวเลือกให้ใช้ชื่อนี้: ${opts[st].filter((o) => o !== 'ไม่มี').join(', ')}${STEP_HINT[st] ?? ''} · ปฏิเสธ (ไม่มี ไม่แพ้ ไม่ได้กินยา) = ["ไม่มี"] · ไม่เกี่ยวเลย = []`,
+          text,
+          { type: 'object', properties: { items: { type: 'array', items: { type: 'string' } } }, required: ['items'] },
+        );
+        if (r.items.length) return answerStep(text, { [st]: answerOfList(r.items.filter((x) => x && x !== 'ไม่มี')) } as Partial<Assessment>);
       } else {
         const r = await extractAI<{ value: string | null }>(`เลือกคำตอบที่ตรงกับข้อความจาก: ${opts[st].join(', ')}${STEP_HINT[st] ?? ''} ถ้าไม่เกี่ยวเลยให้เป็น null`, text, { type: 'object', properties: { value: { type: ['string', 'null'], enum: [...opts[st], null] } }, required: ['value'] });
         if (r.value) return answerStep(text, { [st]: r.value } as Partial<Assessment>);
@@ -2416,7 +2433,7 @@ export function HomeScreen() {
         const assessedHere = thread.some((m) => m.card?.type === 'guideline' || m.card?.type === 'review' || m.card?.type === 'safety');
         const editing = st === 'review' || (st === 'done' && (!tc || assessedHere) && EDIT_ASK.test(text));
         if (editing && (turn.kind === 'answer' || turn.kind === 'change' || turn.kind === 'question' || turn.kind === 'unclear')) {
-          if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds }));
+          if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds, reuseAllergy: a.allergy }));
           setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
           return editReviewByText(text);
         }
@@ -2434,7 +2451,7 @@ export function HomeScreen() {
           case 'change': {
             if (st === 'review' || st === 'done' && !tc) {
               // หลังประเมิน/หน้าทบทวน: แก้แล้วกลับไปหน้าทบทวน (ยืนยันใหม่เพื่อสรุปผล)
-              if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds }));
+              if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds, reuseAllergy: a.allergy }));
               setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
               return editReviewByText(text);
             }
@@ -3671,6 +3688,7 @@ function ReviewCard({
     { st: 'cause', value: assess.cause ?? '—' },
     { st: 'health', value: assess.health ?? '—' },
     { st: 'meds', value: assess.meds ?? '—' },
+    { st: 'allergy', value: assess.allergy ?? '—' },
     { st: 'risk', value: assess.risk ?? '—' },
     { st: 'pressure', value: assess.pressure ?? '—' },
     { st: 'avoid', value: assess.avoid ?? '—' },

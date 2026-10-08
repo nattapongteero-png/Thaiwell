@@ -132,6 +132,7 @@ export interface DraftCase {
   /** คำตอบโรคประจำตัว/ยาครั้งก่อน (ประเมินซ้ำไม่ต้องถามใหม่) */
   health?: string;
   meds?: string;
+  allergy?: string;
   /** ข้อห้ามนวด / แรงนวดที่ตอบไว้ (ประเมินซ้ำไม่ต้องถามใหม่) */
   risk?: string;
   pressure?: string;
@@ -628,7 +629,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
             pressure: d.pressure === 'หนัก' || d.pressure === 'เบา' ? d.pressure : 'ปานกลาง',
             injury: /บาดเจ็บ/.test(risk) ? risk : undefined,
             surgery: /ผ่าตัด/.test(risk) ? risk : undefined,
-            allergy: /แพ้/.test(risk) ? risk : pf.allergies.join(', ') || undefined,
+            allergy: pf.allergies.join(', ') || undefined,
           }
         : undefined,
       note: d?.caution,

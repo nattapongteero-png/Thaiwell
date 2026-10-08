@@ -76,7 +76,7 @@ export type ThreadCard =
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)
  * ครบทุกข้อแล้ว AI จึงสรุปและแสดง "แนวทางการรักษา & จุดกดบำบัด"
  */
-export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'meds' | 'risk' | 'pressure' | 'avoid' | 'radiate' | 'done';
+export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'meds' | 'allergy' | 'risk' | 'pressure' | 'avoid' | 'radiate' | 'done';
 /**
  * ลำดับคำถาม — ครบตามการประเมินแรกรับ (เกณฑ์มาตรฐานฯ หน้า 33):
  * อาการ → อาการร่วม (red flag) → ความปวด → ระยะเวลา → มูลเหตุ (มูลเหตุเกิดโรค 8 ประการ) → โรคประจำตัว/ยา (ข้อห้าม + ปฏิกิริยาสมุนไพร–ยา)
@@ -84,7 +84,7 @@ export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 
 // + ข้อห้ามช่วงนี้ (ผ่าตัด บาดเจ็บ ไข้ ตั้งครรภ์ แผล: ตำราอ้างอิงฯ หน้า 391, CPG หน้า 139) → แรงนวดที่ชอบ (ใช้วางแผนการนวด)
 // อาการร้าว: ถามต่อจากอาการเฉพาะเมื่ออาการนั้นมีรูปแบบการร้าว (data/radiation.ts)
 // + บริเวณที่ไม่ต้องการให้นวด (แบบประเมินก่อนรับบริการของหลังบ้าน: avoidAreas)
-export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'meds', 'risk', 'pressure', 'avoid'];
+export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'meds', 'allergy', 'risk', 'pressure', 'avoid'];
 
 export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; text: string }> = {
   idle: { label: '', text: '' },
@@ -98,6 +98,7 @@ export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; te
   cause: { label: 'สาเหตุ', text: 'ช่วงนี้มีอะไรที่น่าจะทำให้เป็นไหมคะ?' },
   health: { label: 'โรคประจำตัว', text: 'มีโรคประจำตัวไหมคะ? เลือกได้หลายข้อ' },
   meds: { label: 'ยาที่ใช้ประจำ', text: 'มียาที่ทานประจำไหมคะ? เลือกได้หลายข้อ' },
+  allergy: { label: 'การแพ้', text: 'แพ้อะไรไหมคะ? เลือกได้หลายข้อ หรือพิมพ์บอกได้เลยค่ะ' },
   risk: { label: 'ข้อห้ามนวด', text: 'ช่วงนี้มีข้อไหนตรงกับคุณไหมคะ? ข้อเหล่านี้อาจทำให้ยังนวดไม่ได้ค่ะ' },
   pressure: { label: 'แรงนวด', text: 'ชอบแรงนวดแบบไหนคะ?' },
   avoid: { label: 'ไม่ให้นวด', text: 'มีบริเวณไหนที่ไม่ต้องการให้นวดไหมคะ?' },
@@ -106,13 +107,15 @@ export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; te
 export const AVOID_OPTIONS = ['ไม่มี', 'ศีรษะ/ใบหน้า', 'คอ', 'ท้อง', 'หลัง', 'ขา/เท้า'];
 /** ข้อห้าม/ข้อควรระวังช่วงนี้ → safetyEngine (ตำราอ้างอิงฯ หน้า 391 · CPG หน้า 139) */
 // + ประจำเดือน (งดนวดท้อง) · โรคติดต่อ (เลื่อนนัด) — ตามแบบคัดกรองของหลังบ้าน ThaiWellAI
-export const RISK_OPTIONS = ['ผ่าตัดภายใน 1 เดือน', 'บาดเจ็บภายใน 2 วัน', 'มีไข้', 'ตั้งครรภ์', 'มีแผลหรือผื่นตรงที่ปวด', 'มีประจำเดือน', 'โรคติดต่อ', 'แพ้น้ำมันนวด/สมุนไพร', 'ไม่มี'];
+export const RISK_OPTIONS = ['ผ่าตัดภายใน 1 เดือน', 'บาดเจ็บภายใน 2 วัน', 'มีไข้', 'ตั้งครรภ์', 'มีแผลหรือผื่นตรงที่ปวด', 'มีประจำเดือน', 'โรคติดต่อ', 'ไม่มี'];
 export const PRESSURE_OPTIONS = ['เบา', 'ปานกลาง', 'หนัก', 'ให้ผู้ให้บริการเลือก'];
 /** มูลเหตุเกิดโรค 8 ประการ (เกณฑ์มาตรฐานฯ หน้า 33) — ภาษาที่คนทั่วไปเข้าใจ */
 export const CAUSE_OPTIONS = ['นั่ง/ยืนนาน', 'ยกของหนัก ทำงานหนัก', 'อดนอน', 'เครียด', 'อากาศร้อน/เย็น', 'กินไม่ตรงเวลา', 'ไม่แน่ใจ'];
 /** โรคประจำตัว/ยาที่มีผลต่อการนวด (CPG หน้า 139 · ตำราอ้างอิงฯ หน้า 391, 401, 490) — ชื่อตรงกับกฎใน safetyEngine และหน้าโปรไฟล์ */
 export const HEALTH_OPTIONS = ['ไม่มี', 'ความดันโลหิตสูง', 'เบาหวาน', 'โรคหัวใจ', 'หอบหืด', 'กระดูกพรุน'];
 export const MED_OPTIONS = ['ไม่มี', 'ยาลดความดัน', 'ยาเบาหวาน', 'ยาละลายลิ่มเลือด', 'ยาแก้ปวด'];
+/** การแพ้ (หลังบ้าน: ข้อ "การแพ้") — ตัวเลือกเบื้องต้น พิมพ์บอกเองได้ */
+export const ALLERGY_OPTIONS = ['ไม่มี', 'แพ้ยา', 'แพ้สมุนไพร', 'แพ้น้ำมันนวด', 'แพ้อาหาร'];
 export const DURATION_OPTIONS = ['วันนี้', '2–3 วัน', '1 สัปดาห์', 'เกิน 1 เดือน'];
 
 export interface Assessment {
@@ -127,6 +130,8 @@ export interface Assessment {
   health?: string;
   /** ยาที่ใช้ประจำ (คั่นด้วย ·) */
   meds?: string;
+  /** สิ่งที่แพ้ (คั่นด้วย ·) */
+  allergy?: string;
   /** ปวดร้าวไปไหน (data/radiation.ts) */
   radiate?: string;
   /** ข้อห้ามช่วงนี้ (RISK_OPTIONS) */
@@ -140,6 +145,7 @@ export interface Assessment {
   /** ประเมินซ้ำเรื่องเดิม: ใช้คำตอบโรคประจำตัวชุดเดิม (ข้ามข้อนี้) */
   reuseHealth?: string;
   reuseMeds?: string;
+  reuseAllergy?: string;
   /** กำลังแก้ข้อเดียวจากข้อมูลชุดเดิม → ตอบแล้วกลับไปหน้าทบทวน (ไม่ถามข้อถัดไป) */
   editing?: boolean;
 }
@@ -201,8 +207,9 @@ export const listOfAnswer = (answer: string | undefined): string[] =>
 /** รายการ → คำตอบในแชท */
 export const answerOfList = (list: string[]) => (list.length ? list.join(' · ') : 'ไม่มี');
 /** ผู้ใช้เคยบอกโรคประจำตัว / ยาแล้วหรือยัง (กรอกในโปรไฟล์ หรือตอบในแชท) → ยังไม่เคย = AI ถาม */
-export const healthKnownOf = (p: { healthKnown?: boolean; conditionsKnown?: boolean; medicationsKnown?: boolean }, field: 'conditions' | 'medications') =>
-  (field === 'conditions' ? p.conditionsKnown : p.medicationsKnown) ?? p.healthKnown === true;
+export type HealthField = 'conditions' | 'medications' | 'allergies';
+export const healthKnownOf = (p: { healthKnown?: boolean; conditionsKnown?: boolean; medicationsKnown?: boolean; allergiesKnown?: boolean }, field: HealthField) =>
+  (field === 'conditions' ? p.conditionsKnown : field === 'medications' ? p.medicationsKnown : p.allergiesKnown) ?? p.healthKnown === true;
 /** คำตอบ "โรคประจำตัว" + "ยาที่ใช้ประจำ" ในแชท → ข้อมูลในโปรไฟล์ (ข้อมูลสุขภาพเก็บที่เดียว) · ไม่ได้ตอบ = ใช้ของเดิม
  * รองรับคำตอบชุดเดิม (ความดันสูง · หอบหืด/ภูมิแพ้ · ยาละลายลิ่มเลือด อยู่ในข้อโรคประจำตัว) */
 export const healthAnswerToProfile = (health: string | undefined, meds: string | undefined, cur: { conditions: string[]; medications: string[] }): { conditions: string[]; medications: string[] } => {

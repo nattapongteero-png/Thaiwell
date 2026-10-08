@@ -19,6 +19,7 @@ export interface HealthProfile {
   /** กรอก/ตอบเรื่องโรคประจำตัว · ยาที่ใช้ประจำ แล้ว (แยกข้อ) — ไม่ระบุ = ตาม healthKnown */
   conditionsKnown?: boolean;
   medicationsKnown?: boolean;
+  allergiesKnown?: boolean;
   /** เชื่อมประวัติจากโรงพยาบาลแล้ว (ชื่อแหล่งข้อมูล) */
   phrSource?: string;
   age: number;

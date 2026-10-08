@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, ReplyChips, Text, componentTokens, radius, space, useTheme } from '../../../design-system';
-import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, MED_OPTIONS, PRESSURE_OPTIONS,
+import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, MED_OPTIONS, ALLERGY_OPTIONS, PRESSURE_OPTIONS,
   AVOID_OPTIONS, RISK_OPTIONS, type AssessStep, type Assessment } from '../../../data/homeFeed';
 import { PillButton } from './ThreadCards';
 
@@ -176,6 +176,9 @@ export function AssessWidget({
       return <MultiPick options={HEALTH_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มีโรคประจำตัว', { health: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'meds':
       return <MultiPick options={MED_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มียาที่ใช้ประจำ', { meds: l.length ? l.join(' · ') : 'ไม่มี' })} />;
+    case 'allergy':
+      // ตัวเลือกเบื้องต้น · แพ้อย่างอื่น = พิมพ์บอกในช่องแชท
+      return <MultiPick options={ALLERGY_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่แพ้อะไร', { allergy: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'radiate':
       return <ReplyChips options={radiate} onPick={(o) => onNext(o, { radiate: o })} />;
     case 'risk':
@@ -223,6 +226,7 @@ export function AssessmentTracker({
     cause: assess.cause,
     health: assess.health,
     meds: assess.meds,
+    allergy: assess.allergy,
     risk: assess.risk,
     pressure: assess.pressure,
     avoid: assess.avoid,
