@@ -69,7 +69,7 @@ import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findT
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
 import { VoiceChatDock } from './home/VoiceChatDock';
-import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
+import { classifyTurn, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
@@ -371,6 +371,8 @@ export function HomeScreen() {
   const primaryFor = React.useRef<Record<string, { draftId: string; symptoms: string[]; radiate?: string; /** แนวทาง + สิ่งที่ตามมา (นัด/จอง) ที่รอแสดงหลังตอบ */ held?: ThreadItem[]; regions?: { label: string; symptoms: string[] }[] }>>({});
   /** คำตอบข้ออื่นที่ผู้ใช้บอกมาก่อนถึงข้อนั้น (เช่น "ปวดคอ 7 เป็นมา 3 วัน") → ถึงข้อนั้นแล้วข้าม ไม่ถามซ้ำ · แยกตามแชท */
   const prefill = React.useRef<Record<string, Partial<Assessment>>>({});
+  /** อาการร่วมที่เล่ามาก่อนถึงข้อนั้น (ต่อแชท) */
+  const prefillRelated = React.useRef<Record<string, string[]>>({});
   /** คำถามที่ค้างก่อนถามยืนยัน (เช่น ร้องเรียน) → ตอบยืนยันแล้วกลับมาถามต่อ */
   const afterChoice = React.useRef<ThreadItem[]>([]);
   const tcase = cases[Math.min(caseIdx, cases.length - 1)] ?? TREATMENT_CASES[0];
@@ -970,11 +972,21 @@ export function HomeScreen() {
     // ข้อที่ผู้ใช้บอกมาแล้วในข้อความก่อนหน้า → ใช้คำตอบนั้น ข้ามไปข้อถัดไป
     const pf = prefill.current[sid] ?? {};
     const skipped: string[] = [];
-    while (nextStep && nextStep !== 'symptoms' && nextStep !== 'related' && pf[nextStep as keyof Assessment] !== undefined) {
-      const k = nextStep as keyof Assessment;
-      patch = { ...patch, [k]: pf[k] };
-      skipped.push(k === 'pain' ? `ปวด ${pf.pain}/10` : String(pf[k]));
-      delete pf[k];
+    while (nextStep) {
+      if (nextStep === 'related') {
+        // อาการร่วมที่เล่ามาแล้ว (ชา อ่อนแรง …) → เลือกให้ ข้ามข้อนี้
+        const rel = prefillRelated.current[sid];
+        if (!rel?.length) break;
+        setSel((cur) => ({ ...cur, ...Object.fromEntries(rel.map((x) => [x, null])) }));
+        skipped.push(rel.join(', '));
+        delete prefillRelated.current[sid];
+      } else {
+        const k = nextStep as keyof Assessment;
+        if (nextStep === 'symptoms' || pf[k] === undefined) break;
+        patch = { ...patch, [k]: pf[k] };
+        skipped.push(k === 'pain' ? `ปวด ${pf.pain}/10` : String(pf[k]));
+        delete pf[k];
+      }
       nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
       if (nextStep === 'health' && assess.reuseHealth !== undefined) {
         nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf('health') + 1];
@@ -1849,7 +1861,7 @@ export function HomeScreen() {
   /** กำลังถามข้อหนึ่งอยู่ แต่ผู้ใช้พิมพ์ตอบเอง → AI แปลงเป็นคำตอบของข้อนั้น (แปลงไม่ได้ = ถามซ้ำพร้อมตัวเลือก) */
   const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
   /** ข้อมูลข้ออื่นที่บอกมาในข้อความเดียวกัน → เก็บไว้ข้ามตอนถึงข้อนั้น · คืนสรุปสั้น ๆ */
-  const keepPrefill = (st: AssessStep, f: TurnFields): string[] => {
+  const keepPrefill = (st: AssessStep, f: TurnFields & { related?: string[] | null }): string[] => {
     const extra: Partial<Assessment> = {};
     (['pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid', 'radiate'] as const).forEach((k) => {
       if (k !== st && f[k] !== null && f[k] !== undefined) (extra as Record<string, unknown>)[k] = f[k];
@@ -1857,10 +1869,14 @@ export function HomeScreen() {
     // ข้อที่ผ่านมาแล้วไม่เก็บ (ถ้าจะแก้ = ขอแก้คำตอบ)
     const at = ASSESS_ORDER.indexOf(st as (typeof ASSESS_ORDER)[number]);
     Object.keys(extra).forEach((k) => ASSESS_ORDER.indexOf(k as (typeof ASSESS_ORDER)[number]) < at && delete (extra as Record<string, unknown>)[k]);
-    if (!Object.keys(extra).length) return [];
+    const rel = st !== 'related' && at < ASSESS_ORDER.indexOf('related') ? (f.related ?? []).filter((x) => HOME_CONTENT.related.includes(x)) : [];
+    if (rel.length) prefillRelated.current[activeId] = rel;
+    if (!Object.keys(extra).length) return rel.length ? [rel.join(', ')] : [];
     prefill.current[activeId] = { ...prefill.current[activeId], ...extra };
-    return Object.entries(extra).map(([k, v]) => (k === 'pain' ? `ปวด ${v}/10` : String(v)));
+    return [...(rel.length ? [rel.join(', ')] : []), ...Object.entries(extra).map(([k, v]) => (k === 'pain' ? `ปวด ${v}/10` : String(v)))];
   };
+  /** ตอบรับ + บอกว่าจดอะไรไว้แล้วบ้าง (เล่ายาวทีเดียว ให้เห็นว่าจับได้ครบไหม) */
+  const ackLead = (head: string, noted: string[]) => (noted.length ? `${head}\nจดไว้แล้ว: ${noted.join(' · ')}` : head);
   const answerStepByText = async (st: Exclude<AssessStep, 'done' | 'idle' | 'review' | 'topic'>, text: string, turn?: Turn) => {
     const opts = stepOpts();
     const noted = turn ? keepPrefill(st, turn.fields) : [];
@@ -2000,16 +2016,22 @@ export function HomeScreen() {
       return fuAdverseItems(pendingAdverse.current, r.value);
     });
   /** เรื่องเดิมหรืออาการใหม่: พิมพ์ตอบ → เลือกจากตัวเลือก */
-  const answerTopicByText = (text: string) =>
+  const answerTopicByText = (text: string, turn?: Turn) =>
     aiReplyAsync(activeId, text, async () => {
       const r = await extractAI<{ value: string | null }>(`ผู้ใช้ตอบว่าเป็นเรื่องเดิมเรื่องไหน หรืออาการใหม่ เลือกจาก: ${topicOptions.join(', ')} · ไม่ชัด = null`, text, {
         type: 'object',
         properties: { value: { type: ['string', 'null'], enum: [...topicOptions, null] } },
         required: ['value'],
       });
-      if (!r.value) return [askItem('topic', 'ขอโทษค่ะ ไม่แน่ใจคำตอบ')];
-      setAssess((a) => ({ ...a, topic: r.value!, step: 'symptoms' }));
-      return [askItem('symptoms', 'รับทราบค่ะ')];
+      // เล่าอาการมาเลยโดยไม่บอกเรื่อง (เช่น พูดยาวในโหมดเสียง) → ถือเป็นอาการใหม่ แล้วใช้สิ่งที่เล่า
+      const sym = turn?.fields.symptoms ?? [];
+      const topic = r.value ?? (sym.length ? NEW_TOPIC : null);
+      if (!topic) return [askItem('topic', 'ขอโทษค่ะ ไม่แน่ใจคำตอบ')];
+      setAssess((a) => ({ ...a, topic, step: 'symptoms' }));
+      if (!sym.length || !turn) return [askItem('symptoms', 'รับทราบค่ะ')];
+      pickSymptoms(sym);
+      const noted = keepPrefill('symptoms', turn.fields);
+      return radiateOrNext(activeId, sym, ackLead(radiateFor(sym) ? 'รับทราบค่ะ' : `รับทราบค่ะ ${sym.join(', ')}`, noted));
     });
 
   /** ยังไม่เริ่มอะไร: AI แยกว่าอยากทำอะไร แล้วพาไปเส้นนั้น */
@@ -2035,8 +2057,8 @@ export function HomeScreen() {
         if (sym.items.length) {
           pickSymptoms(sym.items);
           // บอกข้ออื่นมาด้วย (ปวดเท่าไหร่ เป็นมานานแค่ไหน …) → เก็บไว้ ถึงข้อนั้นแล้วข้าม
-          if (turn) keepPrefill('symptoms', turn.fields);
-          return radiateOrNext(activeId, sym.items, `รับทราบค่ะ ${sym.items.join(', ')}`);
+          const noted = turn ? keepPrefill('symptoms', turn.fields) : [];
+          return radiateOrNext(activeId, sym.items, ackLead(`รับทราบค่ะ ${sym.items.join(', ')}`, noted));
         }
         setAssess((a) => ({ ...a, step: 'symptoms' }));
         return [askItem('symptoms', 'ได้เลยค่ะ')];
@@ -2062,7 +2084,7 @@ export function HomeScreen() {
     if (opt && lastCard?.type === 'intents') return pickIntent(opt);
     if (opt && lastCard?.type === 'slotPick') return pickSlot(lastCard.placeId, lastCard.therapistId, opt, text);
     if (opt && lastCard?.type === 'choice') return pickChoice(lastCard, opt);
-    if (st === 'topic') return answerTopicByText(text);
+    if (st === 'topic') return answerTopicByText(text, turn);
     if (st === 'idle') return routeByText(text, turn);
     if (st === 'review') return editReviewByText(text);
     if (st !== 'done') return answerStepByText(st, text, turn);
@@ -2112,9 +2134,9 @@ export function HomeScreen() {
       : (await extractAI<{ items: string[] }>(SYMPTOM_PROMPT, text, { type: 'object', properties: { items: { type: 'array', items: { type: 'string', enum: ALL_SYMPTOMS }, maxItems: 6 } }, required: ['items'] }).catch(() => ({ items: [] as string[] }))).items;
     if (!sym.length) return [askItem('symptoms', 'ได้เลยค่ะ')];
     pickSymptoms(sym);
-    keepPrefill('symptoms', turn.fields);
+    const noted = keepPrefill('symptoms', turn.fields);
     // คำถามอาการร้าวบอกชื่ออาการอยู่แล้ว → ไม่ต้องทวนซ้ำ
-    return radiateOrNext(activeId, sym, radiateFor(sym) ? 'รับทราบค่ะ' : `รับทราบค่ะ ${sym.join(', ')}`);
+    return radiateOrNext(activeId, sym, ackLead(radiateFor(sym) ? 'รับทราบค่ะ' : `รับทราบค่ะ ${sym.join(', ')}`, noted));
   };
   /** การ์ดถามยืนยัน → เลือกแล้วทำต่อ */
   const pickChoice = (c: Extract<ThreadCard, { type: 'choice' }>, o: string) => {
@@ -2192,7 +2214,10 @@ export function HomeScreen() {
       routeAnswer(text, turn);
     };
     const ENUMS: TurnEnums = { symptoms: ALL_SYMPTOMS, duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: ALL_RADIATE_OPTIONS };
-    classifyTurn(text, pend, ENUMS, SYMPTOM_PROMPT)
+    // เล่ายาว (หลายข้อในทีเดียว) → ดึงข้อมูลแต่ละข้อแบบเจาะจงคู่ขนาน แล้วรวมกับผลตัวคัดแยก
+    const long = text.trim().length >= 25;
+    Promise.all([classifyTurn(text, pend, ENUMS, SYMPTOM_PROMPT), long ? extractStory(text, { ...ENUMS, related: HOME_CONTENT.related }, SYMPTOM_PROMPT, STEP_HINT).catch(() => null) : null])
+      .then(([t0, story]) => ({ ...t0, fields: mergeFields(t0.fields, story) }))
       .then(async (turn) => {
         const tc = chatCase();
         const st = assess.step;

@@ -359,10 +359,10 @@ export function ChatComposer({
     >
       {/* แสงรอบทั้งช่องแชท (แบบ Siri) — สว่าง/หนาขึ้นตามเสียง */}
       {vo && size.w ? <EdgeGlow width={size.w} height={size.h} radius={embedded ? 0 : t.height / 2} opacity={glowOpacity} level={vo.halo} /> : null}
-      {/* เส้นแสงคลี่ออกจากกลางลูกแก้วไปทางขวา (อยู่หลังลูกแก้ว) · mount ไว้ตลอด เปิดไมค์แล้วไม่ต้องสร้าง GL ใหม่ */}
+      {/* เส้นแสงอยู่กลางช่องว่างระหว่างลูกแก้วกับปุ่มขวา (เว้นซ้ายขวาเท่ากัน) · คลี่ออกจากกลาง · mount ไว้ตลอด เปิดไมค์แล้วไม่ต้องสร้าง GL ใหม่ */}
       <Animated.View
         pointerEvents="none"
-        style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb / 2, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }], transformOrigin: 'left' }}
+        style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb + t.gap, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }] }}
       >
         <Strands level={vo?.level ?? 0} running={shown} span={{ x: 0.8, y: 0.42 }} style={{ height: t.height }} />
       </Animated.View>

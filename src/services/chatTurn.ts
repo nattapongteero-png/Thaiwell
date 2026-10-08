@@ -108,3 +108,52 @@ export async function classifyTurn(text: string, pending: { label: string; optio
   };
   return { kind: r.kind, danger: r.danger, switchTo: r.switchTo, option: r.option, about: r.about, fields };
 }
+
+/**
+ * เล่ายาว (เช่น พูดในโหมดเสียง) → ดึงข้อมูลการประเมินทุกข้อแบบเจาะจง (งานเดียว แม่นกว่าตัวคัดแยกที่ทำหลายอย่างพร้อมกัน)
+ * ใช้เติมข้อที่ตัวคัดแยกไม่ได้ดึงมา · related = อาการร่วม (ชา อ่อนแรง …) · hints = คำใบ้ต่อข้อชุดเดียวกับตอนตอบทีละข้อ
+ */
+export type StoryFields = TurnFields & { related: string[] | null };
+export async function extractStory(text: string, enums: TurnEnums & { related: string[] }, symptomHint: string, hints: Record<string, string>): Promise<StoryFields> {
+  const instruction = [
+    'ผู้ใช้เล่าอาการยาว ๆ ในข้อความเดียว ดึงข้อมูลการประเมินทุกข้อที่ผู้ใช้พูดถึงจริง ข้อที่ไม่ได้พูดถึง = null ห้ามเดา',
+    `symptoms = ตำแหน่งที่ปวด · ${symptomHint}`,
+    'related = อาการร่วมที่พูดถึง (ไม่ได้พูดถึง = null)',
+    'pain = ตัวเลขความปวด 0–10 ที่ผู้ใช้บอกเท่านั้น (พูดเป็นคำ เช่น "เจ็ด" = 7 · "ปวดมาก" ไม่มีตัวเลข = null)',
+    `duration = เป็นมานานเท่าไหร่ เลือกที่ใกล้ที่สุด${hints.duration ?? ''}`,
+    `cause = สาเหตุ${hints.cause ?? ''}`,
+    `health = โรคประจำตัว${hints.health ?? ''}`,
+    `risk = ภาวะช่วงนี้ (ผ่าตัด บาดเจ็บ ไข้ ตั้งครรภ์ แผล)${hints.risk ?? ''}`,
+    `pressure = น้ำหนักมือที่อยากได้${hints.pressure ?? ''}`,
+    'avoid = บริเวณที่ไม่อยากให้นวด',
+    `radiate = อาการร้าว${hints.radiate ?? ''}`,
+  ].join('\n');
+  const schema = {
+    type: 'object',
+    properties: {
+      symptoms: { type: ['array', 'null'], items: { type: 'string', enum: enums.symptoms }, maxItems: 6 },
+      related: { type: ['array', 'null'], items: { type: 'string', enum: enums.related }, maxItems: 4 },
+      pain: { type: ['integer', 'null'], minimum: 0, maximum: 10 },
+      duration: nullable(enums.duration),
+      cause: nullable(enums.cause),
+      health: nullable(enums.health),
+      risk: nullable(enums.risk),
+      pressure: nullable(enums.pressure),
+      avoid: nullable(enums.avoid),
+      radiate: nullable(enums.radiate),
+    },
+    required: ['symptoms', 'related', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid', 'radiate'],
+  };
+  const r = await extractAI<StoryFields>(`${instruction}\nตอบเป็น JSON บรรทัดเดียว ไม่เว้นบรรทัด`, text, schema, 'story', 400);
+  return {
+    ...EMPTY_FIELDS,
+    ...r,
+    symptoms: r.symptoms?.length ? [...new Set(r.symptoms)] : null,
+    related: r.related?.length ? [...new Set(r.related)] : null,
+  };
+}
+/**
+ * รวมผลตัวคัดแยกกับผลดึงจากเรื่องเล่า: เล่ายาวใช้ผลดึงเจาะจงทั้งชุด (ตัวคัดแยกชอบเดาข้อที่ไม่ได้พูด เช่น ชาที่มือ → ร้าวลงแขน)
+ * ข้อที่ไม่ได้ = ถามตามปกติ · ดึงไม่สำเร็จ = ใช้ของตัวคัดแยก
+ */
+export const mergeFields = (a: TurnFields, b: StoryFields | null): TurnFields & { related?: string[] | null } => (b ? { ...b, symptoms: b.symptoms ?? a.symptoms } : a);
