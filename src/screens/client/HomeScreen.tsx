@@ -69,7 +69,7 @@ import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findT
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
 import { VoiceChatDock } from './home/VoiceChatDock';
-import { classifyTurn, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
+import { EMPTY_FIELDS, classifyTurn, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
@@ -2179,6 +2179,20 @@ export function HomeScreen() {
       log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${noteTopic}): ${text}`);
       return reply(text, 'ส่งให้ผู้ให้บริการแล้วค่ะ ผลประเมินเดิมยังอยู่ ผู้ให้บริการจะเห็นข้อความนี้แยกไว้');
     }
+    // ขอจองนัดของเรื่องอื่น (บอกอาการมา) → ไปทำในแชทของเรื่องนั้น · อาการที่ยังไม่เคยประเมิน → ประเมินก่อน
+    if (/จอง|นัด/.test(text) && !/ยกเลิก|เลื่อน/.test(text)) {
+      const tgt = bookTopicOf(text);
+      const cc0 = chatCase();
+      const own = drafts.find((d) => d.chatId === activeId);
+      if (tgt?.kind === 'case' && tgt.c.id !== cc0?.id) return continueIn(chatIdForCase(tgt.c), text);
+      if (tgt?.kind === 'draft' && tgt.d.id !== own?.id && tgt.d.chatId && sessions.some((x) => x.id === tgt.d.chatId)) return continueIn(tgt.d.chatId, text);
+      if (tgt?.kind === 'new' && (cc0 || own)) return startNewWith(text);
+      if (tgt?.kind === 'new' && (assess.step === 'idle' || assess.step === 'topic'))
+        return aiReplyAsync(activeId, text, async () => [
+          aiText('ขอประเมินอาการก่อนนะคะ จะได้นัดบริการที่ตรงกับอาการ'),
+          ...(await beginAssess({ kind: 'switch', danger: false, switchTo: 'booking', option: null, about: 'personal', fields: { ...EMPTY_FIELDS } }, text)),
+        ]);
+    }
     // หน้าทบทวน: พูด/พิมพ์ยืนยัน ("ยืนยันข้อมูล" "ถูกต้องแล้ว" "ไม่ต้องแก้") → เหมือนกดยืนยัน · มีขอแก้ปนมา = แก้ก่อน
     if (assess.step === 'review' && CONFIRM_ASK.test(text) && !EDIT_ASK.test(text.replace(/ไม่(ต้อง|มี(อะไร)?(ที่)?(จะ)?)?\s*แก้(ไข)?/g, ''))) {
       return confirmReview(text);
@@ -2195,24 +2209,59 @@ export function HomeScreen() {
     triage(text, pend);
   };
   sendRef.current = send;
-  /** เปิดแชทใหม่ แล้วส่งข้อความเดิมเข้าแชทนั้น (เหมือนผู้ใช้เล่าในแชทใหม่) · ข้ามข้อ "เรื่องเดิม/อาการใหม่" เพราะบอกแล้วว่าใหม่ */
-  const [carry, setCarry] = React.useState<string | null>(null);
-  const carryRef = React.useRef<string | null>(null);
+  /**
+   * ส่งข้อความเดิมต่อในแชทอื่น: to = แชทของเรื่องนั้น (เช่น ขอจองนัดของอีกเรื่อง) · ไม่มี to = แชทใหม่
+   * แชทใหม่ข้ามข้อ "เรื่องเดิม/อาการใหม่" เพราะบอกแล้วว่าใหม่
+   */
+  const [carry, setCarry] = React.useState<{ text: string; to?: string } | null>(null);
+  const carryRef = React.useRef<typeof carry>(null);
   carryRef.current = carry;
   const startNewWith = (text: string) => {
-    setCarry(text);
+    setCarry({ text });
     newChat(true);
   };
+  const continueIn = (chatId: string, text: string) => {
+    setCarry({ text, to: chatId });
+    openChat(chatId);
+  };
   React.useEffect(() => {
-    if (!carry || active.items.some((m) => m.from === 'user')) return;
-    if (assess.step === 'topic') {
-      setAssess((a) => ({ ...a, topic: NEW_TOPIC, step: 'idle' }));
-      return;
+    if (!carry) return;
+    if (carry.to) {
+      if (activeId !== carry.to) return;
+    } else {
+      if (active.items.some((m) => m.from === 'user')) return;
+      if (assess.step === 'topic') {
+        setAssess((a) => ({ ...a, topic: NEW_TOPIC, step: 'idle' }));
+        return;
+      }
     }
     setCarry(null);
-    send(carry);
+    send(carry.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carry, activeId, assess.step]);
+  /** แชทของเรื่องที่รักษา (ยังไม่มี = สร้าง) */
+  const chatIdForCase = (c: (typeof cases)[number]) => {
+    const id = caseChats[c.id] ?? c.chatId;
+    if (id && sessions.some((x) => x.id === id)) return id;
+    const ss = caseChatSession(`รักษา${c.short}`, '');
+    setSessions((all) => [ss, ...all]);
+    setCaseChats((m) => ({ ...m, [c.id]: ss.id }));
+    return ss.id;
+  };
+  /**
+   * ขอจองนัดโดยบอกอาการ → เรื่องไหน: เรื่องที่รักษาอยู่ / ใบร่างที่ประเมินแล้ว / อาการใหม่ (ยังไม่เคยประเมิน)
+   * จับจากคำในชื่อเรื่องและตำแหน่งที่ปวด (ไม่บอกอาการ = null → ใช้เรื่องของแชทนี้ตามเดิม)
+   */
+  const bookTopicOf = (text: string) => {
+    const words = (x: string) => x.replace(/^(รักษา)?ปวด/, '').split(/[-\s,/]+/).filter((w) => w.length >= 2);
+    const said = text.replace(/หลังนวด|หลังจาก|หลังเลิก|ทีหลัง/g, '');
+    const hit = (names: string[]) => names.some((n) => words(n).some((w) => said.includes(w)));
+    const c = cases.find((x) => hit([x.short, ...x.areas.map((a) => a.symptom)]));
+    if (c) return { kind: 'case' as const, c };
+    const d = drafts.find((x) => hit([x.title, ...x.symptoms]));
+    if (d) return { kind: 'draft' as const, d };
+    return ALL_SYMPTOMS.some((x) => hit([x])) ? { kind: 'new' as const } : null;
+  };
   // แชทตอบแล้ว (ข้อความใหม่หลังจากที่พูด/แตะ) → อ่านออกเสียงข้อความสั้น ๆ แล้วฟังต่อ หรือพักถ้าต้องแตะการ์ด
   React.useEffect(() => {
     // ยังไม่ได้ส่งข้อความเข้าแชทใหม่ → ยังไม่อ่าน (ข้อความต้อนรับของแชทใหม่ไม่ต้องอ่าน)
