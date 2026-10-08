@@ -193,7 +193,7 @@ export function ProfileScreen() {
             <ProfileAvatar sex={account?.sex ?? 'ชาย'} size={68} photo={account?.avatar} />
             {account ? (
               <View style={{ position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' }}>
-                <Icon name="edit-2" size="xs" color="#FFFFFF" />
+                <Icon name="edit-2" size="xxs" color="#FFFFFF" />
               </View>
             ) : null}
           </Pressable>
