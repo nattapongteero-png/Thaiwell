@@ -2,6 +2,7 @@ import React from 'react';
 import { Feather } from '@expo/vector-icons';
 import { SvgXml } from 'react-native-svg';
 import { LINE_ICONS } from './lineIcons';
+import { LineIcon, hasLineAnim } from './LineIcon';
 import { sizing } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -23,6 +24,8 @@ export function Icon({
   const { colors } = useTheme();
   const px = sizing.icon[size];
   const c = color ?? colors.icon.primary;
+  // ขยับได้ (เส้นวาดตัวเองตอนแสดง) → ไอคอนขยับ · ใช้ mask/หมุน (ขยับบนมือถือไม่ได้) → ภาพนิ่ง
+  if (hasLineAnim(name)) return <LineIcon name={name} size={px} color={c} />;
   const svg = LINE_ICONS[name];
   if (svg) return <SvgXml xml={svg} width={px} height={px} color={c} />;
   return <Feather name={name} size={px} color={c} />;
