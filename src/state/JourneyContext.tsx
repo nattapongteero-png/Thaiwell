@@ -592,6 +592,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       start: b.time,
       painScore: caseBk?.pain ?? d?.pain ?? 0,
       screening: { fever: /ไข้/.test(risk), highBP: pf.conditions.some((c) => /ความดัน/.test(c)), menstruation: /ประจำเดือน/.test(risk), pregnant: /ตั้งครรภ์/.test(risk), recentSurgery: /ผ่าตัด/.test(risk), contagious: /โรคติดต่อ/.test(risk) },
+      screened: d?.risk !== undefined,
       intake: d
         ? {
             at: new Date().toISOString(),

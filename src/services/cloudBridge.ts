@@ -138,6 +138,8 @@ export async function cloudSendBooking(request: ClinicRequest, patient: ClinicPa
       conditions: it?.conditions ?? patient.conditions,
       pressure: it?.pressure ?? 'ปานกลาง',
       screening: request.screening,
+      // ตอบข้อห้ามแล้วหรือยัง → คลินิกไม่แสดง "ไม่มี" แทนข้อที่ไม่ได้ถาม
+      screened: !!request.screened,
       summary: `AI ประเมิน: ${complaint} · ปวด ${request.painScore}/10${request.note ? ` · ${request.note}` : ''}`,
     },
   });

@@ -64,6 +64,8 @@ export interface ClinicRequest {
   start: string; // HH:mm
   painScore: number;
   screening: { fever: boolean; highBP: boolean; menstruation: boolean; pregnant: boolean; recentSurgery: boolean; contagious: boolean };
+  /** ผู้ป่วยตอบคำถามข้อห้าม/ความเสี่ยงแล้ว (ไม่ได้ตอบ = คลินิกแสดง "ไม่ได้ประเมิน" แทน "ไม่มี") */
+  screened?: boolean;
   intake?: {
     at: string;
     goal: string;
