@@ -482,7 +482,7 @@ export interface TreatmentCase {
   /** ครั้งที่ยังค้างติดตามผล (ล่าสุดก่อน) — ให้คะแนนแยกทีละบริเวณ */
   pending: PendingSession[];
   /** นัดครั้งถัดไปของใบนี้ (แต่ละโรคนัดคนละวัน) · today = วันนี้ → เช็กอินได้ */
-  appointment: { today: boolean; date: string; time: string; queue?: string; waitMin?: number; stage?: 'checked_in' | 'called' | 'in_service' };
+  appointment: { today: boolean; date: string; time: string; queue?: string; waitMin?: number; stage?: 'checked_in' | 'called' | 'in_service'; startedAt?: string };
   /** เตรียมตัวก่อนนวดสำหรับโรคนี้ */
   prep: string[];
   /** คอร์สการรักษา: ทำไปแล้ว / ทั้งหมด */

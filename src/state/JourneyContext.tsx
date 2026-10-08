@@ -93,6 +93,8 @@ export interface Booking {
   status?: 'pending' | 'confirmed';
   /** ที่คลินิกวันนี้ (cloud): เช็กอินแล้ว · ถึงคิว · กำลังรับบริการ */
   stage?: 'checked_in' | 'called' | 'in_service';
+  /** เวลาที่คลินิกเริ่มรับบริการ (ISO) → เวลาที่นวดไปแล้ว · เสร็จประมาณ */
+  startedAt?: string;
   /** นัดที่คลินิกลงให้ตามคอร์ส: ชื่อคอร์ส · ครั้งที่ · วันที่ ISO (เรียงรายการนัด) */
   course?: { name: string; no: number; total: number };
   iso?: string;
@@ -426,6 +428,8 @@ export interface CaseAppt {
   clinic: string;
   therapist: string;
   stage?: 'checked_in' | 'called' | 'in_service';
+  /** เวลาที่คลินิกเริ่มรับบริการ (ISO) */
+  startedAt?: string;
 }
 
 /** แนวทางการรักษาจากผลประเมินของใบร่าง (ส่งให้คลินิก) · ไม่มีอาการ / ควรพบแพทย์ = ไม่มีแนวทาง */
@@ -913,7 +917,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const sp = selfPains[c.id];
         const visits = [...c.visits, ...extra].map((v, i) => (visitRecords[`${c.id}:${i}`] ? { ...v, record: visitRecords[`${c.id}:${i}`] } : v));
         const done = Math.min(c.course.total, c.course.done + extra.length);
-        const appointment = cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage } : c.appointment;
+        const appointment = cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage, startedAt: a.startedAt } : c.appointment;
         // ครั้งที่ใช้ไป: นับจากในแอป หรือจากคลินิก (เรื่องที่ผูกกับคลินิก) แล้วแต่อันไหนมากกว่า — ชุดเดียวกับการ์ดแผนการรักษา
         const bridged = Object.values(bridgedCase.current).includes(c.id);
         const total = bridged && clinicCourse ? clinicCourse.total : c.course.total;
@@ -1156,7 +1160,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), queue: e.queue || m[l.caseId]?.queue, stage: e.called ? 'called' : 'checked_in' } }));
       note('reminder', e.called ? `ถึงคิว${e.queue ? ` ${e.queue}` : 'คุณ'}แล้ว เชิญเข้ารับบริการ` : `เช็กอินแล้ว ได้คิว ${e.queue} · รอเรียกคิวในแอป`);
     } else if (e.type === 'started') {
-      setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), stage: 'in_service' } }));
+      setCaseAppts((m) => ({ ...m, [l.caseId]: { ...(m[l.caseId] ?? current()), stage: 'in_service', startedAt: e.at } }));
       note('reminder', `เริ่มรับบริการแล้ว · รักษา${tc?.short ?? ''}`);
     } else if (e.type === 'completed' && !l.done) {
       // คลินิกบันทึกการนวด → ครั้งใหม่ของใบนี้ (คะแนนของคลินิก) · บิลจริงตามมาจากคลินิก
@@ -1320,7 +1324,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         continue;
       }
       if (e.type === 'started') {
-        const started = (b: Booking): Booking => ({ ...b, stage: 'in_service' });
+        const started = (b: Booking): Booking => ({ ...b, stage: 'in_service', startedAt: e.at });
         if (t.draftId) setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking ? { ...d, booking: started(d.booking) } : d)));
         if (t.looseId) setLooseBookings((all) => all.map((b) => (b.id === t.looseId ? { ...started(b), id: b.id } : b)));
         note('reminder', `เริ่มรับบริการแล้ว ${t.label}`);

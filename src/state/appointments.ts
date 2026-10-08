@@ -31,6 +31,8 @@ export interface ApptView {
   pending: boolean;
   /** ที่คลินิกวันนี้ (cloud): เช็กอินแล้ว · ถึงคิว · กำลังรับบริการ */
   stage?: 'checked_in' | 'called' | 'in_service';
+  /** เวลาที่คลินิกเริ่มรับบริการ (ISO) */
+  startedAt?: string;
 }
 
 export const CASE_CLINIC_DEFAULT = 'คลินิกแพทย์แผนไทย สาขาสุขุมวิท';
@@ -84,6 +86,7 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
       red: false,
       pending: false,
       stage: today ? tc.appointment.stage : undefined,
+      startedAt: today ? tc.appointment.startedAt : undefined,
     };
   }
   if (t?.draftId) {
@@ -107,6 +110,7 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
       red: d.red,
       pending: b.status === 'pending',
       stage: b.stage,
+      startedAt: b.startedAt,
     };
   }
   // นัดเรื่องใหม่: ระบุ looseId · ไม่ระบุ = นัดแรก (มีนัดเดียว)
@@ -130,6 +134,7 @@ export function useAppointment(t?: ApptTarget | null): ApptView | null {
     red: false,
     pending: booking.status === 'pending',
     stage: booking.stage,
+    startedAt: booking.startedAt,
   };
 }
 

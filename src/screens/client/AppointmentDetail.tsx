@@ -4,6 +4,7 @@ import { Pressable, View, useWindowDimensions } from 'react-native';
 import { AppBar, Button, Icon, IconBox, InfoRow, Panel, Screen, TINT, Text, useHideTabs, useTheme, ScreenSkeleton, useScreenData } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { serviceMismatch, useAppointment } from '../../state/appointments';
+import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/ServiceProgress';
 import { NotFoundScreen } from './NotFound';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -29,6 +30,9 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
   const [confirming, setConfirming] = React.useState(false);
   // นัดของเรื่องนี้ (ใบการรักษา / ใบร่าง / จองไว้ก่อนประเมิน)
   const appt = useAppointment(target);
+  // กำลังรับบริการ + รู้เวลาเริ่ม → เวลาที่นวดไปแล้ว (เดินสด) + แถบเริ่ม → เสร็จประมาณ
+  const inService = !!appt?.today && appt.stage === 'in_service' && !!appt.startedAt;
+  const now = useNow(inService);
   if (!appt) return <NotFoundScreen title="รายละเอียดนัด" message="นัดนี้ถูกยกเลิกหรือใช้ไปแล้ว" />;
   // คิวที่คลินิกประกาศว่ายังรอ → รออีกกี่คิว
   const waiting = readAvailability()?.queue?.waiting;
@@ -122,6 +126,16 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
               </Text>
             </View>
           ) : null}
+          {inService ? (
+            <View>
+              <Text variant="bodyXs" tone="secondary">
+                กำลังนวด
+              </Text>
+              <Text variant="displayMd" style={{ lineHeight: 44, fontVariant: ['tabular-nums'] }}>
+                {elapsedOf(now - new Date(appt.startedAt!).getTime())}
+              </Text>
+            </View>
+          ) : null}
           <View style={{ flex: 1 }} />
           {place && !appt.stage ? (
             <Pressable
@@ -137,6 +151,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
             </Pressable>
           ) : null}
         </View>
+        {inService ? <ServiceProgress startedAt={appt.startedAt!} minutes={serviceMinutes(appt.service)} /> : null}
         {/* วันนัดหลังเช็กอิน (รวมหน้าดูคิวไว้ที่นี่): รออีกกี่คิว → ถึงคิว (เด่น) → กำลังรับบริการ */}
         {/* กำลังรับบริการ → การ์ดผู้ให้บริการพร้อมป้ายสถานะ (แทนแถบข้อความ + ชื่อซ้ำ) */}
         {appt.today && appt.stage === 'in_service' && appt.therapist ? (
