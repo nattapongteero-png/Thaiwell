@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Icon, ReplyChips, Text, componentTokens, radius, space, useTheme } from '../../../design-system';
-import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, PRESSURE_OPTIONS,
+import { ASSESS_ASK, ASSESS_ORDER, CAUSE_OPTIONS, DURATION_OPTIONS, HEALTH_OPTIONS, MED_OPTIONS, PRESSURE_OPTIONS,
   AVOID_OPTIONS, RISK_OPTIONS, type AssessStep, type Assessment } from '../../../data/homeFeed';
 import { PillButton } from './ThreadCards';
 
@@ -18,6 +18,16 @@ function ChoiceSection({ title, options, value, onChange }: { title?: string; op
         </Text>
       ) : null}
       <ReplyChips options={options} selected={value} onPick={(o) => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o])} />
+    </View>
+  );
+}
+/** เลือกได้หลายข้อ แล้วกดถัดไป · ไม่เลือกเลย = ปุ่ม "ไม่มี" (ใช้กับโรคประจำตัว / ยาที่ใช้ประจำ) */
+function MultiPick({ options, onDone }: { options: string[]; onDone: (picked: string[]) => void }) {
+  const [v, setV] = React.useState<string[]>([]);
+  return (
+    <View style={{ gap: space[3] }}>
+      <ChoiceSection options={options} value={v} onChange={setV} />
+      {v.length ? <PillButton label="ถัดไป" icon="arrow-right" onPress={() => onDone(v)} /> : <PillButton label="ไม่มี" tone="light" onPress={() => onDone([])} />}
     </View>
   );
 }
@@ -163,7 +173,9 @@ export function AssessWidget({
       return <ReplyChips options={CAUSE_OPTIONS} onPick={(o) => onNext(o, { cause: o })} />;
     case 'health':
       // ตอบแล้วบันทึกลงโปรไฟล์ (ข้อมูลสุขภาพที่เดียว) — ไม่ต้องกรอกฟอร์มแยก
-      return <ReplyChips options={HEALTH_OPTIONS} onPick={(o) => onNext(o === 'ไม่มี' ? 'ไม่มีโรคประจำตัว' : o, { health: o })} />;
+      return <MultiPick options={HEALTH_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มีโรคประจำตัว', { health: l.length ? l.join(' · ') : 'ไม่มี' })} />;
+    case 'meds':
+      return <MultiPick options={MED_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มียาที่ใช้ประจำ', { meds: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'radiate':
       return <ReplyChips options={radiate} onPick={(o) => onNext(o, { radiate: o })} />;
     case 'risk':
@@ -210,6 +222,7 @@ export function AssessmentTracker({
     duration: assess.duration,
     cause: assess.cause,
     health: assess.health,
+    meds: assess.meds,
     risk: assess.risk,
     pressure: assess.pressure,
     avoid: assess.avoid,

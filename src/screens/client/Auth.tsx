@@ -37,7 +37,7 @@ function useEnterApp() {
     signOut(true);
     setAccount({ provider: 'email', name: `${c.firstName} ${c.lastName}`, birthDate: `${String(dd).padStart(2, '0')}/${String(mm).padStart(2, '0')}/${yyyy > 2400 ? yyyy - 543 : yyyy}`, sex: c.sex || 'ไม่ระบุ', verified: true, userId: u.id, email: u.email, idCard: c, avatar: u.avatar });
     setNewPatient(true);
-    setProfile({ ...profile, age: ageFromBirth(c.birthDate) ?? profile.age, conditions: [], medications: [], allergies: [], healthKnown: false, bp: undefined, temperature: undefined, pulse: undefined });
+    setProfile({ ...profile, age: ageFromBirth(c.birthDate) ?? profile.age, conditions: [], medications: [], allergies: [], healthKnown: false, conditionsKnown: false, medicationsKnown: false, bp: undefined, temperature: undefined, pulse: undefined });
     if (u.consents) {
       setConsents(u.consents);
       nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });

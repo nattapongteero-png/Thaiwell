@@ -16,6 +16,9 @@ import type { SafetyLevel } from '../design-system/components/Feedback';
 export interface HealthProfile {
   /** false = ยังไม่ได้กรอกโรค/ยา/แพ้ (ผู้ใช้ใหม่ — Health ID ไม่ส่งข้อมูลสุขภาพมา) */
   healthKnown?: boolean;
+  /** กรอก/ตอบเรื่องโรคประจำตัว · ยาที่ใช้ประจำ แล้ว (แยกข้อ) — ไม่ระบุ = ตาม healthKnown */
+  conditionsKnown?: boolean;
+  medicationsKnown?: boolean;
   /** เชื่อมประวัติจากโรงพยาบาลแล้ว (ชื่อแหล่งข้อมูล) */
   phrSource?: string;
   age: number;

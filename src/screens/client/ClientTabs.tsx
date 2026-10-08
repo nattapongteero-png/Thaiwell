@@ -29,7 +29,7 @@ import {
 import { NotFoundScreen } from './NotFound';
 import { birthElement, dominantElement } from '../../data/thaiMassageKnowledge';
 import { HISTORY, useJourney } from '../../state/JourneyContext';
-import { TREATMENT_CASES, ARCHIVED_CASES, type TreatmentCase } from '../../data/homeFeed';
+import { TREATMENT_CASES, ARCHIVED_CASES, HEALTH_OPTIONS, MED_OPTIONS, healthKnownOf, type TreatmentCase } from '../../data/homeFeed';
 import { TreatmentDetailBody, VisitTabs } from './home/TreatmentDetailBody';
 
 import { useNav } from '../../navigation/types';
@@ -178,7 +178,7 @@ export function ProfileScreen() {
   const [pickAvatar, setPickAvatar] = React.useState(false);
   const [linking, setLinking] = React.useState(false);
   // ยังไม่ได้กรอก ≠ ไม่มี (ผู้ใช้ใหม่ยังไม่ได้บอก)
-  const none = (a: string[]) => a.join(', ') || (profile.healthKnown === false ? 'ยังไม่ได้กรอก' : 'ไม่มี');
+  const none = (a: string[], f?: 'conditions' | 'medications') => a.join(', ') || ((f ? !healthKnownOf(profile, f) : profile.healthKnown === false) ? 'ยังไม่ได้กรอก' : 'ไม่มี');
   return (
     <Screen header={<AppBar title="โปรไฟล์" />}>
       {loading ? (
@@ -203,7 +203,7 @@ export function ProfileScreen() {
               {[client.hn, `${client.age} ปี`, client.occupation].filter(Boolean).join(' · ')}
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-              {profile.healthKnown === false ? null : <Tag text={profile.conditions.length ? profile.conditions.join(', ') : 'ไม่มีโรคประจำตัว'} tone={profile.conditions.length ? 'warn' : undefined} size="md" />}
+              {!healthKnownOf(profile, 'conditions') ? null : <Tag text={profile.conditions.length ? profile.conditions.join(', ') : 'ไม่มีโรคประจำตัว'} tone={profile.conditions.length ? 'warn' : undefined} size="md" />}
               {element ? <ElementPill element={element} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
             </View>
           </View>
@@ -218,8 +218,8 @@ export function ProfileScreen() {
 
       {/* แตะแถว = แก้ข้อมูลนั้น (ใช้คัดกรองข้อห้ามก่อนนวด) */}
       <Panel title="ข้อมูลสุขภาพ" flush>
-        <RowLink icon="activity" tint={TINT.red} title="โรคประจำตัว" sub={none(profile.conditions)} onPress={() => setEditing('conditions')} />
-        <RowLink icon="package" tint={TINT.amber} title="ยาที่ใช้ประจำ" sub={none(profile.medications)} onPress={() => setEditing('medications')} />
+        <RowLink icon="activity" tint={TINT.red} title="โรคประจำตัว" sub={none(profile.conditions, 'conditions')} onPress={() => setEditing('conditions')} />
+        <RowLink icon="package" tint={TINT.amber} title="ยาที่ใช้ประจำ" sub={none(profile.medications, 'medications')} onPress={() => setEditing('medications')} />
         <RowLink icon="alert-circle" tint={TINT.violet} title="ประวัติแพ้" sub={none(profile.allergies)} onPress={() => setEditing('allergies')} last={!!account?.userId} />
         {/* ยังไม่เปิดใช้ → บอกตรง ๆ (ไม่มีลูกศรหลอกให้กด) */}
         {/* ต้นแบบ (ยังไม่มีระบบโรงพยาบาลจริง) → ไม่แสดงกับบัญชีจริง */}
@@ -279,7 +279,8 @@ export function ProfileScreen() {
         value={editing ? profile[editing] : []}
         onClose={() => setEditing(null)}
         onSave={(field, list) => {
-          setProfile({ ...profile, [field]: list, healthKnown: true });
+          // กรอกข้อไหน = ข้อนั้นรู้แล้ว (ข้ออื่นที่ยังไม่ได้บอก ให้ AI ถามในแชทต่อ)
+          setProfile({ ...profile, [field]: list, healthKnown: true, conditionsKnown: field === 'conditions' || healthKnownOf(profile, 'conditions'), medicationsKnown: field === 'medications' || healthKnownOf(profile, 'medications') });
           log('ผู้รับบริการ', `แก้ไข${HEALTH_FIELDS[field].title}: ${list.join(', ') || 'ไม่มี'}`);
           setEditing(null);
         }}
@@ -290,7 +291,7 @@ export function ProfileScreen() {
         onImport={(src, rec) => {
           // รวมกับที่กรอกเองไว้ (ไม่ทับทิ้ง)
           const merge = (a: string[], b: string[]) => [...a, ...b].filter((x, i, all) => all.indexOf(x) === i);
-          setProfile({ ...profile, conditions: merge(profile.conditions, rec.conditions), medications: merge(profile.medications, rec.medications), allergies: merge(profile.allergies, rec.allergies), healthKnown: true, phrSource: src });
+          setProfile({ ...profile, conditions: merge(profile.conditions, rec.conditions), medications: merge(profile.medications, rec.medications), allergies: merge(profile.allergies, rec.allergies), healthKnown: true, conditionsKnown: true, medicationsKnown: true, phrSource: src });
           log('ผู้รับบริการ', `เชื่อมประวัติสุขภาพจาก ${src}`);
           setLinking(false);
         }}
@@ -306,8 +307,8 @@ export function ProfileScreen() {
 }
 
 const HEALTH_FIELDS = {
-  conditions: { title: 'โรคประจำตัว', common: ['ความดันโลหิตสูง', 'เบาหวาน', 'โรคหัวใจ', 'กระดูกพรุน', 'ไขมันในเลือดสูง'], placeholder: 'โรคอื่น ๆ' },
-  medications: { title: 'ยาที่ใช้ประจำ', common: ['ยาลดความดัน', 'ยาเบาหวาน', 'ยาละลายลิ่มเลือด', 'ยาแก้ปวด'], placeholder: 'ชื่อยาอื่น ๆ' },
+  conditions: { title: 'โรคประจำตัว', common: [...HEALTH_OPTIONS.filter((o) => o !== 'ไม่มี'), 'ไขมันในเลือดสูง'], placeholder: 'โรคอื่น ๆ' },
+  medications: { title: 'ยาที่ใช้ประจำ', common: MED_OPTIONS.filter((o) => o !== 'ไม่มี'), placeholder: 'ชื่อยาอื่น ๆ' },
   allergies: { title: 'ประวัติแพ้', common: ['แพ้ยา', 'แพ้สมุนไพร', 'แพ้น้ำมันนวด', 'แพ้อาหาร'], placeholder: 'แพ้อะไรอีก' },
 } as const;
 

@@ -131,6 +131,7 @@ export interface DraftCase {
   chatId?: string;
   /** คำตอบโรคประจำตัว/ยาครั้งก่อน (ประเมินซ้ำไม่ต้องถามใหม่) */
   health?: string;
+  meds?: string;
   /** ข้อห้ามนวด / แรงนวดที่ตอบไว้ (ประเมินซ้ำไม่ต้องถามใหม่) */
   risk?: string;
   pressure?: string;

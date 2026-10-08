@@ -76,7 +76,7 @@ export type ThreadCard =
  * ทุกหัวข้อประเมินเป็นคำถามจาก AI ในแชท (ตอบด้วย chip / กราฟ / ปุ่มในบับเบิล)
  * ครบทุกข้อแล้ว AI จึงสรุปและแสดง "แนวทางการรักษา & จุดกดบำบัด"
  */
-export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'risk' | 'pressure' | 'avoid' | 'radiate' | 'done';
+export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 'pain' | 'duration' | 'cause' | 'health' | 'meds' | 'risk' | 'pressure' | 'avoid' | 'radiate' | 'done';
 /**
  * ลำดับคำถาม — ครบตามการประเมินแรกรับ (เกณฑ์มาตรฐานฯ หน้า 33):
  * อาการ → อาการร่วม (red flag) → ความปวด → ระยะเวลา → มูลเหตุ (มูลเหตุเกิดโรค 8 ประการ) → โรคประจำตัว/ยา (ข้อห้าม + ปฏิกิริยาสมุนไพร–ยา)
@@ -84,7 +84,7 @@ export type AssessStep = 'idle' | 'review' | 'topic' | 'symptoms' | 'related' | 
 // + ข้อห้ามช่วงนี้ (ผ่าตัด บาดเจ็บ ไข้ ตั้งครรภ์ แผล: ตำราอ้างอิงฯ หน้า 391, CPG หน้า 139) → แรงนวดที่ชอบ (ใช้วางแผนการนวด)
 // อาการร้าว: ถามต่อจากอาการเฉพาะเมื่ออาการนั้นมีรูปแบบการร้าว (data/radiation.ts)
 // + บริเวณที่ไม่ต้องการให้นวด (แบบประเมินก่อนรับบริการของหลังบ้าน: avoidAreas)
-export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'risk', 'pressure', 'avoid'];
+export const ASSESS_ORDER: Exclude<AssessStep, 'done'>[] = ['topic', 'symptoms', 'radiate', 'related', 'pain', 'duration', 'cause', 'health', 'meds', 'risk', 'pressure', 'avoid'];
 
 export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; text: string }> = {
   idle: { label: '', text: '' },
@@ -96,7 +96,8 @@ export const ASSESS_ASK: Record<Exclude<AssessStep, 'done'>, { label: string; te
   pain: { label: 'ความปวด', text: 'ตอนนี้ปวดระดับไหนคะ? 0 = ไม่ปวดเลย · 10 = ปวดมากที่สุด' },
   duration: { label: 'ระยะเวลา', text: 'เป็นมานานแค่ไหนแล้วคะ?' },
   cause: { label: 'สาเหตุ', text: 'ช่วงนี้มีอะไรที่น่าจะทำให้เป็นไหมคะ?' },
-  health: { label: 'โรคประจำตัว', text: 'มีโรคประจำตัวหรือยาที่ทานประจำไหมคะ?' },
+  health: { label: 'โรคประจำตัว', text: 'มีโรคประจำตัวไหมคะ? เลือกได้หลายข้อ' },
+  meds: { label: 'ยาที่ใช้ประจำ', text: 'มียาที่ทานประจำไหมคะ? เลือกได้หลายข้อ' },
   risk: { label: 'ข้อห้ามนวด', text: 'ช่วงนี้มีข้อไหนตรงกับคุณไหมคะ? ข้อเหล่านี้อาจทำให้ยังนวดไม่ได้ค่ะ' },
   pressure: { label: 'แรงนวด', text: 'ชอบแรงนวดแบบไหนคะ?' },
   avoid: { label: 'ไม่ให้นวด', text: 'มีบริเวณไหนที่ไม่ต้องการให้นวดไหมคะ?' },
@@ -109,8 +110,9 @@ export const RISK_OPTIONS = ['ผ่าตัดภายใน 1 เดือ�
 export const PRESSURE_OPTIONS = ['เบา', 'ปานกลาง', 'หนัก', 'ให้ผู้ให้บริการเลือก'];
 /** มูลเหตุเกิดโรค 8 ประการ (เกณฑ์มาตรฐานฯ หน้า 33) — ภาษาที่คนทั่วไปเข้าใจ */
 export const CAUSE_OPTIONS = ['นั่ง/ยืนนาน', 'ยกของหนัก ทำงานหนัก', 'อดนอน', 'เครียด', 'อากาศร้อน/เย็น', 'กินไม่ตรงเวลา', 'ไม่แน่ใจ'];
-/** โรคประจำตัว/ยาที่มีผลต่อการนวด (CPG หน้า 139 · ตำราอ้างอิงฯ หน้า 391, 401, 490) */
-export const HEALTH_OPTIONS = ['ไม่มี', 'ความดันสูง', 'เบาหวาน', 'หอบหืด/ภูมิแพ้', 'ยาละลายลิ่มเลือด'];
+/** โรคประจำตัว/ยาที่มีผลต่อการนวด (CPG หน้า 139 · ตำราอ้างอิงฯ หน้า 391, 401, 490) — ชื่อตรงกับกฎใน safetyEngine และหน้าโปรไฟล์ */
+export const HEALTH_OPTIONS = ['ไม่มี', 'ความดันโลหิตสูง', 'เบาหวาน', 'โรคหัวใจ', 'หอบหืด', 'กระดูกพรุน'];
+export const MED_OPTIONS = ['ไม่มี', 'ยาลดความดัน', 'ยาเบาหวาน', 'ยาละลายลิ่มเลือด', 'ยาแก้ปวด'];
 export const DURATION_OPTIONS = ['วันนี้', '2–3 วัน', '1 สัปดาห์', 'เกิน 1 เดือน'];
 
 export interface Assessment {
@@ -123,6 +125,8 @@ export interface Assessment {
   duration?: string;
   cause?: string;
   health?: string;
+  /** ยาที่ใช้ประจำ (คั่นด้วย ·) */
+  meds?: string;
   /** ปวดร้าวไปไหน (data/radiation.ts) */
   radiate?: string;
   /** ข้อห้ามช่วงนี้ (RISK_OPTIONS) */
@@ -135,6 +139,7 @@ export interface Assessment {
   topic?: string;
   /** ประเมินซ้ำเรื่องเดิม: ใช้คำตอบโรคประจำตัวชุดเดิม (ข้ามข้อนี้) */
   reuseHealth?: string;
+  reuseMeds?: string;
   /** กำลังแก้ข้อเดียวจากข้อมูลชุดเดิม → ตอบแล้วกลับไปหน้าทบทวน (ไม่ถามข้อถัดไป) */
   editing?: boolean;
 }
@@ -190,20 +195,22 @@ export interface ChatSafety {
   /** ข้อควรระวังแบบสั้นสำหรับการ์ดแนวทางการรักษา */
   caution?: string;
 }
-/** คำตอบ "โรคประจำตัว/ยา" ในแชท → ข้อมูลในโปรไฟล์ (ข้อมูลสุขภาพเก็บที่เดียว) */
-export const healthAnswerToProfile = (answer: string | undefined): { conditions: string[]; medications: string[] } => {
-  switch (answer) {
-    case 'ความดันสูง':
-      return { conditions: ['ความดันโลหิตสูง'], medications: [] };
-    case 'เบาหวาน':
-      return { conditions: ['เบาหวาน'], medications: [] };
-    case 'หอบหืด/ภูมิแพ้':
-      return { conditions: ['หอบหืด'], medications: [] };
-    case 'ยาละลายลิ่มเลือด':
-      return { conditions: [], medications: ['ยาละลายลิ่มเลือด'] };
-    default:
-      return { conditions: [], medications: [] };
-  }
+/** คำตอบหลายข้อในแชท (คั่นด้วย · หรือ ,) → รายการ · ไม่มี = [] */
+export const listOfAnswer = (answer: string | undefined): string[] =>
+  !answer || answer === 'ไม่มี' ? [] : answer.split(/\s*[·,]\s*/).filter(Boolean);
+/** รายการ → คำตอบในแชท */
+export const answerOfList = (list: string[]) => (list.length ? list.join(' · ') : 'ไม่มี');
+/** ผู้ใช้เคยบอกโรคประจำตัว / ยาแล้วหรือยัง (กรอกในโปรไฟล์ หรือตอบในแชท) → ยังไม่เคย = AI ถาม */
+export const healthKnownOf = (p: { healthKnown?: boolean; conditionsKnown?: boolean; medicationsKnown?: boolean }, field: 'conditions' | 'medications') =>
+  (field === 'conditions' ? p.conditionsKnown : p.medicationsKnown) ?? p.healthKnown === true;
+/** คำตอบ "โรคประจำตัว" + "ยาที่ใช้ประจำ" ในแชท → ข้อมูลในโปรไฟล์ (ข้อมูลสุขภาพเก็บที่เดียว) · ไม่ได้ตอบ = ใช้ของเดิม
+ * รองรับคำตอบชุดเดิม (ความดันสูง · หอบหืด/ภูมิแพ้ · ยาละลายลิ่มเลือด อยู่ในข้อโรคประจำตัว) */
+export const healthAnswerToProfile = (health: string | undefined, meds: string | undefined, cur: { conditions: string[]; medications: string[] }): { conditions: string[]; medications: string[] } => {
+  const legacy: Record<string, string> = { ความดันสูง: 'ความดันโลหิตสูง', 'หอบหืด/ภูมิแพ้': 'หอบหืด' };
+  const h = listOfAnswer(health).map((x) => legacy[x] ?? x);
+  const conditions = health === undefined ? cur.conditions : h.filter((x) => x !== 'ยาละลายลิ่มเลือด');
+  const medications = meds === undefined ? [...new Set([...cur.medications, ...h.filter((x) => x === 'ยาละลายลิ่มเลือด')])] : listOfAnswer(meds);
+  return { conditions, medications };
 };
 /** ข้อควรระวังแบบสั้นต่อกฎ (ข้อความเต็มอยู่ใน safetyEngine) */
 export const SHORT_CAUTION: Record<string, string> = {

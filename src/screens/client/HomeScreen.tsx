@@ -93,6 +93,9 @@ import {
   type TreatmentCase,
   SHORT_CAUTION,
   healthAnswerToProfile,
+  healthKnownOf,
+  answerOfList,
+  MED_OPTIONS,
   NEW_TOPIC,
   INTENTS,
   ASSESS_ASK,
@@ -1038,9 +1041,16 @@ export function HomeScreen() {
     const i = ASSESS_ORDER.indexOf((fromStep ?? assess.step) as (typeof ASSESS_ORDER)[number]);
     let nextStep: (typeof ASSESS_ORDER)[number] | undefined = ASSESS_ORDER[i + 1];
     // ประเมินซ้ำเรื่องเดิม: ใช้คำตอบโรคประจำตัวชุดเดิม ไม่ถามซ้ำ
-    if (nextStep === 'health' && assess.reuseHealth !== undefined) {
-      nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf('health') + 1];
-      patch = { ...patch, health: assess.reuseHealth };
+    // โรคประจำตัว / ยาที่ใช้ประจำ: เคยตอบ (โปรไฟล์ / ประเมินเรื่องเดิม) → ใช้ของเดิม ไม่ถามซ้ำ · ยังไม่เคย = ถาม
+    const known = (st: string | undefined): string | undefined =>
+      st === 'health'
+        ? (assess.reuseHealth ?? (healthKnownOf(profile, 'conditions') ? answerOfList(profile.conditions) : undefined))
+        : st === 'meds'
+          ? (assess.reuseMeds ?? (healthKnownOf(profile, 'medications') ? answerOfList(profile.medications) : undefined))
+          : undefined;
+    while (nextStep && known(nextStep) !== undefined) {
+      patch = { ...patch, [nextStep]: known(nextStep) };
+      nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
     }
     // ข้อที่ผู้ใช้บอกมาแล้วในข้อความก่อนหน้า → ใช้คำตอบนั้น ข้ามไปข้อถัดไป
     const pf = prefill.current[sid] ?? {};
@@ -1061,9 +1071,9 @@ export function HomeScreen() {
         delete pf[k];
       }
       nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
-      if (nextStep === 'health' && assess.reuseHealth !== undefined) {
-        nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf('health') + 1];
-        patch = { ...patch, health: assess.reuseHealth };
+      while (nextStep && known(nextStep) !== undefined) {
+        patch = { ...patch, [nextStep]: known(nextStep) };
+        nextStep = ASSESS_ORDER[ASSESS_ORDER.indexOf(nextStep) + 1];
       }
     }
     const lead = skipped.length ? `รับทราบค่ะ (${skipped.join(' · ')})` : 'รับทราบค่ะ';
@@ -1081,12 +1091,14 @@ export function HomeScreen() {
       const sym = sel.filter((k) => !HOME_CONTENT.related.includes(k));
       const rel = sel.filter((k) => HOME_CONTENT.related.includes(k));
       // คำตอบโรคประจำตัว/ยา → บันทึกลงโปรไฟล์ แล้วตรวจด้วย safetyEngine ตัวเดียวกับหน้ารายละเอียด (ไม่ให้ผลขัดกัน)
-      const ans = healthAnswerToProfile(after.health);
+      const ans = healthAnswerToProfile(after.health, after.meds, profile);
       const nextProfile = {
         ...profile,
         conditions: ans.conditions,
         medications: ans.medications,
         healthKnown: true,
+        conditionsKnown: healthKnownOf(profile, 'conditions') || after.health !== undefined,
+        medicationsKnown: healthKnownOf(profile, 'medications') || after.meds !== undefined,
         // ข้อห้ามช่วงนี้ → กฎใน safetyEngine (ผ่าตัด/บาดเจ็บ/ไข้/ตั้งครรภ์/แผล)
         surgeryWithin1Month: after.risk === RISK_OPTIONS[0],
         injuryWithin48h: after.risk === RISK_OPTIONS[1],
@@ -1241,6 +1253,7 @@ export function HomeScreen() {
         booking: old?.booking ?? loose,
         chatId: sid,
         health: after.health,
+        meds: after.meds,
         risk: after.risk,
         pressure: after.pressure,
         avoid: after.avoid,
@@ -1572,12 +1585,14 @@ export function HomeScreen() {
       duration: d.duration,
       cause: d.cause,
       health: d.health,
+      meds: d.meds,
       risk: d.risk,
       pressure: d.pressure,
       avoid: d.avoid,
       radiate: d.radiate,
       topic: d.title,
       reuseHealth: d.health,
+      reuseMeds: d.meds,
     };
     const text = 'ข้อมูลที่ประเมินไว้ครั้งก่อนค่ะ แตะข้อที่อยากแก้ หรือพิมพ์บอกได้เลย';
     // ประเมินซ้ำ = เรื่องนี้ (ไม่ใช่เรื่องใหม่ แม้แชทนี้เคยเริ่มจาก "ประเมินเรื่องใหม่")
@@ -1927,13 +1942,14 @@ export function HomeScreen() {
   const STEP_HINT: Record<string, string> = {
     duration: ' · ระยะเวลาที่ไม่ตรงตัวให้เลือกที่ใกล้เคียงที่สุด (เช่น 2 อาทิตย์ = 1 สัปดาห์, 3 เดือน = เกิน 1 เดือน)',
     cause: ' · บอกสาเหตุที่ไม่ตรงตัวเลือกให้เลือกที่ใกล้ที่สุด · ไม่รู้/ไม่มี = ไม่แน่ใจ',
-    health: ' · ปฏิเสธ (ไม่มี ไม่เป็นอะไร แข็งแรงดี) = ไม่มี · ความดัน = ความดันสูง',
+    health: ' · ปฏิเสธ (ไม่มี ไม่เป็นอะไร แข็งแรงดี) = ไม่มี · ความดัน = ความดันโลหิตสูง',
+    meds: ' · ปฏิเสธ (ไม่มี ไม่ได้กินยา) = ไม่มี · ยาความดัน = ยาลดความดัน · ยาเบาหวาน/อินซูลิน = ยาเบาหวาน · แอสไพริน วาร์ฟาริน ยาต้านเกล็ดเลือด = ยาละลายลิ่มเลือด',
     risk: ' · ปฏิเสธ (ไม่มี ไม่มีข้อไหนตรง ไม่เป็น ปกติดี) = ไม่มี · ไข้ ไม่สบาย = มีไข้ · ท้อง = ตั้งครรภ์',
     pressure: ' · แรง ๆ/หนักมือ = หนัก · เบา ๆ = เบา · กลาง ๆ = ปานกลาง · แล้วแต่หมอ/ไม่รู้ = ให้ผู้ให้บริการเลือก',
     radiate: ' · ไม่ร้าว/ปวดที่เดียว = ไม่ร้าว · ร้าวถึงน่อง เท้า หรือนิ้วเท้า = ร้าวเลยเข่า · อ่อนแรง ยกขา/แขนไม่ขึ้น = ตัวเลือกที่มีคำว่าอ่อนแรง (ชาอย่างเดียวไม่ใช่)',
   };
   /** กำลังถามข้อหนึ่งอยู่ แต่ผู้ใช้พิมพ์ตอบเอง → AI แปลงเป็นคำตอบของข้อนั้น (แปลงไม่ได้ = ถามซ้ำพร้อมตัวเลือก) */
-  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
+  const stepOpts = (): Record<string, string[]> => ({ topic: topicOptions, symptoms: [...new Set([...ALL_SYMPTOMS, ...symptomOptions])], related: [...HOME_CONTENT.related, 'ไม่มี'], duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, meds: MED_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: radiateNow(Object.keys(assess.sel), assess.radiate)?.options ?? ALL_RADIATE_OPTIONS });
   /** ข้อมูลข้ออื่นที่บอกมาในข้อความเดียวกัน → เก็บไว้ข้ามตอนถึงข้อนั้น · คืนสรุปสั้น ๆ */
   const keepPrefill = (st: AssessStep, f: TurnFields & { related?: string[] | null }): string[] => {
     const extra: Partial<Assessment> = {};
@@ -2398,7 +2414,7 @@ export function HomeScreen() {
         const assessedHere = thread.some((m) => m.card?.type === 'guideline' || m.card?.type === 'review' || m.card?.type === 'safety');
         const editing = st === 'review' || (st === 'done' && (!tc || assessedHere) && EDIT_ASK.test(text));
         if (editing && (turn.kind === 'answer' || turn.kind === 'change' || turn.kind === 'question' || turn.kind === 'unclear')) {
-          if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health }));
+          if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds }));
           setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
           return editReviewByText(text);
         }
@@ -2416,7 +2432,7 @@ export function HomeScreen() {
           case 'change': {
             if (st === 'review' || st === 'done' && !tc) {
               // หลังประเมิน/หน้าทบทวน: แก้แล้วกลับไปหน้าทบทวน (ยืนยันใหม่เพื่อสรุปผล)
-              if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health }));
+              if (st === 'done') setAssess((a) => ({ ...a, step: 'review', editing: false, reuseHealth: a.health, reuseMeds: a.meds }));
               setThread((t) => t.filter((m) => m.id !== uId && m.id !== aId), sid);
               return editReviewByText(text);
             }
@@ -3652,6 +3668,7 @@ function ReviewCard({
     { st: 'duration', value: assess.duration ?? '—' },
     { st: 'cause', value: assess.cause ?? '—' },
     { st: 'health', value: assess.health ?? '—' },
+    { st: 'meds', value: assess.meds ?? '—' },
     { st: 'risk', value: assess.risk ?? '—' },
     { st: 'pressure', value: assess.pressure ?? '—' },
     { st: 'avoid', value: assess.avoid ?? '—' },
