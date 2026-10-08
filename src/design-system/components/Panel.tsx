@@ -91,11 +91,12 @@ export function InfoRow({ k, v, color }: { k: string; v: string; color?: string 
   );
 }
 
-export function Tag({ text, tone }: { text: string; tone?: 'good' | 'warn' | 'bad' }) {
+/** size md = สูง 30 เท่า ElementPill (วางคู่กันในแถวเดียว) */
+export function Tag({ text, tone, size }: { text: string; tone?: 'good' | 'warn' | 'bad'; size?: 'md' }) {
   const { colors } = useTheme();
   const c = tone === 'good' ? [colors.brand.subtle, colors.brand.primary] : tone === 'warn' ? ['#FBEFD5', '#9A6A10'] : tone === 'bad' ? [colors.status.danger.bg, colors.status.danger.fg] : [colors.surface.sunken, colors.text.secondary];
   return (
-    <View style={{ paddingHorizontal: space[2] + 2, height: 26, justifyContent: 'center', borderRadius: radius.full, backgroundColor: c[0] }}>
+    <View style={{ paddingHorizontal: size === 'md' ? space[3] : space[2] + 2, height: size === 'md' ? 30 : 26, justifyContent: 'center', borderRadius: radius.full, backgroundColor: c[0] }}>
       <Text variant="labelSm" color={c[1]}>
         {text}
       </Text>
