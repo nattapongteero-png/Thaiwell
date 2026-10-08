@@ -8,7 +8,6 @@ import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, RadialGradient
 import {
   AIThreadMessage,
   Body3D,
-  ChatComposer,
   GradientPill,
   DayDivider,
   ElementSummary,
@@ -2366,11 +2365,7 @@ export function HomeScreen() {
         <ReplyChips options={shortcuts} onPick={pickShortcut} />
       </ScrollView>
       ) : null}
-      {voice.phase === 'off' ? (
-        <ChatComposer onSend={send} onVoice={openVoice} />
-      ) : (
-        <VoiceChatDock voice={voice} status={voice.hint ?? VOICE_STATUS[voice.phase]} />
-      )}
+      <VoiceChatDock voice={voice} status={voice.hint ?? VOICE_STATUS[voice.phase]} onSend={send} onVoice={openVoice} />
     </Animated.View>
     </View>
     ),

@@ -53,7 +53,7 @@ void main() {
 }
 `;
 
-export function VoiceRibbon({ level = 0, style }: { /** ระดับเสียง 0–1 */ level?: number; style?: StyleProp<ViewStyle> }) {
+export function VoiceRibbon({ level = 0, style }: { /** ระดับเสียง 0–1 · ส่งเป็น ref ได้ (อ่านทุกเฟรม ไม่ต้อง render ใหม่) */ level?: number | { current: number }; style?: StyleProp<ViewStyle> }) {
   const target = React.useRef(level);
   target.current = level;
   const raf = React.useRef<number | null>(null);
@@ -106,7 +106,8 @@ export function VoiceRibbon({ level = 0, style }: { /** ระดับเสี
       const now = Date.now();
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const l = Math.max(0, Math.min(1, target.current));
+      const lv = target.current;
+      const l = Math.max(0, Math.min(1, typeof lv === 'number' ? lv : lv.current));
       const e = l * l * (3 - 2 * l);
       // เงียบ = เส้นบางเกือบตรง ขยับช้า · ดัง = คลื่นสูงขึ้น เร็วขึ้น
       const tAmp = 0.04 + e * 0.6;

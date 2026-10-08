@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, Easing, Platform, Pressable, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { componentTokens, fontFamily, radius, space, typeScale } from '../tokens';
@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { AIBall } from './AIBall';
 import { Icon, type IconName } from './Icon';
 import { Text } from './Text';
+import { VoiceRibbon } from './VoiceRibbon';
 
 /**
  * AI CHAT COMPONENTS (แชท AI บนหน้าแรก)
@@ -238,21 +239,41 @@ export function ReplyChips({ options, onPick, selected }: { options: string[]; o
   );
 }
 
-/** ช่องคุยกับ AI ติดล่าง — ลูกแก้ว AI ทางซ้าย (ไมค์ / ส่ง) + ช่องพิมพ์ */
+/** สถานะของช่องแชทตอนคุยด้วยเสียง */
+export type ComposerVoiceMode = 'listening' | 'busy' | 'speaking' | 'paused' | 'error';
+export type ComposerVoice = {
+  mode: ComposerVoiceMode;
+  status: string;
+  /** ระดับเสียง 0–1 (ref อ่านทุกเฟรม) · halo = ค่าเดียวกันแบบ Animated สำหรับแสงรอบลูกแก้ว */
+  level: { current: number };
+  halo: Animated.Value;
+  muted: boolean;
+  onMain: () => void;
+  onExit: () => void;
+  onMute: () => void;
+};
+
+/**
+ * ช่องคุยกับ AI ติดล่าง — ลูกแก้ว AI ทางซ้าย (ไมค์ / ส่ง) + ช่องพิมพ์
+ * voice = คุยด้วยเสียงในช่องเดิม: ลูกแก้วเดิมเป็นปุ่มหลัก (เรืองตามเสียง) · ช่องพิมพ์จางออก ริบบิ้นคลี่ออกจากลูกแก้ว · ปุ่มเสียง/พิมพ์โผล่ทางขวา
+ */
 export function ChatComposer({
   onSend,
   onVoice,
   placeholder = 'พิมพ์หรือพูดกับผู้ช่วย ThaiWell…',
   embedded,
+  voice,
 }: {
   onSend: (text: string) => void;
   onVoice?: () => void;
   placeholder?: string;
   /** วางใน surface อื่น (เช่น dock) — ไม่มีกรอบและเงาของตัวเอง */
   embedded?: boolean;
+  voice?: ComposerVoice;
 }) {
   const { colors } = useTheme();
   const t = componentTokens.composerV2;
+  const orb = componentTokens.orb.md;
   const [text, setText] = React.useState('');
   const send = () => {
     if (!text.trim()) return;
@@ -260,29 +281,61 @@ export function ChatComposer({
     setText('');
   };
   // สลับไอคอน ไมค์ ↔ ส่ง แบบมี animation (0 = ไมค์, 1 = ส่ง) + ลูกแก้วเด้งเล็กน้อย
-  const hasText = text.trim().length > 0;
+  const hasText = text.trim().length > 0 && !voice;
   const nativeDriver = Platform.OS !== 'web';
   const mode = React.useRef(new Animated.Value(0)).current;
   const pop = React.useRef(new Animated.Value(1)).current;
+  const bounce = () =>
+    Animated.sequence([
+      Animated.timing(pop, { toValue: 0.88, duration: 90, useNativeDriver: nativeDriver }),
+      Animated.spring(pop, { toValue: 1, friction: 4, tension: 180, useNativeDriver: nativeDriver }),
+    ]);
   const mounted = React.useRef(false);
   React.useEffect(() => {
     if (!mounted.current) {
       mounted.current = true; // ไม่เด้งตอนเปิดหน้าครั้งแรก
       return;
     }
-    Animated.parallel([
-      Animated.timing(mode, { toValue: hasText ? 1 : 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: nativeDriver }),
-      Animated.sequence([
-        Animated.timing(pop, { toValue: 0.88, duration: 90, useNativeDriver: nativeDriver }),
-        Animated.spring(pop, { toValue: 1, friction: 4, tension: 180, useNativeDriver: nativeDriver }),
-      ]),
-    ]).start();
+    Animated.parallel([Animated.timing(mode, { toValue: hasText ? 1 : 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: nativeDriver }), bounce()]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasText, mode, pop, nativeDriver]);
   const micOpacity = mode.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const micScale = mode.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] });
   const micRotate = mode.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-90deg'] });
   const sendScale = mode.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
   const sendShift = mode.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+
+  // เข้า/ออกโหมดเสียง (0 = พิมพ์, 1 = เสียง) · เก็บค่าเสียงล่าสุดไว้ให้ริบบิ้นค่อย ๆ หุบตอนออก
+  const on = !!voice;
+  const v = React.useRef(new Animated.Value(on ? 1 : 0)).current;
+  const lastVoice = React.useRef(voice);
+  if (voice) lastVoice.current = voice;
+  const [shown, setShown] = React.useState(on);
+  const input = React.useRef<TextInput>(null);
+  React.useEffect(() => {
+    if (on) {
+      setShown(true);
+      input.current?.blur();
+    }
+    Animated.parallel([Animated.timing(v, { toValue: on ? 1 : 0, duration: on ? 460 : 320, easing: Easing.out(Easing.cubic), useNativeDriver: nativeDriver }), bounce()]).start(({ finished }) => {
+      if (finished && !on) setShown(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on]);
+  const vo = shown ? lastVoice.current : undefined;
+  const voiceIcon: IconName = voice?.mode === 'listening' ? 'arrow-up' : 'mic';
+  const busy = voice?.mode === 'busy';
+  // แสดงสถานะเป็นตัวหนังสือเมื่อไม่ได้ฟัง/พูด (ริบบิ้นจางลงให้อ่านง่าย)
+  const quiet = !!vo && vo.mode !== 'listening' && vo.mode !== 'speaking';
+  const ribbonGrow = v.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] });
+  const inputShift = v.interpolate({ inputRange: [0, 1], outputRange: [0, 16] });
+  const inputFade = v.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0], extrapolate: 'clamp' });
+  const extraFade = v.interpolate({ inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp' });
+  const haloScale = vo ? vo.halo.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] }) : 1;
+  const haloOpacity = vo ? Animated.multiply(v, vo.halo.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.7] })) : 0;
+
+  const onBall = voice ? voice.onMain : hasText ? send : onVoice;
+  const ballLabel = voice ? (voice.mode === 'listening' ? 'ส่งที่พูด' : voice.mode === 'speaking' ? 'ขัดแล้วพูด' : 'พูด') : hasText ? 'ส่ง' : 'พูดกับผู้ช่วย';
   return (
     <View
       style={[
@@ -303,35 +356,74 @@ export function ChatComposer({
             },
       ]}
     >
-      {/* ลูกแก้ว AI = ปุ่มเดียวทางซ้าย: ยังไม่พิมพ์ → ไมค์ (เปิดโหมดเสียง) · พิมพ์แล้ว → ส่ง · สลับไอคอนแบบมี animation */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={hasText ? 'ส่ง' : 'พูดกับผู้ช่วย'}
-        onPress={hasText ? send : onVoice}
-        style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
-      >
+      {/* ริบบิ้นเสียงคลี่ออกจากกลางลูกแก้วไปทางขวา (อยู่หลังลูกแก้ว) */}
+      {vo ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb / 2, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }], transformOrigin: 'left' }}
+        >
+          <VoiceRibbon level={vo.level} style={{ height: t.height }} />
+        </Animated.View>
+      ) : null}
+      {/* ลูกแก้ว AI = ปุ่มเดียวทางซ้าย: ยังไม่พิมพ์ → ไมค์ (คุยด้วยเสียง) · พิมพ์แล้ว → ส่ง · โหมดเสียง → ส่งที่พูด / ขัดแล้วพูด */}
+      <Pressable accessibilityRole="button" accessibilityLabel={ballLabel} disabled={busy} onPress={onBall} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
         <Animated.View style={{ alignItems: 'center', justifyContent: 'center', transform: [{ scale: pop }] }}>
+          {/* แสงรอบลูกแก้ว ขยาย/สว่างตามเสียง */}
+          {vo ? (
+            <Animated.View pointerEvents="none" style={{ position: 'absolute', width: orb, height: orb, borderRadius: orb / 2, backgroundColor: '#22D3EE', opacity: haloOpacity, transform: [{ scale: haloScale }] }} />
+          ) : null}
           {/* ลูกแก้ว AI แบบเดียวกับปุ่ม AI (FAB) — ไม่มีดาว เพราะมีไอคอนไมค์/ส่งวางทับ */}
-          <AIBall size={componentTokens.orb.md} stars={false} />
-          <Animated.View pointerEvents="none" style={{ position: 'absolute', opacity: micOpacity, transform: [{ scale: micScale }, { rotate: micRotate }] }}>
-            <Icon name="mic" size="md" color={colors.text.inverse} />
+          <AIBall size={orb} stars={false} />
+          <Animated.View pointerEvents="none" style={{ position: 'absolute', opacity: busy ? 0 : micOpacity, transform: [{ scale: micScale }, { rotate: micRotate }] }}>
+            <Icon name={voice ? voiceIcon : 'mic'} size="md" color={colors.text.inverse} />
           </Animated.View>
           <Animated.View pointerEvents="none" style={{ position: 'absolute', opacity: mode, transform: [{ scale: sendScale }, { translateY: sendShift }] }}>
             <Icon name="arrow-up" size="md" color={colors.text.inverse} />
           </Animated.View>
+          {busy ? <ActivityIndicator style={{ position: 'absolute' }} size="small" color={colors.text.inverse} /> : null}
         </Animated.View>
       </Pressable>
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        onSubmitEditing={send}
-        returnKeyType="send"
-        placeholder={placeholder}
-        placeholderTextColor={colors.text.tertiary}
-        accessibilityLabel="ข้อความถึงผู้ช่วย AI"
-        style={[typeScale.bodyMd, { flex: 1, color: colors.text.primary, paddingVertical: 0, paddingRight: space[3] }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
-      />
+      <View style={{ flex: 1, alignSelf: 'stretch', justifyContent: 'center' }}>
+        <Animated.View style={{ opacity: inputFade, transform: [{ translateX: inputShift }] }} pointerEvents={on ? 'none' : 'auto'}>
+          <TextInput
+            ref={input}
+            value={text}
+            onChangeText={setText}
+            onSubmitEditing={send}
+            returnKeyType="send"
+            editable={!on}
+            placeholder={placeholder}
+            placeholderTextColor={colors.text.tertiary}
+            accessibilityLabel="ข้อความถึงผู้ช่วย AI"
+            style={[typeScale.bodyMd, { color: colors.text.primary, paddingVertical: 0, paddingRight: space[3] }, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null]}
+          />
+        </Animated.View>
+        {/* สถานะ (ฟัง/พูด = ดูจากริบบิ้นอย่างเดียว) */}
+        {vo ? (
+          <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, opacity: Animated.multiply(extraFade, quiet ? 1 : 0) }}>
+            <Text variant="labelMd" numberOfLines={1} color={vo.mode === 'error' ? colors.status.danger.fg : colors.text.secondary}>
+              {vo.status}
+            </Text>
+          </Animated.View>
+        ) : null}
+      </View>
+      {/* ปุ่มเสียงคำตอบ · กลับไปพิมพ์ */}
+      {vo ? (
+        <Animated.View style={{ flexDirection: 'row', gap: 2, opacity: extraFade }} pointerEvents={on ? 'auto' : 'none'}>
+          <ComposerIcon icon={vo.muted ? 'volume-x' : 'volume-2'} label={vo.muted ? 'เปิดเสียงคำตอบ' : 'ปิดเสียงคำตอบ'} onPress={vo.onMute} />
+          <ComposerIcon icon="type" label="พิมพ์แทน" onPress={vo.onExit} />
+        </Animated.View>
+      ) : null}
     </View>
+  );
+}
+
+function ComposerIcon({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={4} style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? colors.surface.sunken : 'transparent' })}>
+      <Icon name={icon} size="md" color={colors.text.secondary} />
+    </Pressable>
   );
 }
 
