@@ -1,5 +1,7 @@
 import React from 'react';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { LineIcon } from './LineIcon';
+import { LINE_ANIM } from './lineIconsAnimated';
 
 /**
  * ชุดไอคอนของ dock ตามต้นแบบ ThaiWellAI (design-system/icons.tsx)
@@ -9,7 +11,23 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 export type DockIconName = 'home' | 'places' | 'history' | 'profile' | 'queue' | 'insights' | 'stretch';
 const ACTIVE_FILL = 'rgba(21,128,61,0.16)';
 
-export function DockIcon({ name, color, size = 22, active }: { name: DockIconName; color: string; size?: number; active?: boolean }) {
+/**
+ * ไอคอนแท็บเมนู = ชุด line-md · กดเลือกแท็บ (ไม่ได้เลือก → เลือก) = เล่น animation วาดเส้น 1 รอบ · เปิดแอปครั้งแรกไม่เล่น
+ * ไม่มีใน line-md → ไอคอนเดิมของ dock
+ */
+export function DockIcon(props: { name: DockIconName; color: string; size?: number; active?: boolean }) {
+  const { name, color, size = 22, active } = props;
+  const prev = React.useRef(active);
+  const [run, setRun] = React.useState(0);
+  React.useEffect(() => {
+    if (active && !prev.current) setRun((r) => r + 1);
+    prev.current = active;
+  }, [active]);
+  if (LINE_ANIM[`tab:${name}`]) return <LineIcon name={`tab:${name}`} size={size} color={color} run={run} />;
+  return <DockIconLegacy {...props} />;
+}
+
+function DockIconLegacy({ name, color, size = 22, active }: { name: DockIconName; color: string; size?: number; active?: boolean }) {
   const tone = active ? ACTIVE_FILL : 'none';
   const p = { stroke: color, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
   const t = { ...p, fill: tone };
