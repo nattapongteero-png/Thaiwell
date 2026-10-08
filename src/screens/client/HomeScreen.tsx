@@ -3223,7 +3223,7 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
-      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = จุดที่ปวด + ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + อัปเดตเมื่อไหร่ · ขวา = ธาตุ + แนวโน้ม
+      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + ข้อมูลเมื่อไหร่ · ขวา = ธาตุ + จุดที่ปวด + แนวโน้ม
        * แตะป้าย → หุ่นหันไปหาจุดนั้น · แผ่นการ์ดขึ้น = ป้ายจางหาย (ไม่ทับการ์ด) */}
       {modelTag ? (
         <Animated.View
@@ -3240,18 +3240,6 @@ export function HomeScreen() {
           }}
         >
           <View pointerEvents="box-none" style={{ alignItems: 'flex-start', gap: space[1], flexShrink: 1 }}>
-            {modelTag.items.map((it, i) => (
-              <React.Fragment key={it}>
-                {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
-                {modelTag.ranked && i < 2 ? (
-                  <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
-                    {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
-                  </Text>
-                ) : null}
-                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
-              </React.Fragment>
-            ))}
-            {bodyInfo?.extras.length ? <View style={{ height: space[1] }} /> : null}
             {bodyInfo?.extras.map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
@@ -3268,8 +3256,21 @@ export function HomeScreen() {
               </Pressable>
             ) : null}
           </View>
-          <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1], marginTop: modelTag.ranked ? 18 : 0 }}>
+          <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
             {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+            {/* จุดที่ปวด + แนวโน้ม อยู่ด้วยกัน (เรื่องเดียวกัน) */}
+            {tagElement ? <View style={{ height: space[1] }} /> : null}
+            {modelTag.items.map((it, i) => (
+              <React.Fragment key={it}>
+                {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
+                {modelTag.ranked && i < 2 ? (
+                  <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginRight: space[1] }}>
+                    {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
+                  </Text>
+                ) : null}
+                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
+              </React.Fragment>
+            ))}
             {modelTag.note ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
                 {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
