@@ -27,7 +27,12 @@ export function VoiceChatDock({ voice, status, onSend, onVoice }: { voice: Voice
       t += 0.05;
       let target = 0;
       if (v.phase === 'listening') {
-        const m = v.recorder.getStatus().metering;
+        let m: number | undefined;
+        try {
+          m = v.recorder.getStatus().metering;
+        } catch {
+          return; // ตัวบันทึกถูกปล่อยแล้ว (กำลังออกจากหน้า)
+        }
         v.tick(m);
         // เทียบกับเสียงพื้นหลัง → เสียงแวดล้อมไม่ทำให้คลื่นขึ้น ขึ้นเมื่อพูดจริง
         target = v.levelOf(m);

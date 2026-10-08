@@ -45,11 +45,25 @@ export function useVoiceChat(onHeard: (text: string) => void) {
   const recorder = useAudioRecorder(REC_OPTIONS);
   const player = React.useRef<AudioPlayer | null>(null);
   const alive = React.useRef(true);
+  // ตัวบันทึกถูกปล่อยไปแล้ว (ออกจากหน้า / ออกจากระบบ) → อ่านค่าแล้ว error · ถือว่าไม่ได้บันทึก
+  const isRec = () => {
+    try {
+      return alive.current && recorder.isRecording;
+    } catch {
+      return false;
+    }
+  };
   React.useEffect(
     () => () => {
+      const rec = isRec();
       alive.current = false;
-      player.current?.remove();
-      if (recorder.isRecording) void recorder.stop().catch(() => undefined);
+      try {
+        player.current?.remove();
+      } catch {
+        /* ปล่อยไปแล้ว */
+      }
+      player.current = null;
+      if (rec) void Promise.resolve().then(() => recorder.stop()).catch(() => undefined);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -57,7 +71,7 @@ export function useVoiceChat(onHeard: (text: string) => void) {
 
   const stopMedia = async () => {
     player.current?.pause();
-    if (recorder.isRecording) await recorder.stop().catch(() => undefined);
+    if (isRec()) await recorder.stop().catch(() => undefined);
   };
 
   const listen = async () => {
@@ -96,7 +110,7 @@ export function useVoiceChat(onHeard: (text: string) => void) {
 
   /** จบประโยค → ถอดเสียง → ส่งเข้าแชท แล้วรอแชทตอบ · ยังไม่ได้พูด: force = พัก / ไม่ force = ฟังต่อ */
   const finishTurn = async (force = false) => {
-    if (!recorder.isRecording) return;
+    if (!isRec()) return;
     await recorder.stop();
     const uri = recorder.uri;
     if (!uri || !spoke.current) return force ? pause() : void listen();
@@ -173,7 +187,7 @@ export function useVoiceChat(onHeard: (text: string) => void) {
   const floor = React.useRef(-50);
   const lastTick = React.useRef(0);
   const tick = (metering: number | undefined) => {
-    if (phaseRef.current !== 'listening' || !recorder.isRecording) return;
+    if (phaseRef.current !== 'listening' || !isRec()) return;
     const now = Date.now();
     const dt = Math.min(200, now - lastTick.current);
     lastTick.current = now;
