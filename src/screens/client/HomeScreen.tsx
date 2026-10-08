@@ -3223,7 +3223,7 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
-      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + ข้อมูลเมื่อไหร่ · ขวา = ธาตุ + จุดที่ปวด + แนวโน้ม
+      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = ธาตุ + ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + ข้อมูลเมื่อไหร่ · ขวา = จุดที่ปวด + แนวโน้ม
        * แตะป้าย → หุ่นหันไปหาจุดนั้น · แผ่นการ์ดขึ้น = ป้ายจางหาย (ไม่ทับการ์ด) */}
       {modelTag ? (
         <Animated.View
@@ -3240,6 +3240,8 @@ export function HomeScreen() {
           }}
         >
           <View pointerEvents="box-none" style={{ alignItems: 'flex-start', gap: space[1], flexShrink: 1 }}>
+            {/* ธาตุบนสุดฝั่งซ้าย แล้วตามด้วยข้อมูลปัจจุบันของร่างกาย */}
+            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
             {bodyInfo?.extras.map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
@@ -3257,9 +3259,7 @@ export function HomeScreen() {
             ) : null}
           </View>
           <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
-            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
             {/* จุดที่ปวด + แนวโน้ม อยู่ด้วยกัน (เรื่องเดียวกัน) */}
-            {tagElement ? <View style={{ height: space[1] }} /> : null}
             {modelTag.items.map((it, i) => (
               <React.Fragment key={it}>
                 {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
