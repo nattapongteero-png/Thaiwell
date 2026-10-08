@@ -73,6 +73,8 @@ void main() {
     col += samplePalette(h) * g * env;
   }
   col *= 0.45 + 0.7 * e;
+  // จางก่อนถึงขอบบน/ล่างของพื้นที่วาด (ไม่ให้เห็นเป็นกรอบสี่เหลี่ยม)
+  col *= smoothstep(0.5, 0.22, abs((gl_FragCoord.y / uResolution.y) - 0.5));
   col = 1.0 - exp(-col * uGlow);
   float gray = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = max(mix(vec3(gray), col, uSaturation), 0.0);
@@ -91,10 +93,13 @@ const hexToRgb = (hex: string) => {
 export function Strands({
   level = 0,
   active = true,
-  colors = ['#7445EC', '#06B6D4', '#22C55E'],
-  count = 3,
+  colors = ['#5FF0B8', '#22D3EE', '#3B82F6', '#8B5CF6'],
+  count = 4,
+  scale = 1.6,
   style,
 }: {
+  /** ซูม: มาก = เส้นยาวเต็มความกว้าง */
+  scale?: number;
   /** ระดับเสียง 0–1 (ไมค์ / เสียงผู้ช่วย) */
   level?: number;
   /** false = นิ่งเบา ๆ (ไม่ได้ฟัง/พูด) */
@@ -144,13 +149,13 @@ export function Strands({
     gl.uniform1i(u('uStrandCount'), Math.min(count, MAX_STRANDS));
     gl.uniform2f(u('uResolution'), gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.uniform1f(u('uWaviness'), 1);
-    gl.uniform1f(u('uThickness'), 0.7);
-    gl.uniform1f(u('uGlow'), 2.6);
-    gl.uniform1f(u('uTaper'), 3);
+    gl.uniform1f(u('uThickness'), 1);
+    gl.uniform1f(u('uGlow'), 3);
+    gl.uniform1f(u('uTaper'), 2.2);
     gl.uniform1f(u('uSpread'), 1);
     gl.uniform1f(u('uOpacity'), 1);
-    gl.uniform1f(u('uScale'), 1.5);
-    gl.uniform1f(u('uSaturation'), 1.5);
+    gl.uniform1f(u('uScale'), scale);
+    gl.uniform1f(u('uSaturation'), 1.4);
     const uTime = u('uTime');
     const uAmp = u('uAmplitude');
     const uInt = u('uIntensity');
@@ -170,7 +175,7 @@ export function Strands({
       const l = on ? Math.max(0, Math.min(1, lv)) : 0;
       // เงียบ = เส้นเกือบตรง ขยับนิดเดียวพอให้รู้ว่ามีชีวิต · เสียงดัง = คลื่นสูง สว่าง เร็ว (ไม่ฟัง/ไม่พูด = แบบเงียบ)
       const e = l * l * (3 - 2 * l); // ค่อย ๆ ขึ้นช่วงเสียงเบา แล้วชัดขึ้นเมื่อพูดจริง
-      const tAmp = 0.06 + e * 2.2;
+      const tAmp = 0.12 + e * 1.8;
       const tInt = 0.3 + e * 0.7;
       const tSpd = 0.12 + e * 1.4;
       const k = Math.min(1, dt * 10);
