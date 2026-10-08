@@ -267,6 +267,22 @@ function Info({ k, v }: { k: string; v: string }) {
   );
 }
 
+/** หัวข้อซ้าย + ป้ายชิดขวาบรรทัดเดียวกัน (แบบ Info) · ยาวเกินบรรทัด = ขึ้นบรรทัดใหม่ ชิดขวา */
+function InfoChips({ k, items, tone }: { k: string; items: string[]; tone?: 'good' }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space[3] }}>
+      <Text variant="bodySm" tone="secondary" style={{ lineHeight: 26 }}>
+        {k}
+      </Text>
+      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
+        {items.map((t) => (
+          <Chip key={t} text={t} tone={tone} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 /** ป้ายคะแนนแบบหลังบ้าน: "หลัง ▮▮▯▯▯ 3" (แท่งสีตามระดับ) */
 export function PainPill({ label, v }: { label: string; v?: number }) {
   const { colors } = useTheme();
@@ -545,22 +561,8 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
       <Section icon="activity" tint={colors.brand.primary} title="การรักษาครั้งนี้">
         <Info k="แรงนวด" v={r.pressure} />
         <Info k="เวลา" v={`${r.duration} นาที`} />
-        <View style={{ gap: space[2] }}>
-          <Text variant="bodySm" tone="secondary">วิธีนวด</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {r.techniques.map((t) => (
-              <Chip key={t} text={t} />
-            ))}
-          </View>
-        </View>
-        <View style={{ gap: space[2] }}>
-          <Text variant="bodySm" tone="secondary">บริเวณ</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {tc.areas.map((a) => (
-              <Chip key={a.pin} text={a.label} tone="good" />
-            ))}
-          </View>
-        </View>
+        <InfoChips k="วิธีนวด" items={r.techniques} />
+        <InfoChips k="บริเวณ" items={tc.areas.map((a) => a.label)} tone="good" />
         {r.herbs.length ? <Info k="สมุนไพร" v={r.herbs.join(', ')} /> : null}
         {procs.length ? <Info k="รหัสหัตถการ" v={procs.join(', ')} /> : null}
       </Section>
