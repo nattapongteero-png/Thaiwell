@@ -4705,7 +4705,10 @@ function DraftBento({
   const booked = !!b && !d.red && !served;
   const [guideOpen, setGuideOpen] = React.useState(false);
   const [planOpen, setPlanOpen] = React.useState(false);
-  const { safety, plannedVisits, clinicCourse } = useJourney();
+  const nav = useNav();
+  const { safety, plannedVisits, clinicCourse: course, drafts: allDrafts } = useJourney();
+  // คอร์สของคลินิกเป็นของการรักษานี้: มีนัดตามคอร์สผูกกับเรื่องนี้ หรือจองไว้เรื่องเดียว (คอร์สมีชุดเดียวต่อคน)
+  const clinicCourse = course && ((plannedVisits[`case-${d.id}`]?.length ?? 0) > 0 || allDrafts.filter((x) => x.booking).length === 1) ? course : null;
   // คลินิกลงนัดตามคอร์สไว้แล้ว (ก่อนนวดครั้งแรก) → ครั้งถัดไปของการรักษานี้
   const planned = plannedVisits[`case-${d.id}`] ?? [];
   // ผลคัดกรอง → ข้อที่ผู้ให้บริการจะปรับวันนัด (ชุดเดียวกับการ์ดผลคัดกรองเดิม)
@@ -4761,7 +4764,11 @@ function DraftBento({
         />
         <TherapistTile name={b.therapist} width={width} stage={b.date === 'วันนี้' ? b.stage : undefined} />
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
-          {/* แนวทางเดิมจากผลประเมิน (ต่อจากตอนยังไม่จอง) + ผลคัดกรองที่ผู้ให้บริการจะปรับ */}
+          {/* คลินิกเปิดคอร์สให้แล้ว (ไม่ต้องรอนวดครั้งแรก) → แผนการรักษาของคลินิก (ชื่อคอร์ส · ครั้งที่ใช้ไป/ทั้งหมด) แตะ = หน้าคอร์ส
+           * ยังไม่มีคอร์ส → แนวทางเดิมจากผลประเมิน (ต่อจากตอนยังไม่จอง) + ผลคัดกรองที่ผู้ให้บริการจะปรับ */}
+          {clinicCourse ? (
+            <PlanTile width={halfW} plan={clinicCourse.name} done={Math.min(clinicCourse.total, clinicCourse.used)} total={clinicCourse.total} values={[]} onPress={() => nav.navigate('Course')} />
+          ) : (
           <GuideTile
             width={halfW}
             subtitle={d.guide?.condition ?? (d.symptoms.join(' ') || 'ตามผลประเมิน')}
@@ -4770,6 +4777,7 @@ function DraftBento({
             onAdjust={() => setGuideOpen(true)}
             onPress={d.guide ? () => setPlanOpen(true) : () => setGuideOpen(true)}
           />
+          )}
           <View pointerEvents="none">
             <PainScoreCard value={d.pain} stageLabel="ก่อนรักษา" title="ผลประเมิน" strongTitle padding={TILE_PAD} chart width={halfW} />
           </View>

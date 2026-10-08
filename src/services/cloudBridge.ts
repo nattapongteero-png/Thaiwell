@@ -53,6 +53,8 @@ export const cloudOnline = () => online;
 const rows = new Map<string, CloudRow>();
 /** สถานะล่าสุดของนัดใน cloud (ตามที่คลินิกทำจริง) */
 export const cloudStatusOf = (id: string) => rows.get(id)?.status;
+/** แถวล่าสุดของนัดใน cloud */
+export const cloudRowOf = (id: string) => rows.get(id);
 
 /* จำแถวที่เห็นล่าสุด → เปิดแอปใหม่ได้รับสิ่งที่คลินิกทำระหว่างปิดแอป (ไม่เล่นซ้ำของที่รับไปแล้ว) */
 export const SEEN_KEY = 'thaiwell.cloud.seen';

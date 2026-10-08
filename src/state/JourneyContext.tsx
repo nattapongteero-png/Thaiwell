@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows, fetchPatientRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { cloudAddendum, cloudAfterPain, cloudReassess, cloudStatusOf, clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { cloudAddendum, cloudAfterPain, cloudReassess, cloudRowOf, cloudStatusOf, clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -744,10 +744,35 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
   // นัดที่คลินิกลงให้ (นัดตามคอร์ส) แต่ยังไม่มีในแอป → เพิ่มเข้ามา (เช่น แอปรุ่นเก่าเคยเห็นแถวนั้นแล้วแต่ไม่ได้รับ)
+  /**
+   * กำลังรับบริการตามแถวในคลินิก → ใส่สถานะ + เวลาเริ่มให้นัดในแอปที่ยังไม่มี (เริ่มไปก่อนเปิดแอป / ก่อนแอปรุ่นที่เก็บเวลาเริ่ม)
+   * เวลาเริ่ม = เวลาที่แถวเปลี่ยนเป็นกำลังรับบริการ (ค่าแรกที่เห็น ไม่เลื่อนตามการแก้ไขระหว่างนวด)
+   */
+  const syncInService = () => {
+    const live = (ref: string) => {
+      const r = cloudRowOf(ref);
+      return r?.status === 'in_service' ? r.updated_at : undefined;
+    };
+    const { drafts: ds, looseBookings: ls } = latest.current;
+    for (const [ref, t] of Object.entries(bridgeRefs.current)) {
+      const at = live(ref);
+      if (!at) continue;
+      if (t.draftId && ds.some((d) => d.id === t.draftId && d.booking && !d.booking.startedAt))
+        setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking && !d.booking.startedAt ? { ...d, booking: { ...d.booking, stage: 'in_service', startedAt: at } } : d)));
+      if (t.looseId && ls.some((b) => b.id === t.looseId && !b.startedAt))
+        setLooseBookings((all) => all.map((b) => (b.id === t.looseId && !b.startedAt ? { ...b, stage: 'in_service', startedAt: at } : b)));
+      if (t.caseId && t.caseBooking) setCaseAppts((m) => (m[t.caseId!] && !m[t.caseId!].startedAt ? { ...m, [t.caseId!]: { ...m[t.caseId!], stage: 'in_service', startedAt: at } } : m));
+    }
+    for (const [ref, l] of Object.entries(caseLinks.current)) {
+      const at = live(ref);
+      if (at && !l.done) setCaseAppts((m) => (m[l.caseId] && !m[l.caseId].startedAt ? { ...m, [l.caseId]: { ...m[l.caseId], stage: 'in_service', startedAt: at } } : m));
+    }
+  };
   React.useEffect(() => {
     if (!isCloud()) return;
     const t = setInterval(() => {
       if (!latest.current.account?.userId) return;
+      syncInService();
       const me = patientOf().id;
       const missing = clinicMadeRows().filter((r) => r.patient_id === me && !bridgeRefs.current[r.id] && !caseLinks.current[r.id]);
       if (!missing.length) return;
