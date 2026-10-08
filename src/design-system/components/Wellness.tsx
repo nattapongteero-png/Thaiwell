@@ -213,8 +213,9 @@ export function DeltaPill({ before, after }: { before: number; after: number }) 
         backgroundColor: tone ? tone.bg : colors.border.default,
       }}
     >
-      {after === before ? null : <Icon name={after < before ? 'trending-down' : 'trending-up'} size="xxs" color={fg} />}
+      {/* ลูกศรแบบเดียวกับ pill บนหุ่นหน้าแรก (↘ ดีขึ้น · ↗ ปวดเพิ่ม) */}
       <Text variant="bodyXs" color={fg} style={{ fontFamily: fontFamily.semibold }}>
+        {after === before ? '' : after < before ? '↘ ' : '↗ '}
         {label}
       </Text>
     </View>
