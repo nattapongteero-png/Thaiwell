@@ -15,7 +15,7 @@ import { noticeOf, notify, setupNotifications } from '../services/notify';
 import { getItem, removeItem, setItem } from '../services/persist';
 import { fetchCloudRows, fetchPatientRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
-import { clinicMadeRows, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
+import { clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
@@ -1357,6 +1357,15 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   clinicHnRef.current = clinicHn;
   const restoredFor = React.useRef<string | null>(null);
   const [restoredTick, setRestoredTick] = useState(0);
+  /* เข้าระบบ/เปิดแอปแล้วดึงข้อมูลบัญชีกลับมา → ตรวจนัดทุกนัดที่แอปผูกไว้กับหลังบ้าน
+   * หลังบ้านลบไประหว่างที่ออกจากระบบ/ปิดแอป (ไม่ได้รับเหตุการณ์ลบตอนนั้น) → เอาออกตาม (เรื่อง · นัด · ใบร่างกลับเป็นยังไม่จอง) */
+  React.useEffect(() => {
+    if (!restoredTick || !isCloud()) return;
+    const ids = [...new Set([...Object.keys(bridgeRefs.current), ...Object.keys(caseLinks.current)])].filter((id) => !id.startsWith('local-'));
+    if (!ids.length) return;
+    void missingAppointments(ids).then((gone) => gone?.forEach((id) => onDeleted(id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoredTick]);
   const persisted = { profile, consents, elements, elementsDone, careStage, looseBookings, lastAssess, drafts, activeDraftId, promoted, cancelledAppts, caseAppts, caseVisits, selfPains, caseToday, apptNotices, bills, followUps, audit, visitRecords };
   const uid = account?.userId;
   React.useEffect(() => {
@@ -1376,6 +1385,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         for (const [k, fn] of Object.entries(set)) if (k in st) fn(st[k] as never);
         bridgeRefs.current = (st.bridgeRefs as typeof bridgeRefs.current) ?? {};
         bridgedCase.current = (st.bridgedCase as typeof bridgedCase.current) ?? {};
+        caseLinks.current = (st.caseLinks as typeof caseLinks.current) ?? {};
       } else {
         // บัญชีใหม่: ไม่มีบิล/แจ้งเตือน/ประวัติตัวอย่าง
         setBills([]);
@@ -1401,7 +1411,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!uid || restoredFor.current !== uid) return;
     const t = setTimeout(() => {
-      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, seen: seenRows() }).catch(() => undefined);
+      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, caseLinks: caseLinks.current, seen: seenRows() }).catch(() => undefined);
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

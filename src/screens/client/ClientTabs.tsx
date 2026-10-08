@@ -242,8 +242,9 @@ export function ProfileScreen() {
           danger
           last
           onPress={() => {
-            signOut();
+            // ออกจากหน้าเดิมก่อน แล้วค่อยล้างข้อมูล (หน้าที่กำลังถูกถอดไม่ต้อง render กับข้อมูลที่ถูกล้างกลางทาง)
             nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
+            setTimeout(() => signOut(), 0);
           }}
         />
       </Panel>

@@ -329,6 +329,18 @@ export async function fetchMyHn(userId: string): Promise<string | null> {
   const { data } = await cloud.from('tw_patients').select('clinic_hn').eq('user_id', userId).maybeSingle();
   return (data?.clinic_hn as string | null) ?? null;
 }
+/** นัดที่แอปผูกไว้แต่ไม่มีในหลังบ้านแล้ว (ถูกลบ) · ติดต่อไม่ได้ = null (ไม่ตัดสินว่าลบ) */
+export async function missingAppointments(ids: string[]): Promise<string[] | null> {
+  if (!ids.length) return [];
+  try {
+    const { data, error } = await cloud.from('tw_appointments').select('id').in('id', ids);
+    if (error) return null;
+    const got = new Set((data ?? []).map((r) => r.id as string));
+    return ids.filter((id) => !got.has(id));
+  } catch {
+    return null;
+  }
+}
 export async function loadAppState(userId: string): Promise<Record<string, unknown> | null> {
   const { data } = await cloud.from('tw_app_state').select('state').eq('user_id', userId).maybeSingle();
   return (data?.state as Record<string, unknown>) ?? null;
