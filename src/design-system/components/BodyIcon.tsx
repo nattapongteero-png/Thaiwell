@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, View } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, Path, Rect } from 'react-native-svg';
 import { BODY_ICON_IMAGES } from './bodyIconImages';
+import { useTheme } from '../theme/ThemeProvider';
 import type { BodyPin } from './Body3D';
 
 /**
@@ -143,10 +144,12 @@ export function BodyIconSvg({ pins, color, size = 24, bodyColor = BODY_FILL }: {
 const soft = (c: string, a: number) => (c.startsWith('rgb(') ? c.replace('rgb(', 'rgba(').replace(')', `,${a})`) : c.startsWith('#') && c.length === 7 ? `${c}${Math.round(a * 255).toString(16).padStart(2, '0')}` : c);
 
 /**
- * BodyIcon — รูปหุ่น 3D จริงซูมเข้าจุดที่ปวด ในวงกลม · บริเวณที่ปวดระบายสีตามระดับปวด (mask + tintColor)
+ * BodyIcon — รูปหุ่น 3D จริงซูมเข้าจุดที่ปวด ในวงกลม · ระบายบริเวณนั้นด้วยสีเดียว (บอกตำแหน่ง ไม่ใช่ระดับปวด — ระดับปวดดูจากหุ่นจริง/ป้าย %)
  * หลายบริเวณ = ใช้บริเวณแรก (บริเวณหลัก) · ไม่มีรูปของจุดนั้น = ไอคอนหุ่นวาด (BodyIconSvg)
  */
-export function BodyIcon({ pins, color, size = 24 }: { pins: (BodyPin | undefined)[]; color: string; size?: number }) {
+export function BodyIcon({ pins, color, size = 24 }: { pins: (BodyPin | undefined)[]; /** ไม่ส่ง = สีแบรนด์ (บอกตำแหน่งอย่างเดียว ไม่ใช่ระดับปวด) */ color?: string; size?: number }) {
+  const { colors } = useTheme();
+  color = color ?? colors.brand.primary;
   const pin = pins.find((p): p is BodyPin => !!p && !!BODY_ICON_IMAGES[p]);
   if (!pin) return <BodyIconSvg pins={pins} color={color} size={size} />;
   const img = BODY_ICON_IMAGES[pin];
