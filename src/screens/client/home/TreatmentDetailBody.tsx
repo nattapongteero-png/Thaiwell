@@ -36,7 +36,8 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
   const { clinicCourse, plannedVisits } = useJourney();
   const planned = plannedVisits[tc.id] ?? [];
   const total = clinicCourse?.total ?? tc.course.total;
-  const used = Math.min(total, clinicCourse?.used ?? tc.course.done);
+  // ครั้งที่นวดไปแล้ว (เขียว) ไม่ลดลงเมื่อคลินิกจัดนัดใหม่ → ค่าที่มากกว่าระหว่างคอร์สของคลินิกกับครั้งที่นวดจริง
+  const used = Math.min(total, Math.max(clinicCourse?.used ?? 0, tc.course.done));
   // นัดที่คลินิกลงไว้แล้ว (นัดตามแผน) · ไม่มี = นัดครั้งถัดไปนัดเดียว
   const booked = Math.min(total - used, Math.max(plannedVisits[tc.id]?.length ?? 0, hasNext ? 1 : 0));
   const areaText = tc.areas.map((a) => a.label).join(' · ');

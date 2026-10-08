@@ -4608,7 +4608,8 @@ function HomeBento({
         <PlanTile
           width={halfW}
           plan={clinicCourse?.name ?? tc.plan}
-          done={clinicCourse ? Math.min(clinicCourse.used, clinicCourse.total) : tc.course.done}
+          // ครั้งที่นวดไปแล้วไม่ลดลง: คลินิกจัดนัดใหม่แล้วตัวนับคอร์สอาจกลับเป็น 0 → ใช้ค่าที่มากกว่าระหว่างคอร์สของคลินิกกับครั้งที่นวดจริง
+          done={Math.min(clinicCourse?.total ?? tc.course.total, Math.max(clinicCourse?.used ?? 0, tc.course.done))}
           total={clinicCourse?.total ?? tc.course.total}
           values={trendValues(tc)}
           onPress={() => onHistory()}
