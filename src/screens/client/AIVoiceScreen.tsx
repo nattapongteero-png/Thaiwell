@@ -1,8 +1,7 @@
 import React from 'react';
-import { Animated, Easing, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { AIOrb, GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, fontFamily, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
+import { AIBall, GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
 import { useNav } from '../../navigation/types';
 import { AudioQuality, IOSOutputFormat, createAudioPlayer, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, type AudioPlayer } from 'expo-audio';
 import { friendReply, heardSoFar, speak, summarizeTalk, transcribe, type Heard, type VoiceTurn } from '../../services/voiceAI';
@@ -42,6 +41,8 @@ const REC_OPTIONS = {
 };
 /** เงียบหลังพูดนานเท่านี้ = จบประโยค (ms) · พูดยาวสุดต่อรอบ */
 const SILENCE_MS = 1400;
+/** ขนาดลูกแก้ว AI กลางจอ */
+const BALL = 112;
 const MAX_TURN_MS = 40000;
 
 export function AIVoiceScreen() {
@@ -70,24 +71,6 @@ export function AIVoiceScreen() {
     [],
   );
 
-  // ลูกแก้วหายใจ (ฟัง/พูด = เร็วและกว้างกว่า)
-  const pulse = React.useRef(new Animated.Value(0)).current;
-  const lively = phase === 'listening' || phase === 'speaking';
-  React.useEffect(() => {
-    pulse.setValue(0);
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: lively ? 700 : 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: lively ? 700 : 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [lively, pulse]);
-  const amp = lively ? 0.08 : 0.03;
-  const orbScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + amp] });
-  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1.05, 1.25 + amp] });
-  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [lively ? 0.45 : 0.2, 0] });
 
   /** พูดออกเสียง แล้ว (ถ้ายังคุยอยู่) เปิดฟังต่อเอง · พูดไม่ได้ = แสดงเป็นตัวหนังสืออย่างเดียว */
   const say = async (text: string, thenListen = true) => {
@@ -226,7 +209,6 @@ export function AIVoiceScreen() {
   const canSummarize = turns.some((x) => x.from === 'user') && !busy && phase !== 'summary' && phase !== 'emergency';
   // คลื่นเสียงจากไมค์จริง (dBFS → 0–1)
   const level = phase === 'listening' ? Math.max(0, Math.min(1, ((rec.metering ?? -60) + 55) / 40)) : 0;
-  const orb = componentTokens.orb.lg;
   const scrollRef = React.useRef<ScrollView>(null);
   // ชิปสิ่งที่จับได้ (ว่าง = เส้นประ ยังไม่ได้เล่า)
   const chips: { key: keyof Heard; label: string; value: string | null }[] = [
@@ -248,24 +230,19 @@ export function AIVoiceScreen() {
       <View style={{ flex: 1, width: '100%', maxWidth: g.maxContentWidth, alignSelf: 'center', paddingHorizontal: space[4] }}>
         {/* ลูกแก้ว + คลื่นเสียง + สถานะ */}
         <View style={{ alignItems: 'center', gap: space[2], paddingTop: space[3] }}>
-          <View style={{ width: orb * 1.6, height: orb * 1.4, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View style={{ position: 'absolute', width: orb, height: orb, borderRadius: orb / 2, opacity: haloOpacity, transform: [{ scale: haloScale }] }}>
-              <Svg width={orb} height={orb}>
-                <Defs>
-                  <RadialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
-                    <Stop offset="0.6" stopColor={colors.orb.to} stopOpacity={0.9} />
-                    <Stop offset="1" stopColor={colors.orb.to} stopOpacity={0} />
-                  </RadialGradient>
-                </Defs>
-                <Rect x={0} y={0} width={orb} height={orb} fill="url(#halo)" />
-              </Svg>
-            </Animated.View>
-            <Animated.View style={{ transform: [{ scale: orbScale }] }}>
-              <AIOrb size="lg" listening={phase === 'listening' || busy} />
-            </Animated.View>
+          {/* เส้นแสงออกจากลูกแก้ว: วางหลังลูกแก้วเต็มความกว้าง (shader สว่างตรงกลาง จางไปทางขอบ) · ระดับตามเสียง */}
+          <View style={{ alignSelf: 'stretch', height: BALL * 1.7, alignItems: 'center', justifyContent: 'center', marginHorizontal: -space[4] }}>
+            <Strands
+              level={phase === 'listening' ? level : phase === 'speaking' ? 0.45 : 0}
+              active={phase === 'listening' || phase === 'speaking'}
+              colors={['#5FF0B8', '#14A37A', '#3B82F6', '#8B5CF6']}
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, height: undefined }}
+            />
+            {/* ลูกแก้ว AI ตัวเดียวกับในแชท · ขยายเล็กน้อยตามเสียง */}
+            <View style={{ transform: [{ scale: 1 + (phase === 'listening' ? level * 0.12 : 0) }] }}>
+              <AIBall size={BALL} />
+            </View>
           </View>
-          {/* เส้นแสงตามระดับเสียง: ฟัง = ตามเสียงผู้ใช้ (รู้ว่าเสียงเข้า) · ไทยเวลพูด = พลิ้วกลาง ๆ · อื่น ๆ = นิ่ง */}
-          <Strands level={phase === 'listening' ? level : phase === 'speaking' ? 0.45 : 0} active={phase === 'listening' || phase === 'speaking'} style={{ height: 96, marginTop: -space[4] }} />
           {busy ? (
             <LatticeLoader status="working" label={STATUS[phase].replace('…', '')} fontSize={14} cellSize={6} />
           ) : (
