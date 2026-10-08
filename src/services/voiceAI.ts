@@ -7,7 +7,7 @@
  * ⚠️ ต้นแบบ: endpoint ยังไม่มี key → ไม่ส่งชื่อ/เลขบัตร ส่งแค่เสียงและสิ่งที่ผู้ใช้เล่า
  */
 import { File, Paths } from 'expo-file-system';
-import { completeAI, type AIMessage } from './aiService';
+import { completeAI, extractAI, type AIMessage } from './aiService';
 
 const ASR_BASE = 'https://asr2.bmscloud.in.th/v1';
 const TTS_BASE = 'https://vox-cpm.bmscloud.in.th/v1';
@@ -97,4 +97,24 @@ export async function summarizeTalk(turns: VoiceTurn[]): Promise<string> {
     30000,
   );
   return out.replace(/[*#_`>]/g, '').trim();
+}
+
+/** สิ่งที่จับได้จากที่ผู้ใช้เล่ามาถึงตอนนี้ (แสดงเป็นชิประหว่างคุย — ให้เห็นว่าครบพอจะสรุปหรือยัง) */
+export type Heard = { area: string | null; pain: number | null; duration: string | null; cause: string | null };
+export async function heardSoFar(turns: VoiceTurn[]): Promise<Heard> {
+  const said = turns
+    .filter((t) => t.from === 'user')
+    .map((t) => t.text)
+    .join('\n');
+  return extractAI<Heard>(
+    'จากสิ่งที่ผู้ใช้เล่า ดึงข้อมูลสั้น ๆ (ภาษาไทย ไม่เกิน 3 คำ): area = ตำแหน่งที่ปวด (เช่น บ่าขวา) · pain = ระดับปวด 0–10 ถ้าบอกเป็นตัวเลข · duration = นานเท่าไหร่ (เช่น 3 วัน) · cause = สาเหตุ (เช่น นั่งคอม) · ไม่ได้พูดถึง = null ห้ามเดา',
+    said,
+    {
+      type: 'object',
+      properties: { area: { type: ['string', 'null'] }, pain: { type: ['integer', 'null'], minimum: 0, maximum: 10 }, duration: { type: ['string', 'null'] }, cause: { type: ['string', 'null'] } },
+      required: ['area', 'pain', 'duration', 'cause'],
+    },
+    'heard',
+    120,
+  );
 }

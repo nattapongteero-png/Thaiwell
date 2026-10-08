@@ -1,11 +1,11 @@
 import React from 'react';
-import { Animated, Easing, Pressable, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { AIOrb, GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, fontFamily, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
 import { useNav } from '../../navigation/types';
 import { AudioQuality, IOSOutputFormat, createAudioPlayer, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, type AudioPlayer } from 'expo-audio';
-import { friendReply, speak, summarizeTalk, transcribe, type VoiceTurn } from '../../services/voiceAI';
+import { friendReply, heardSoFar, speak, summarizeTalk, transcribe, type Heard, type VoiceTurn } from '../../services/voiceAI';
 import { EMERGENCY } from '../../data/emergency';
 
 /**
@@ -52,6 +52,7 @@ export function AIVoiceScreen() {
   const [phase, setPhase] = React.useState<Phase>('idle');
   const [turns, setTurns] = React.useState<VoiceTurn[]>([]);
   const [summary, setSummary] = React.useState('');
+  const [caught, setCaught] = React.useState<Heard | null>(null);
   const recorder = useAudioRecorder(REC_OPTIONS);
   const rec = useAudioRecorderState(recorder, 120);
   const player = React.useRef<AudioPlayer | null>(null);
@@ -151,6 +152,10 @@ export function AIVoiceScreen() {
         return;
       }
       setPhase('thinking');
+      // จับข้อมูลที่เล่ามาแล้ว (คู่ขนานกับคำตอบ ไม่ให้รอ)
+      void heardSoFar(next)
+        .then((h) => alive.current && setCaught(h))
+        .catch(() => undefined);
       const reply = await friendReply(next);
       if (!alive.current) return;
       setTurns([...next, { from: 'ai', text: reply }]);
@@ -181,6 +186,7 @@ export function AIVoiceScreen() {
   const start = () => {
     setTurns([{ from: 'ai', text: GREETING }]);
     setSummary('');
+    setCaught(null);
     void say(GREETING);
   };
   const stopAll = async () => {
@@ -215,173 +221,202 @@ export function AIVoiceScreen() {
   /** สรุปแล้ว → แชทประเมินเดิม (ดึงอาการจากข้อความ แล้วถามข้อที่ขาด) */
   const toChat = () => nav.popTo('ClientTabs', { screen: 'Home', params: { voiceText: summary } } as never);
 
-  const hero = componentTokens.orb.hero;
   const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'summarizing';
-  const talking = phase === 'listening' || phase === 'speaking' || phase === 'transcribing' || phase === 'thinking' || phase === 'error';
-  const lastAi = [...turns].reverse().find((x) => x.from === 'ai');
-  const lastUser = [...turns].reverse().find((x) => x.from === 'user');
+  const canSummarize = turns.some((x) => x.from === 'user') && !busy && phase !== 'summary' && phase !== 'emergency';
+  // คลื่นเสียงจากไมค์จริง (dBFS → 0–1)
+  const level = phase === 'listening' ? Math.max(0, Math.min(1, ((rec.metering ?? -60) + 55) / 40)) : 0;
+  const orb = componentTokens.orb.lg;
+  const scrollRef = React.useRef<ScrollView>(null);
+  // ชิปสิ่งที่จับได้ (ว่าง = เส้นประ ยังไม่ได้เล่า)
+  const chips: { key: keyof Heard; label: string; value: string | null }[] = [
+    { key: 'area', label: 'ตรงไหน', value: caught?.area ?? null },
+    { key: 'pain', label: 'ปวดแค่ไหน', value: caught?.pain != null ? `${caught.pain}/10` : null },
+    { key: 'duration', label: 'นานแค่ไหน', value: caught?.duration ?? null },
+    { key: 'cause', label: 'สาเหตุ', value: caught?.cause ?? null },
+  ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface.default, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space[4]) }}>
-      {/* แถบบน */}
+    <View style={{ flex: 1, backgroundColor: colors.surface.canvas, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space[3]) }}>
+      {/* แถบบน: ปิด · ชื่อ · พิมพ์แทน */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[2] }}>
-        <IconButton
-          icon="x"
-          label="ปิด"
-          onPress={() => {
-            void stopAll();
-            nav.goBack();
-          }}
-        />
-        <Text variant="labelMd" tone="secondary">
-          โหมดเสียง
-        </Text>
-        <View style={{ width: 44 }} />
+        <IconButton icon="x" label="ปิด" onPress={() => (void stopAll(), nav.goBack())} />
+        <Text variant="labelLg">คุยกับไทยเวล</Text>
+        <IconButton icon="type" label="พิมพ์ในแชทแทน" onPress={() => (void stopAll(), nav.goBack())} />
       </View>
 
-      <View style={{ flex: 1, width: '100%', maxWidth: g.maxContentWidth, alignSelf: 'center', paddingHorizontal: space[6], alignItems: 'center', justifyContent: 'center', gap: space[6] }}>
-        {/* ลูกแก้ว AI + รัศมีเรืองแสง · แตะ = ส่งที่พูด / ขัดจังหวะ */}
-        <Pressable accessibilityRole="button" accessibilityLabel={phase === 'listening' ? 'ส่งที่พูด' : phase === 'speaking' ? 'หยุดแล้วพูดต่อ' : 'เริ่มฟัง'} onPress={tapOrb} disabled={busy || phase === 'summary' || phase === 'emergency'}>
-          <View style={{ width: hero * 1.5, height: hero * 1.5, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View style={{ position: 'absolute', width: hero, height: hero, borderRadius: hero / 2, opacity: haloOpacity, transform: [{ scale: haloScale }] }}>
-              <Svg width={hero} height={hero}>
+      <View style={{ flex: 1, width: '100%', maxWidth: g.maxContentWidth, alignSelf: 'center', paddingHorizontal: space[4] }}>
+        {/* ลูกแก้ว + คลื่นเสียง + สถานะ */}
+        <View style={{ alignItems: 'center', gap: space[2], paddingTop: space[3] }}>
+          <View style={{ width: orb * 1.6, height: orb * 1.4, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={{ position: 'absolute', width: orb, height: orb, borderRadius: orb / 2, opacity: haloOpacity, transform: [{ scale: haloScale }] }}>
+              <Svg width={orb} height={orb}>
                 <Defs>
                   <RadialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
                     <Stop offset="0.6" stopColor={colors.orb.to} stopOpacity={0.9} />
                     <Stop offset="1" stopColor={colors.orb.to} stopOpacity={0} />
                   </RadialGradient>
                 </Defs>
-                <Rect x={0} y={0} width={hero} height={hero} fill="url(#halo)" />
+                <Rect x={0} y={0} width={orb} height={orb} fill="url(#halo)" />
               </Svg>
             </Animated.View>
             <Animated.View style={{ transform: [{ scale: orbScale }] }}>
-              <AIOrb size="hero" listening={phase === 'listening' || busy} />
+              <AIOrb size="lg" listening={phase === 'listening' || busy} />
             </Animated.View>
           </View>
-        </Pressable>
-
-        {/* ชื่อ + สถานะ */}
-        <View style={{ alignItems: 'center', gap: space[1] }}>
-          <Text variant="headlineMd" style={{ fontFamily: fontFamily.bold }} align="center">
-            ผู้ช่วย ThaiWell
-          </Text>
-          <Text variant="bodyMd" tone={phase === 'emergency' ? undefined : 'tertiary'} color={phase === 'emergency' ? colors.status.danger.fg : undefined} align="center">
-            {STATUS[phase]}
-          </Text>
+          {phase === 'listening' ? (
+            <Wave level={level} color={colors.brand.primary} />
+          ) : busy ? (
+            <LatticeLoader status="working" label={STATUS[phase].replace('…', '')} fontSize={14} cellSize={6} />
+          ) : (
+            <Text variant="labelMd" align="center" color={phase === 'emergency' || phase === 'error' ? colors.status.danger.fg : colors.text.secondary}>
+              {STATUS[phase]}
+            </Text>
+          )}
         </View>
 
-        {/* ปุ่มหลักแคปซูลไล่สี */}
-        <GradientPill
-          label={phase === 'idle' ? 'เริ่มคุยด้วยเสียง' : phase === 'summary' ? 'ประเมินต่อในแชท' : phase === 'emergency' ? 'ดูคำแนะนำ' : phase === 'summarizing' ? 'กำลังสรุป…' : 'สรุปให้หน่อย'}
-          icon={phase === 'idle' ? 'mic' : phase === 'summary' ? 'message-circle' : phase === 'emergency' ? 'alert-triangle' : phase === 'summarizing' ? 'loader' : 'check'}
-          danger={phase === 'emergency'}
-          onPress={() =>
-            phase === 'idle' ? start() : phase === 'summary' ? toChat() : phase === 'emergency' ? nav.navigate('RedFlag', { reason: 'อาการที่เล่าในโหมดเสียง' }) : phase === 'summarizing' ? undefined : void summarize()
-          }
-        />
+        {/* สิ่งที่ไทยเวลจับได้ — ครบ = พร้อมสรุป */}
+        {turns.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6, paddingTop: space[3] }}>
+            {chips.map((c) => (
+              <View
+                key={c.key}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: c.value ? colors.brand.subtle : 'transparent', borderWidth: 1, borderStyle: c.value ? 'solid' : 'dashed', borderColor: c.value ? colors.brand.subtle : colors.border.default }}
+              >
+                {c.value ? <Icon name="check" size="xs" color={colors.brand.primary} /> : null}
+                <Text variant="labelSm" color={c.value ? colors.brand.primary : colors.text.tertiary}>
+                  {c.value ?? c.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
-        {/* คำบรรยายสด / สรุป */}
-        <View style={{ minHeight: t.captionMinHeight, alignSelf: 'stretch', alignItems: 'center', gap: space[2] }}>
-          {phase === 'idle' ? (
-            <Text variant="bodySm" tone="tertiary" align="center">
-              ปวดตรงไหน เหนื่อยแค่ไหน เล่าได้เลย{'\n'}แล้วกด "สรุปให้หน่อย" เพื่อประเมินต่อ
-            </Text>
-          ) : busy ? (
-            <LatticeLoader status="working" label={phase === 'summarizing' ? 'กำลังสรุป' : phase === 'transcribing' ? 'กำลังฟัง' : 'กำลังคิด'} fontSize={15} cellSize={7} />
-          ) : phase === 'summary' ? (
-            <View style={{ alignSelf: 'stretch', gap: space[2], padding: space[4], borderRadius: radius.lg, backgroundColor: colors.ai.bg }}>
-              <Text variant="bodyMd">{summary}</Text>
-              <Text variant="bodyXs" tone="secondary">
+        {/* บทสนทนา (ล่าสุดล่างสุด) · สรุป */}
+        {phase === 'summary' ? (
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <View style={{ gap: space[3], padding: space[5], borderRadius: 24, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
+              <Text variant="labelMd" tone="secondary">
+                สรุปจากที่คุยกัน
+              </Text>
+              <Text variant="titleSm">{summary}</Text>
+              <Text variant="bodyXs" tone="tertiary">
                 ในแชทจะถามต่อเฉพาะข้อที่ยังขาด รวมถึงข้อห้ามนวด
               </Text>
             </View>
-          ) : (
-            <>
-              {lastUser ? (
-                <Text variant="bodySm" tone="tertiary" align="center" numberOfLines={2}>
-                  คุณ: {lastUser.text}
+          </View>
+        ) : turns.length ? (
+          <ScrollView ref={scrollRef} style={{ flex: 1, marginTop: space[4] }} contentContainerStyle={{ gap: space[2], paddingBottom: space[3] }} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })} showsVerticalScrollIndicator={false}>
+            {turns.map((m, i) => (
+              <View
+                key={i}
+                style={{
+                  alignSelf: m.from === 'ai' ? 'flex-start' : 'flex-end',
+                  maxWidth: '84%',
+                  paddingHorizontal: space[4],
+                  paddingVertical: space[3],
+                  borderRadius: 20,
+                  borderBottomLeftRadius: m.from === 'ai' ? 6 : 20,
+                  borderBottomRightRadius: m.from === 'ai' ? 20 : 6,
+                  backgroundColor: m.from === 'ai' ? (phase === 'emergency' && i === turns.length - 1 ? colors.status.danger.bg : colors.surface.default) : colors.text.primary,
+                  borderWidth: m.from === 'ai' ? 1 : 0,
+                  borderColor: colors.border.subtle,
+                  opacity: i < turns.length - 2 ? 0.6 : 1,
+                }}
+              >
+                <Text variant="bodyMd" color={m.from === 'ai' ? (phase === 'emergency' && i === turns.length - 1 ? colors.status.danger.fg : colors.text.primary) : colors.text.inverse}>
+                  {m.text}
                 </Text>
-              ) : null}
-              {lastAi ? (
-                <Text variant="titleMd" align="center" color={phase === 'emergency' ? colors.status.danger.fg : colors.ai.fg}>
-                  {lastAi.text}
-                </Text>
-              ) : null}
-            </>
-          )}
-        </View>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: space[2], paddingHorizontal: space[4] }}>
+            <Text variant="titleMd" align="center">
+              เล่าให้ฟังได้เลย เหมือนคุยกับเพื่อน
+            </Text>
+            <Text variant="bodySm" tone="tertiary" align="center">
+              ปวดตรงไหน เหนื่อยแค่ไหน พูดได้ตามสบาย ไทยเวลจะช่วยสรุปเป็นผลประเมินให้
+            </Text>
+          </View>
+        )}
       </View>
 
-      {/* กลุ่มปุ่มกลมลอย */}
-      <View style={{ alignItems: 'center', paddingBottom: space[4] }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            gap: space[2],
-            padding: t.actionGroupPadding,
-            borderRadius: radius.full,
-            backgroundColor: colors.surface.default,
-            borderWidth: 1,
-            borderColor: colors.border.subtle,
-            shadowColor: colors.orb.to,
-            shadowOpacity: 0.12,
-            shadowRadius: 20,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 4,
-          }}
-        >
-          <RoundAction
-            icon="message-square"
-            label="พิมพ์ในแชทแทน"
-            onPress={() => {
-              void stopAll();
-              nav.goBack();
-            }}
-          />
-          {phase === 'summary' ? (
-            <RoundAction icon="mic" label="คุยต่อ" onPress={() => void listen()} />
-          ) : (
-            <RoundAction icon={talking ? 'mic' : 'mic-off'} label={phase === 'listening' ? 'ส่งที่พูด' : 'พูด'} onPress={tapOrb} />
-          )}
-          <RoundAction
-            icon="rotate-ccw"
-            label="เริ่มใหม่"
-            onPress={() => {
-              void stopAll().then(start);
-            }}
-          />
+      {/* แถบควบคุม: เริ่มใหม่ · ไมค์ (ปุ่มหลัก) · สรุป */}
+      {phase === 'summary' ? (
+        <View style={{ gap: space[2], paddingHorizontal: space[4] }}>
+          <GradientPill label="ประเมินต่อในแชท" icon="message-circle" onPress={toChat} />
+          <Pressable accessibilityRole="button" onPress={() => void listen()} style={{ alignItems: 'center', paddingVertical: space[2] }}>
+            <Text variant="labelMd" tone="secondary">
+              คุยต่ออีกหน่อย
+            </Text>
+          </Pressable>
         </View>
-      </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[8], paddingTop: space[2] }}>
+          <SideAction icon="rotate-ccw" label="เริ่มใหม่" disabled={!turns.length} onPress={() => void stopAll().then(start)} />
+          <MicButton phase={phase} onPress={phase === 'emergency' ? () => nav.navigate('RedFlag', { reason: 'อาการที่เล่าในโหมดเสียง' }) : tapOrb} />
+          <SideAction icon="check" label="สรุป" disabled={!canSummarize} onPress={() => void summarize()} />
+        </View>
+      )}
     </View>
   );
 }
 
-
-/** ปุ่มกลมในกลุ่มลอย (ref: share / retry / compass) */
-function RoundAction({ icon, label, onPress }: { icon: IconName; label: string; onPress?: () => void }) {
-  const { colors } = useTheme();
-  const d = componentTokens.voice.actionBtn;
+/** คลื่นเสียงจากระดับไมค์จริง (5 แท่ง) */
+function Wave({ level, color }: { level: number; color: string }) {
+  const k = [0.5, 0.8, 1, 0.8, 0.5];
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width: d,
-        height: d,
-        borderRadius: d / 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: pressed ? colors.ai.bg : colors.surface.default,
-        borderWidth: 1,
-        borderColor: colors.ai.bg,
-        shadowColor: colors.orb.to,
-        shadowOpacity: 0.12,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 4 },
-      })}
-    >
-      <Icon name={icon} size="lg" color={colors.text.primary} />
-    </Pressable>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 28 }}>
+      {k.map((m, i) => (
+        <View key={i} style={{ width: 5, height: 6 + 22 * Math.min(1, level * m * (0.8 + ((i * 37) % 5) / 10)), borderRadius: 3, backgroundColor: color }} />
+      ))}
+    </View>
   );
 }
+
+/** ปุ่มไมค์หลัก: ว่าง = เริ่มพูด · ฟัง = ส่งที่พูด · AI พูด = ขัดแล้วพูดต่อ · ฉุกเฉิน = ดูคำแนะนำ */
+function MicButton({ phase, onPress }: { phase: Phase; onPress: () => void }) {
+  const { colors } = useTheme();
+  const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'summarizing';
+  const icon: IconName = phase === 'listening' ? 'arrow-up' : phase === 'speaking' ? 'pause' : phase === 'emergency' ? 'alert-triangle' : 'mic';
+  const label = phase === 'listening' ? 'ส่งที่พูด' : phase === 'speaking' ? 'หยุดแล้วพูด' : phase === 'emergency' ? 'ดูคำแนะนำ' : phase === 'idle' ? 'เริ่มคุย' : 'พูด';
+  const bg = phase === 'emergency' ? colors.status.danger.fg : phase === 'listening' ? colors.brand.primary : colors.text.primary;
+  return (
+    <View style={{ alignItems: 'center', gap: space[1] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        disabled={busy}
+        onPress={onPress}
+        style={({ pressed }) => ({ width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: bg, opacity: busy ? 0.4 : pressed ? 0.85 : 1, shadowColor: bg, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } })}
+      >
+        <Icon name={icon} size="lg" color="#FFFFFF" />
+      </Pressable>
+      <Text variant="labelSm" tone="secondary">
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** ปุ่มข้าง (เริ่มใหม่ · สรุป) */
+function SideAction({ icon, label, onPress, disabled }: { icon: IconName; label: string; onPress: () => void; disabled?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ alignItems: 'center', gap: space[1], opacity: disabled ? 0.35 : 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        disabled={disabled}
+        onPress={onPress}
+        style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? colors.surface.sunken : colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle })}
+      >
+        <Icon name={icon} size="md" color={colors.text.primary} />
+      </Pressable>
+      <Text variant="labelSm" tone="secondary">
+        {label}
+      </Text>
+    </View>
+  );
+}
+
