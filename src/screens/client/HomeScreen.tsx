@@ -2184,9 +2184,10 @@ export function HomeScreen() {
     if (!fresh.length) return;
     const tm = setTimeout(() => {
       thread.forEach((m) => voiceSeen.current.add(m.id));
-      const urgent = fresh.some((m) => m.card?.type === 'action' && m.card.to === 'RedFlag');
+      // ฉุกเฉินจริง (คำตอบจบที่คำเตือน ไม่มีคำถามต่อ) → พัก · คำเตือนที่มีคำถามต่อท้าย (AI สงสัยอาการ) → คุยต่อได้
+      const urgent = last.card?.type === 'action' && last.card.to === 'RedFlag';
       const tapOnly = !!last.card && VOICE_TAP_ONLY.includes(last.card.type);
-      void voice.say(spokenOf(fresh.map((m) => m.text ?? ''), client.name), urgent || tapOnly ? 'pause' : 'listen', urgent ? 'ดูคำแนะนำในแชท' : tapOnly ? 'แตะเลือกบนการ์ดได้เลย' : undefined);
+      void voice.say(spokenOf(fresh.map((m) => m.text ?? ''), client.name), urgent || tapOnly ? 'pause' : 'listen', urgent ? 'อ่านคำแนะนำ แล้วแตะไมค์พูดต่อ' : tapOnly ? 'แตะเลือกบนการ์ด หรือแตะไมค์พูดต่อ' : undefined);
     }, 350);
     return () => clearTimeout(tm);
     // eslint-disable-next-line react-hooks/exhaustive-deps

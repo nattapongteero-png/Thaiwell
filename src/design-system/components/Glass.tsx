@@ -325,7 +325,7 @@ export function ChatComposer({
   const vo = shown ? lastVoice.current : undefined;
   const voiceIcon: IconName = voice?.mode === 'listening' ? 'arrow-up' : 'mic';
   const busy = voice?.mode === 'busy';
-  // แสดงสถานะเป็นตัวหนังสือเมื่อไม่ได้ฟัง/พูด (ริบบิ้นจางลงให้อ่านง่าย)
+  // แสดงสถานะเป็นตัวหนังสือเมื่อไม่ได้ฟัง/พูด (ซ่อนเส้นแสง ไม่ซ้อนกับตัวหนังสือ)
   const quiet = !!vo && vo.mode !== 'listening' && vo.mode !== 'speaking';
   const ribbonGrow = v.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] });
   const inputShift = v.interpolate({ inputRange: [0, 1], outputRange: [0, 16] });
@@ -362,7 +362,7 @@ export function ChatComposer({
       {/* เส้นแสงอยู่กลางช่องว่างระหว่างลูกแก้วกับปุ่มขวา (เว้นซ้ายขวาเท่ากัน) · คลี่ออกจากกลาง · mount ไว้ตลอด เปิดไมค์แล้วไม่ต้องสร้าง GL ใหม่ */}
       <Animated.View
         pointerEvents="none"
-        style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb + t.gap, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0.35 : 1), transform: [{ scaleX: ribbonGrow }] }}
+        style={{ position: 'absolute', left: (embedded ? 0 : 6) + orb + t.gap, right: (embedded ? 0 : 6) + 82 + t.gap, top: 0, bottom: 0, opacity: Animated.multiply(v, quiet ? 0 : 1), transform: [{ scaleX: ribbonGrow }] }}
       >
         <Strands level={vo?.level ?? 0} running={shown} span={{ x: 0.8, y: 0.42 }} style={{ height: t.height }} />
       </Animated.View>
