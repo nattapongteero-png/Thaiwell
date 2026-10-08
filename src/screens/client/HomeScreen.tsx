@@ -3226,7 +3226,7 @@ export function HomeScreen() {
       </Animated.View>
       </PanGestureHandler>
       </ScrollFadeMask>
-      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = ธาตุ + ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + ข้อมูลเมื่อไหร่ · ขวา = จุดที่ปวด + แนวโน้ม
+      {/* ป้ายบนหุ่น (ชั้นบน แตะได้): ซ้าย = จุดที่ปวด + แนวโน้ม + ข้อมูลปัจจุบัน (ร้าว · ชา · งดนวด · หลังนวด) + ข้อมูลเมื่อไหร่ · ขวา = ธาตุ
        * แตะป้าย → หุ่นหันไปหาจุดนั้น · แผ่นการ์ดขึ้น = ป้ายจางหาย (ไม่ทับการ์ด) */}
       {modelTag ? (
         <Animated.View
@@ -3242,8 +3242,26 @@ export function HomeScreen() {
           {/* ระยะขอบเท่าส่วนหัว (รูปโปรไฟล์ · ปุ่ม ThaiWell AI) */}
           <View pointerEvents="box-none" style={[content, { flexDirection: 'row', justifyContent: 'space-between' }]}>
           <View pointerEvents="box-none" style={{ alignItems: 'flex-start', gap: space[1], flexShrink: 1 }}>
-            {/* ธาตุบนสุดฝั่งซ้าย แล้วตามด้วยข้อมูลปัจจุบันของร่างกาย */}
-            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+            {/* จุดที่ปวด + แนวโน้ม อยู่ด้วยกัน (เรื่องเดียวกัน) */}
+            {modelTag.items.map((it, i) => (
+              <React.Fragment key={it}>
+                {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
+                {modelTag.ranked && i < 2 ? (
+                  <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginLeft: space[1] }}>
+                    {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
+                  </Text>
+                ) : null}
+                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
+              </React.Fragment>
+            ))}
+            {modelTag.note ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
+                {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
+                <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
+                  {modelTag.note}
+                </Text>
+              </View>
+            ) : null}
             {bodyInfo?.extras.map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
@@ -3261,26 +3279,8 @@ export function HomeScreen() {
             ) : null}
           </View>
           <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
-            {/* จุดที่ปวด + แนวโน้ม อยู่ด้วยกัน (เรื่องเดียวกัน) */}
-            {modelTag.items.map((it, i) => (
-              <React.Fragment key={it}>
-                {/* หลายบริเวณ: หัวข้อเล็กคั่น — ปวดมากสุด (บริเวณหลัก) · ร่วมด้วย (บริเวณรอง) */}
-                {modelTag.ranked && i < 2 ? (
-                  <Text variant="caption" tone="secondary" style={{ marginTop: i ? space[1] : 0, marginRight: space[1] }}>
-                    {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
-                  </Text>
-                ) : null}
-                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
-              </React.Fragment>
-            ))}
-            {modelTag.note ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
-                {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
-                <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
-                  {modelTag.note}
-                </Text>
-              </View>
-            ) : null}
+            {/* ธาตุ */}
+            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
           </View>
           </View>
         </Animated.View>
