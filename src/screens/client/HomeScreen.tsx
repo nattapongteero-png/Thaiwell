@@ -3233,12 +3233,11 @@ export function HomeScreen() {
             left: 0,
             right: 0,
             top: headerBottom + space[3],
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            paddingHorizontal: space[4],
             opacity: Animated.multiply(bodyIn, sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.35)], outputRange: [1, 0], extrapolate: 'clamp' })),
           }}
         >
+          {/* ระยะขอบเท่าส่วนหัว (รูปโปรไฟล์ · ปุ่ม ThaiWell AI) */}
+          <View pointerEvents="box-none" style={[content, { flexDirection: 'row', justifyContent: 'space-between' }]}>
           <View pointerEvents="box-none" style={{ alignItems: 'flex-start', gap: space[1], flexShrink: 1 }}>
             {/* ธาตุบนสุดฝั่งซ้าย แล้วตามด้วยข้อมูลปัจจุบันของร่างกาย */}
             {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
@@ -3279,6 +3278,7 @@ export function HomeScreen() {
                 </Text>
               </View>
             ) : null}
+          </View>
           </View>
         </Animated.View>
       ) : null}
