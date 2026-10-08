@@ -387,7 +387,22 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
 }
 
 /** ก่อน → หลัง (สองกล่อง) + บรรทัดสรุปการเปลี่ยนแปลง — ใช้ทั้งรายครั้งและครั้งที่ประเมินก่อนนวดแล้ว */
-function PainCompare({ from, to, note }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note?: { text: string; good?: boolean } }) {
+/** ป้ายเปลี่ยนแปลงของคะแนนปวดเป็น % (ชุดเดียวกับป้ายแนวโน้มบนหุ่นหน้าแรก) */
+function TrendPill({ from, to }: { from: number; to: number }) {
+  const { colors } = useTheme();
+  const pct = from ? Math.round(((from - to) / from) * 100) : 0;
+  const tone = pct > 0 ? 'good' : pct < 0 ? 'bad' : undefined;
+  return (
+    <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : tone === 'bad' ? colors.status.danger.bg : colors.surface.sunken }}>
+      <Text variant="labelSm" color={tone === 'good' ? colors.brand.primary : tone === 'bad' ? colors.status.danger.fg : colors.text.secondary}>
+        {pct > 0 ? `↘ ดีขึ้น ${pct}%` : pct < 0 ? `↗ ปวดเพิ่ม ${-pct}%` : 'เท่าเดิม'}
+      </Text>
+    </View>
+  );
+}
+
+/** trend = ป้ายเปลี่ยนแปลงเป็น % แบบป้ายบนหุ่นหน้าแรก (↘ ดีขึ้น / ↗ ปวดเพิ่ม / เท่าเดิม) แทนข้อความ note */
+function PainCompare({ from, to, note, trend }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note?: { text: string; good?: boolean }; trend?: boolean }) {
   const { colors } = useTheme();
   const box = (label: string, v: number | undefined, empty?: string) => (
     <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
@@ -406,7 +421,9 @@ function PainCompare({ from, to, note }: { from: { label: string; v: number }; t
         <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
         {box(to.label, to.v, to.empty)}
       </View>
-      {note ? (
+      {trend && to.v !== undefined ? (
+        <TrendPill from={from.v} to={to.v} />
+      ) : note ? (
         <Text variant="labelSm" color={note.good ? colors.brand.primary : colors.text.secondary}>
           {note.text}
         </Text>
@@ -491,7 +508,6 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
   const v = tc.visits[index];
   const r = sessionRecord(tc, index);
   const vAfter = afterOf(tc, index);
-  const d = vAfter === undefined ? 0 : v.painBefore - vAfter;
   const dx = dxCode(tc.condition);
   // หัตถการที่ทำ → รหัส ICD-9-CM (ไม่ซ้ำ)
   const procs = [...new Set(r.techniques.map((t) => procCode(t)?.code).filter(Boolean) as string[])];
@@ -512,7 +528,8 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
       <PainCompare
         from={{ label: 'ก่อนนวด', v: v.painBefore }}
         to={{ label: 'หลังนวด', v: vAfter, empty: 'ยังไม่ประเมิน' }}
-        note={vAfter === undefined ? { text: 'ประเมินหลังนวดเพื่อดูผลครั้งนี้' } : d > 0 ? { text: `ปวดลดลง ${d} คะแนน`, good: true } : d < 0 ? undefined : { text: 'ปวดเท่าเดิม' }}
+        trend
+        note={vAfter === undefined ? { text: 'ประเมินหลังนวดเพื่อดูผลครั้งนี้' } : undefined}
       />
       {/* วินิจฉัย (แพทย์แผนไทยบันทึกในหลังบ้าน) + รหัส ICD-10 ชุดเดียวกับหลังบ้าน */}
       <Section icon="clipboard" tint="#2F6FA3" title="วินิจฉัย">
