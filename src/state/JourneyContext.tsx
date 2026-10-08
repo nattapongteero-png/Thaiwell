@@ -1084,11 +1084,27 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     bridgedCase.current[pid] = c.id;
     return c.id;
   };
+  /**
+   * การรักษาที่จองไว้แล้วแต่ยังไม่ได้นวดครั้งแรก (ใบร่าง/นัดที่จองก่อนประเมิน ส่งคลินิกแล้ว) → คลินิกลงคอร์สให้ = ครั้งถัดไปของการรักษานี้ ไม่ใช่เรื่องใหม่
+   * ใบร่าง → id เรื่องที่จะเกิดหลังนวดครั้งแรก (case-<ใบร่าง>) ใช้เก็บนัดตามแผนไว้ล่วงหน้า · นัดที่จองก่อนประเมิน → ยังไม่รู้ id (รอนวดครั้งแรก)
+   */
+  const bookedFor = (pid?: string): { caseId?: string; draftId?: string; looseId?: string } | undefined => {
+    if (!pid) return undefined;
+    const { drafts: ds, looseBookings: ls } = latest.current;
+    for (const t of Object.values(bridgeRefs.current)) {
+      if (t.patientId !== pid || t.done || t.course || t.caseId) continue;
+      if (t.draftId && ds.some((d) => d.id === t.draftId && d.booking)) return { caseId: `case-${t.draftId}`, draftId: t.draftId };
+      if (t.looseId && !t.looseId.startsWith('lc-') && ls.some((b) => b.id === t.looseId)) return { looseId: t.looseId };
+    }
+    return undefined;
+  };
   const syncPlanned = React.useRef(() => {});
   syncPlanned.current = () => {
     if (!isCloud()) return;
     const me = patientOf().id;
-    const caseId = caseFor(me);
+    // ยังไม่มีเรื่องที่รักษา แต่จองครั้งแรกไว้แล้ว (ใบร่าง) → เก็บนัดตามแผนไว้กับการรักษานั้น (นัดแรกยังเป็นนัดที่จองเอง)
+    const real = caseFor(me);
+    const caseId = real ?? bookedFor(me)?.caseId;
     if (!caseId) return;
     void fetchPatientRows(me).then((rows) => {
       if (!rows) return;
@@ -1101,7 +1117,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const list = planned.map((r) => ({ id: r.id, iso: r.date!, date: isoToLabel(r.date!), time: r.start!, therapist: r.therapist ?? '' }));
       setPlannedVisits((m) => (JSON.stringify(m[caseId] ?? []) === JSON.stringify(list) ? m : { ...m, [caseId]: list }));
       const first = planned[0];
-      if (first) {
+      if (first && real) {
         const date = isoToLabel(first.date!);
         setCaseAppointment(caseId, { today: date === 'วันนี้', date, time: first.start!, clinic: '', therapist: first.therapist ?? '', queue: first.queue_no ?? undefined });
       }
@@ -1111,7 +1127,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!isCloud()) return;
     const stray = looseBookings.filter((b) => b.id.startsWith('lc-'));
-    if (!stray.length || !caseFor(patientOf().id)) return;
+    if (!stray.length || !(caseFor(patientOf().id) ?? bookedFor(patientOf().id))) return;
     for (const [k, t] of Object.entries(bridgeRefs.current)) if (t.looseId && stray.some((b) => b.id === t.looseId)) delete bridgeRefs.current[k];
     setLooseBookings((all) => all.filter((b) => !b.id.startsWith('lc-')));
     setTimeout(() => syncPlanned.current(), 300);
@@ -1269,6 +1285,16 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         // นวดครั้งต่อไปตามแผน → ครั้งใหม่ของเรื่องนั้น (คะแนนหลังนวดของคลินิก + บิล)
         const caseId = caseFor(e.patientId);
         if (caseId) clinicCloseVisit({ caseId }, e.painAfter);
+        continue;
+      }
+      // คลินิกลงนัดให้ (คอร์ส) ระหว่างที่จองครั้งแรกไว้แล้วแต่ยังไม่ได้นวด → ครั้งถัดไปของการรักษาเดิม (ไม่เปิดแท็บใหม่)
+      const held = e.type === 'approved' && e.byClinic && !bridgeRefs.current[e.ref] && e.patientId === patientOf().id ? bookedFor(e.patientId) : undefined;
+      if (held && e.type === 'approved') {
+        const date = isoToLabel(e.date);
+        const target = held.draftId ? { draftId: held.draftId } : { looseId: held.looseId };
+        setApptNotices((all) => [{ id: `n-cl-${e.id}`, ...target, kind: 'confirmed', text: e.course ? `คลินิกลงนัดคอร์ส${e.course.name} ครั้งที่ ${e.course.no}/${e.course.total} · ${date} ${e.start}${e.therapist ? ` · ${e.therapist}` : ''} · อยู่ในการรักษาเดิม` : `คลินิกลงนัดครั้งถัดไปให้ ${date} ${e.start}`, at: nowAtLabel() }, ...all.filter((n) => n.id !== `n-cl-${e.id}`)]);
+        setTimeout(() => syncPlanned.current(), 300);
+        refreshCourse();
         continue;
       }
       // คลินิกลงนัดให้เอง แต่ยังไม่มีเรื่องที่รักษาในแอป → นัดใหม่ (เรื่องใหม่ 1 แท็บ) · มีเรื่องแล้ว = นัดตามแผนของเรื่องนั้น (ด้านบน)

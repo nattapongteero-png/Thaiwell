@@ -4705,7 +4705,9 @@ function DraftBento({
   const booked = !!b && !d.red && !served;
   const [guideOpen, setGuideOpen] = React.useState(false);
   const [planOpen, setPlanOpen] = React.useState(false);
-  const { safety } = useJourney();
+  const { safety, plannedVisits, clinicCourse } = useJourney();
+  // คลินิกลงนัดตามคอร์สไว้แล้ว (ก่อนนวดครั้งแรก) → ครั้งถัดไปของการรักษานี้
+  const planned = plannedVisits[`case-${d.id}`] ?? [];
   // ผลคัดกรอง → ข้อที่ผู้ให้บริการจะปรับวันนัด (ชุดเดียวกับการ์ดผลคัดกรองเดิม)
   const adjustItems = [...safety.hits.filter((h) => h.level !== 'red').map((h) => SHORT_CAUTION[h.ruleId] ?? h.title), ...(d.risk === 'มีประจำเดือน' ? ['งดนวดท้อง'] : [])];
   // ประเมินไว้นานก่อนนัดครั้งแรก → ถึงช่วงก่อนนัด ยืนยันอาการสั้น ๆ ก่อน (แล้วจึงเช็กอินได้)
@@ -4753,6 +4755,7 @@ function DraftBento({
               {/* เลือกบริการเองไม่ตรงผลประเมิน → เตือน (ไม่บังคับ: แตะการ์ด = เปลี่ยนบริการ หรือกดใช้แผนเดิม) */}
               {!d.keepService && serviceMismatch(b.service, d.caution) ? <StepRow warn text="บริการที่จองไม่ตรงผลประเมิน" /> : null}
               <StepRow text={prep.join(' · ')} />
+              {planned.length ? <StepRow done text={`${clinicCourse ? `คอร์ส${clinicCourse.name} · ` : ''}นัดครั้งที่ 2 ${planned[0].date} ${planned[0].time}${planned.length > 1 ? ` · อีก ${planned.length - 1} นัด` : ''}`} /> : null}
             </>
           }
         />
