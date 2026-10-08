@@ -14,7 +14,8 @@ const ACircle = Animated.createAnimatedComponent(Circle);
 type Anim = NonNullable<LineNode['an']>[number];
 
 function useAnims(list: Anim[] | undefined, run: number) {
-  const vals = React.useRef((list ?? []).map((a) => new Animated.Value(a.to))).current;
+  // เล่นตั้งแต่แสดงครั้งแรก (run > 0 ตอนสร้าง) → เริ่มที่ค่าต้น ไม่กะพริบภาพสุดท้ายก่อน
+  const vals = React.useRef((list ?? []).map((a) => new Animated.Value(run ? a.from : a.to))).current;
   React.useEffect(() => {
     if (!run || !list?.length) return;
     list.forEach((a, i) => vals[i].setValue(a.from));
@@ -62,4 +63,13 @@ export function LineIcon({ name, size, color, run = 0 }: { name: string; size: n
       ))}
     </Svg>
   );
+}
+
+/**
+ * ไอคอนผลสำเร็จ/สถานะที่เพิ่งเกิดขึ้น (จองแล้ว · เช็กอินแล้ว · ส่งผลประเมินแล้ว) — วาดเส้น 1 รอบตอนแสดง แล้วค้างภาพสุดท้าย
+ * ไม่มีแบบขยับ → ไม่แสดงอะไร (ใช้คู่กับไอคอนปกติเป็นค่าสำรองได้)
+ */
+export function PlayOnceIcon({ name, size, color }: { name: string; size: number; color: string }) {
+  if (!LINE_ANIM[name]) return null;
+  return <LineIcon name={name} size={size} color={color} run={1} />;
 }

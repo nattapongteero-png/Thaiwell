@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { AppBar, Button, Icon, Panel, ReplyChips, Screen, Text, TextField, TINT, space, useTheme } from '../../design-system';
+import { AppBar, Button, Icon, Panel, ReplyChips, Screen, Text, TextField, TINT, space, useTheme, PlayOnceIcon } from '../../design-system';
 import { ASSESS_LOCK_TEXT, assessLock, preVisitOpensOn } from '../../state/appointments';
 import { FU_ADVERSE, FU_RISK } from '../../data/homeFeed';
 import { preVisitRed, preVisitSummary } from '../../data/preVisit';
@@ -74,7 +74,8 @@ export function PreVisitScreen({ route }: { route?: { params?: { caseId?: string
       >
         <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[2] }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: tone.bg, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name={s.status === 'red' ? 'alert-triangle' : s.status === 'caution' ? 'alert-circle' : 'check-circle'} size="xl" color={tone.fg} />
+            {/* ส่งผลประเมินก่อนนวดแล้ว: ไอคอนวาดเส้น 1 รอบ */}
+            <PlayOnceIcon name={s.status === 'red' ? 'alert-triangle' : s.status === 'caution' ? 'alert-circle' : 'check-circle'} size={34} color={tone.fg} />
           </View>
           <Text variant="headlineSm" align="center">
             {s.label}

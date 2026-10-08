@@ -38,6 +38,7 @@ import {
   Tag,
   RowLink,
   ReplyChips,
+  PlayOnceIcon,
 } from '../../design-system';
 import { KH_SOURCES, SYMPTOM_GROUPS } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
@@ -356,7 +357,8 @@ export function FollowUpScreen() {
       >
         <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[3] }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: worse ? colors.status.danger.bg : colors.brand.subtle }}>
-            <Icon name={worse ? 'alert-triangle' : 'check'} size="lg" color={worse ? colors.status.danger.fg : colors.brand.primary} />
+            {/* ส่งผลประเมินหลังนวดแล้ว: ไอคอนวาดเส้น 1 รอบ */}
+            <PlayOnceIcon name={worse ? 'alert-triangle' : 'check'} size={30} color={worse ? colors.status.danger.fg : colors.brand.primary} />
           </View>
           <Text variant="titleLg">{worse ? 'แนะนำให้พบแพทย์' : 'บันทึกแล้ว'}</Text>
           <Text variant="bodySm" tone="secondary" align="center">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AppBar, BottomSheet, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme } from '../../design-system';
+import { AppBar, BottomSheet, Button, Icon, InfoRow, Panel, ProfileAvatar, RowLink, Screen, StatTile, Tag, TINT, Text, useHideTabs, useTheme, PlayOnceIcon } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -628,7 +628,8 @@ export function BookingDoneScreen({ route }: { route: { params: { date: string; 
     >
       <View style={{ alignItems: 'center', gap: space[2], paddingVertical: space[3] }}>
         <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.brand.subtle, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="check" size="lg" color={colors.brand.primary} />
+          {/* จองสำเร็จ: ติ๊กวาดเส้น 1 รอบ */}
+          <PlayOnceIcon name="check" size={30} color={colors.brand.primary} />
         </View>
         <Text variant="titleLg">{b.pending ? (b.moved ? 'ส่งคำขอเลื่อนนัดแล้ว' : 'ส่งคำขอจองแล้ว') : b.moved ? 'เลื่อนนัดเรียบร้อย' : 'จองเรียบร้อย'}</Text>
         {/* คำขอจองจากแอป ต้องให้คลินิกยืนยันก่อน (อาจได้เวลาอื่นถ้าคิวเต็ม) */}

@@ -21,6 +21,7 @@ export * from './components/TabBar';
 export * from './components/DockIcons';
 export * from './components/Body3D';
 export * from './components/BodyIcon';
+export { PlayOnceIcon } from './components/LineIcon';
 export * from './components/StretchDemo';
 export * from './components/Skeleton';
 export * from './components/Glass';

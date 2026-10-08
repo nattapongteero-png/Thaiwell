@@ -22,7 +22,7 @@ import {
   safetyMeta,
   useTheme,
   type RegionId,
- Panel, TINT, Tag, TextField, fontFamily, space } from '../../design-system';
+ Panel, TINT, Tag, TextField, fontFamily, space, PlayOnceIcon } from '../../design-system';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { useAppointment } from '../../state/appointments';
@@ -250,6 +250,8 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
           /* คิว + สถานะคิว */
           <Panel>
             <View style={{ alignItems: 'center', gap: 2 }}>
+              {/* เช็กอินสำเร็จ ได้เลขคิวแล้ว: ติ๊กวาดเส้น 1 รอบ (เลขคิวใหม่ = เล่นใหม่) */}
+              {linked && appt.queue ? <PlayOnceIcon key={appt.queue} name="check-circle" size={32} color={colors.brand.primary} /> : null}
               <Text variant="bodyXs" tone="secondary">
                 {appt.queue ? 'คิวของคุณ' : linked ? 'เช็กอินแล้ว · รอคลินิกออกเลขคิว' : 'นัดวันนี้'}
               </Text>
