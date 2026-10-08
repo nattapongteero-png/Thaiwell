@@ -3237,6 +3237,8 @@ export function HomeScreen() {
             left: 0,
             right: 0,
             top: headerBottom + space[3],
+            // อยู่เหนือชั้นรับลาก/แตะของโหมดดูหุ่น (zIndex 2) → ในโหมดดูหุ่นแตะป้ายได้ (หุ่นหันไปหาจุดนั้น)
+            zIndex: 3,
             opacity: Animated.multiply(bodyIn, sheetProgress.interpolate({ inputRange: [0, Math.max(1, sheetTop * 0.35)], outputRange: [1, 0], extrapolate: 'clamp' })),
           }}
         >
