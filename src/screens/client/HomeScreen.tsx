@@ -2630,7 +2630,7 @@ export function HomeScreen() {
   const NATIVE_SHEET = Platform.OS !== 'web';
   /* ขั้น 0 (ปัดลงจากขั้น 1): แผ่นการ์ดลงไปเหลือขอบบนโผล่ SHEET_PEEK เหนือ tab → เห็นหุ่นเต็มตัว
    * = โหมดดูหุ่น: ลากหมุนรอบตัว 360° (เอียงขึ้นลงได้) · ถ่างนิ้วซูม · แตะจุดที่ปวด · ปัดแผ่นขึ้น = กลับขั้น 1 */
-  const SHEET_PEEK = 120;
+  const SHEET_PEEK = 44;
   const sheetDown = NATIVE_SHEET && !started && sheetTop > 0 ? Math.max(0, Math.round(winH - dockH - SHEET_PEEK - (headerBottom + space[4] + bentoGap - space[5]))) : 0;
   const sheetBase = React.useRef(new Animated.Value(0)).current;
   const sheetDrag = React.useRef(new Animated.Value(0)).current;
