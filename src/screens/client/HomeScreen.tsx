@@ -6077,9 +6077,9 @@ function BodyTagPill({ dot, body, icon, label, tone, onPress }: { dot?: string; 
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: body ? space[1] : space[3], paddingRight: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: body ? 3 : space[3], paddingRight: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
     >
-      {dot && body ? <BodyIcon pins={[body]} color={dot} size={22} /> : dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
+      {dot && body ? <BodyIcon pins={[body]} color={dot} size={24} /> : dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
       {icon ? <Icon name={icon} size="xs" color={fg} /> : null}
       <Text variant="labelSm" numberOfLines={1} color={fg}>
         {label}

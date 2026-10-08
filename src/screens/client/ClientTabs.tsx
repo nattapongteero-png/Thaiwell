@@ -72,10 +72,8 @@ export function ProgressScreen() {
         onPress={() => nav.navigate('TreatmentHistory', { caseId: c.id })}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[3], paddingHorizontal: space[4], borderTopWidth: isFirst ? 0 : 1, borderTopColor: colors.border.subtle, backgroundColor: pressed ? colors.surface.sunken : 'transparent' })}
       >
-        {/* หุ่นจิ๋วระบายบริเวณที่รักษา (สีตามปวดล่าสุด) · จบแล้ว = โทนเทา */}
-        <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: finished ? colors.surface.sunken : painColor(now).replace('rgb(', 'rgba(').replace(')', ',0.14)') }}>
-          <BodyIcon pins={c.areas.map((a) => a.pin)} color={finished ? colors.text.tertiary : painColor(now)} size={34} />
-        </View>
+        {/* หุ่นจิ๋วในวงกลม ซูมบริเวณที่รักษา (สีตามปวดล่าสุด) · จบแล้ว = โทนเทา */}
+        <BodyIcon pins={c.areas.map((a) => a.pin)} color={finished ? colors.text.tertiary : painColor(now)} size={40} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text variant="labelLg" numberOfLines={1}>
             {c.short}

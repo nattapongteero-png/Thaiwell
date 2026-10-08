@@ -87,29 +87,52 @@ function Silhouette({ fill }: { fill: string }) {
   );
 }
 
+/** กรอบของรูปที่ระบาย (x1, y1, x2, y2) */
+const boundsOf = (sh: Shape): [number, number, number, number] =>
+  'c' in sh ? [sh.c[0] - sh.c[2], sh.c[1] - sh.c[2], sh.c[0] + sh.c[2], sh.c[1] + sh.c[2]] : 'e' in sh ? [sh.e[0] - sh.e[2], sh.e[1] - sh.e[3], sh.e[0] + sh.e[2], sh.e[1] + sh.e[3]] : [sh.r[0], sh.r[1], sh.r[0] + sh.r[2], sh.r[1] + sh.r[3]];
+
+/**
+ * ไอคอนวงกลม: พื้นวงกลมสีจางตามสีที่ระบาย · หุ่นถูกตัดเป็นวงกลม · ซูมเข้าบริเวณที่ปวด (เห็นส่วนรอบ ๆ พอให้รู้ว่าตรงไหนของร่างกาย)
+ */
 export function BodyIcon({ pins, color, size = 24, bodyColor = BODY_FILL }: { pins: (BodyPin | undefined)[]; color: string; size?: number; bodyColor?: string }) {
   const id = React.useId().replace(/[^a-zA-Z0-9]/g, '');
   const specs = pins.map((p) => (p ? SPEC[p] : undefined)).filter((x): x is Spec => !!x);
   // มุมหลัง = ทุกบริเวณอยู่ด้านหลัง · ปนกัน = มุมหน้า
   const back = specs.length > 0 && specs.every((s) => s.back);
-  const tops = specs.map((s) => s.top);
-  // บริเวณห่างกันมาก (เช่น คอ + เข่า) → เห็นทั้งตัว · ไม่งั้นซูมเข้าส่วนนั้น
-  const view = !tops.length ? '-4 0 32 32' : Math.max(...tops) - Math.min(...tops) > 6 ? '-4 0 32 32' : `2 ${Math.min(...tops)} 20 20`;
   const shapes = specs.flatMap((s) => s.shapes(back));
+  // ซูมเข้าบริเวณที่ระบาย: กลางกรอบของทุกบริเวณ · ขนาดอย่างน้อย 16 หน่วย (ไม่มีบริเวณ = ทั้งตัว)
+  const b = shapes.map(boundsOf);
+  const x1 = b.length ? Math.min(...b.map((v) => v[0])) : 0;
+  const y1 = b.length ? Math.min(...b.map((v) => v[1])) : 0;
+  const x2 = b.length ? Math.max(...b.map((v) => v[2])) : 24;
+  const y2 = b.length ? Math.max(...b.map((v) => v[3])) : 32;
+  const S = b.length ? Math.max(16, Math.max(x2 - x1, y2 - y1) + 8) : 32;
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  const vx = cx - S / 2;
+  const vy = cy - S / 2;
   return (
-    <Svg width={size} height={size} viewBox={view}>
+    <Svg width={size} height={size} viewBox={`${vx} ${vy} ${S} ${S}`}>
       <Defs>
+        <ClipPath id={`o${id}`}>
+          <Circle cx={cx} cy={cy} r={S / 2} />
+        </ClipPath>
         <ClipPath id={`b${id}`}>
           <Silhouette fill="#000" />
         </ClipPath>
       </Defs>
-      <Silhouette fill={bodyColor} />
-      <G fill={color} clipPath={`url(#b${id})`}>
-        {shapes.map((sh, i) =>
-          'c' in sh ? <Circle key={i} cx={sh.c[0]} cy={sh.c[1]} r={sh.c[2]} /> : 'e' in sh ? <Ellipse key={i} cx={sh.e[0]} cy={sh.e[1]} rx={sh.e[2]} ry={sh.e[3]} /> : <Rect key={i} x={sh.r[0]} y={sh.r[1]} width={sh.r[2]} height={sh.r[3]} />,
-        )}
+      <G clipPath={`url(#o${id})`}>
+        {/* พื้นวงกลม: ขาว + สีที่ระบายแบบจาง */}
+        <Circle cx={cx} cy={cy} r={S / 2} fill="#FFFFFF" />
+        <Circle cx={cx} cy={cy} r={S / 2} fill={color} fillOpacity={0.14} />
+        <Silhouette fill={bodyColor} />
+        <G fill={color} clipPath={`url(#b${id})`}>
+          {shapes.map((sh, i) =>
+            'c' in sh ? <Circle key={i} cx={sh.c[0]} cy={sh.c[1]} r={sh.c[2]} /> : 'e' in sh ? <Ellipse key={i} cx={sh.e[0]} cy={sh.e[1]} rx={sh.e[2]} ry={sh.e[3]} /> : <Rect key={i} x={sh.r[0]} y={sh.r[1]} width={sh.r[2]} height={sh.r[3]} />,
+          )}
+        </G>
+        {back ? <Path d="M12 9.4 V18.6" stroke="#FFFFFF" strokeWidth={0.5} opacity={0.9} /> : null}
       </G>
-      {back ? <Path d="M12 9.4 V18.6" stroke="#FFFFFF" strokeWidth={0.7} opacity={0.9} /> : null}
     </Svg>
   );
 }
