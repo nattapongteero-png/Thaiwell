@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { Text, radius, space, useTheme } from '../../../design-system';
+import { serviceMinutesOf } from '../../../data/serviceMinutes';
 
 /* กำลังรับบริการ: เวลาที่นวดไปแล้ว (เดินสด) · แถบความคืบหน้า เริ่ม → เสร็จประมาณ
  * เวลาเริ่ม = ตอนคลินิกกดเริ่มรับบริการ (จริง) · เสร็จประมาณ = เวลาเริ่ม + ระยะเวลาบริการ (คลินิกบันทึกเสร็จจึงได้เวลาจริง) */
@@ -15,7 +16,7 @@ export function useNow(active: boolean) {
   return now;
 }
 /** ระยะเวลาบริการจากชื่อบริการ ("… · 90 นาที") · ไม่ระบุ = 60 นาที */
-export const serviceMinutes = (label?: string) => Number(label?.match(/(\d+)\s*นาที/)?.[1] ?? 60);
+export const serviceMinutes = (label?: string) => serviceMinutesOf(label);
 const clockOf = (ms: number) => {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;

@@ -137,6 +137,7 @@ import { PainPicker } from './home/PainPicker';
 import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/ServiceProgress';
+import { serviceMinutesOf } from '../../data/serviceMinutes';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
 import { Chip as DetailChip, afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
 import { EMERGENCY } from '../../data/emergency';
@@ -4353,7 +4354,7 @@ function FirstVisitCard({
 }: {
   /** ประเมินอีกครั้ง (ยังไม่ถึงวันนัด/ยังไม่เช็กอิน) — ปุ่มรองต่อจากสถานะนัด */
   onReassess?: () => void;
-  booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed'; stage?: VisitStage; therapist?: string; startedAt?: string; service?: string };
+  booking: { date: string; time: string; clinic: string; queue?: string; status?: 'pending' | 'confirmed'; stage?: VisitStage; therapist?: string; startedAt?: string; service?: string; minutes?: number };
   /** ขั้นเพิ่มเติมของนัดนี้ (เช่น ก่อนมานวด) */
   steps?: React.ReactNode;
   onCheckIn: () => void;
@@ -4373,7 +4374,7 @@ function FirstVisitCard({
   return (
     <Tile style={{ gap: space[3] }} onPress={onOpen} accessibilityLabel={`นัดครั้งที่ 1 ${b.date} ${b.time}${b.queue ? ` คิว ${b.queue}` : ''} ดูรายละเอียด`}>
       <ApptHeader label="นัดครั้งที่ 1" date={b.date} time={b.time} clinic={b.clinic} today={today} extra={minutes} right={today ? <QueueBlock queue={b.queue} stage={b.stage} startedAt={b.startedAt} /> : null} />
-      {today && b.stage === 'in_service' && b.startedAt ? <ServiceProgress startedAt={b.startedAt} minutes={serviceMinutes(minutes ?? b.service)} /> : null}
+      {today && b.stage === 'in_service' && b.startedAt ? <ServiceProgress startedAt={b.startedAt} minutes={b.minutes ?? serviceMinutes(minutes ?? b.service)} /> : null}
       <View style={{ gap: space[2] }}>
         <StepRow done={!pending} text={pending ? 'รอคลินิกยืนยันนัด' : 'คลินิกยืนยันนัดแล้ว'} />
         {needAssess ? <StepRow text={assessStep} /> : null}
@@ -5045,7 +5046,7 @@ function HomeBento({
           <>
             {/* เมื่อไหร่ (ใหญ่) → ที่ไหน (ตัวเข้ม) · วันนี้ = คิวด้านขวา */}
             <ApptHeader label={`นัดครั้งที่ ${nextNo}/${tc.course.total}`} date={ap.date} time={ap.time} clinic={clinic} today={ap.today} right={ap.today ? <QueueBlock queue={ap.queue} stage={ap.stage} startedAt={ap.startedAt} /> : null} />
-            {ap.today && ap.stage === 'in_service' && ap.startedAt ? <ServiceProgress startedAt={ap.startedAt} minutes={60} /> : null}
+            {ap.today && ap.stage === 'in_service' && ap.startedAt ? <ServiceProgress startedAt={ap.startedAt} minutes={ap.minutes ?? serviceMinutesOf(clinicCourse?.service)} /> : null}
             {/* สิ่งที่ต้องทำก่อนครั้งนี้ */}
             <View style={{ gap: space[2] }}>
               {needPost ? <StepRow text={`ประเมินหลังนวดครั้งที่ ${tc.visits.length}`} /> : null}

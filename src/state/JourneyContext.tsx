@@ -5,6 +5,7 @@
  */
 import { CHIP_PINS } from '../data/homeContent';
 import { guideFor } from '../data/treatmentGuides';
+import { serviceMinutesOf } from '../data/serviceMinutes';
 import { DEMO_LINKS, DEMO_PATIENT_CLOUD_ID, TREATMENT_CASES, type TreatmentCase } from '../data/homeFeed';
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { RegionId } from '../design-system/components/BodyMap';
@@ -95,6 +96,8 @@ export interface Booking {
   stage?: 'checked_in' | 'called' | 'in_service';
   /** เวลาที่คลินิกเริ่มรับบริการ (ISO) → เวลาที่นวดไปแล้ว · เสร็จประมาณ */
   startedAt?: string;
+  /** ระยะเวลาบริการตามนัดในคลินิก (นาที) */
+  minutes?: number;
   /** นัดที่คลินิกลงให้ตามคอร์ส: ชื่อคอร์ส · ครั้งที่ · วันที่ ISO (เรียงรายการนัด) */
   course?: { name: string; no: number; total: number };
   iso?: string;
@@ -430,6 +433,8 @@ export interface CaseAppt {
   stage?: 'checked_in' | 'called' | 'in_service';
   /** เวลาที่คลินิกเริ่มรับบริการ (ISO) */
   startedAt?: string;
+  /** ระยะเวลาบริการตามนัดในคลินิก (นาที) */
+  minutes?: number;
 }
 
 /** แนวทางการรักษาจากผลประเมินของใบร่าง (ส่งให้คลินิก) · ไม่มีอาการ / ควรพบแพทย์ = ไม่มีแนวทาง */
@@ -514,6 +519,18 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const cancelAppointment = useCallback((caseId: string) => setCancelledAppts((ids) => (ids.includes(caseId) ? ids : [...ids, caseId])), []);
   const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>(() => saved('caseAppts', {}));
   // จองใหม่ → ไม่ถือว่ายกเลิกแล้ว
+  const courseOfRows = (): ClinicCourse | null => {
+    if (!isCloud() || !account?.userId) return null;
+    const me = patientOf().id;
+    const cs = clinicMadeRows()
+      .filter((r) => r.patient_id === me)
+      .map((r) => ({ r, c: (r as CloudRow & { assessment?: { course?: { name: string; no: number; total: number } } }).assessment?.course }))
+      .filter((x): x is { r: CloudRow; c: { name: string; no: number; total: number } } => !!x.c)
+      .sort((a, b) => a.c.no - b.c.no);
+    if (!cs.length) return null;
+    const { r, c } = cs[0];
+    return { name: c.name, service: r.service ?? c.name, total: c.total, used: Math.max(0, c.no - 1), startedOn: '', expiresOn: '' };
+  };
   /** สถานะวันนัดจากแถวในคลินิก (เช็กอิน · เรียกคิว · กำลังรับบริการ + เวลาเริ่ม) */
   const stageOfRow = (r: CloudRow): Pick<CaseAppt, 'stage' | 'startedAt'> =>
     r.status === 'in_service' ? { stage: 'in_service', startedAt: r.updated_at } : r.status === 'called' ? { stage: 'called' } : r.status === 'checked_in' ? { stage: 'checked_in' } : {};
@@ -753,19 +770,28 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const r = cloudRowOf(ref);
       return r?.status === 'in_service' ? r.updated_at : undefined;
     };
+    // ระยะเวลาตามบริการของนัดนั้นในคลินิก (คลินิกเปลี่ยนบริการได้ เช่น นวดร่วมประคบ 90 นาที)
+    const mins = (ref: string) => {
+      const r = cloudRowOf(ref) as (CloudRow & { assessment?: { serviceId?: string } }) | undefined;
+      return serviceMinutesOf(r?.service, r?.assessment?.serviceId);
+    };
     const { drafts: ds, looseBookings: ls } = latest.current;
     for (const [ref, t] of Object.entries(bridgeRefs.current)) {
       const at = live(ref);
       if (!at) continue;
-      if (t.draftId && ds.some((d) => d.id === t.draftId && d.booking && !d.booking.startedAt))
-        setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking && !d.booking.startedAt ? { ...d, booking: { ...d.booking, stage: 'in_service', startedAt: at } } : d)));
-      if (t.looseId && ls.some((b) => b.id === t.looseId && !b.startedAt))
-        setLooseBookings((all) => all.map((b) => (b.id === t.looseId && !b.startedAt ? { ...b, stage: 'in_service', startedAt: at } : b)));
-      if (t.caseId && t.caseBooking) setCaseAppts((m) => (m[t.caseId!] && !m[t.caseId!].startedAt ? { ...m, [t.caseId!]: { ...m[t.caseId!], stage: 'in_service', startedAt: at } } : m));
+      const n = mins(ref);
+      const need = (x?: { startedAt?: string; minutes?: number }) => !!x && (!x.startedAt || x.minutes !== n);
+      if (t.draftId && ds.some((d) => d.id === t.draftId && need(d.booking)))
+        setDrafts((all) => all.map((d) => (d.id === t.draftId && d.booking && need(d.booking) ? { ...d, booking: { ...d.booking, stage: 'in_service', startedAt: d.booking.startedAt ?? at, minutes: n } } : d)));
+      if (t.looseId && ls.some((b) => b.id === t.looseId && need(b)))
+        setLooseBookings((all) => all.map((b) => (b.id === t.looseId && need(b) ? { ...b, stage: 'in_service', startedAt: b.startedAt ?? at, minutes: n } : b)));
+      if (t.caseId && t.caseBooking) setCaseAppts((m) => (need(m[t.caseId!]) ? { ...m, [t.caseId!]: { ...m[t.caseId!], stage: 'in_service', startedAt: m[t.caseId!].startedAt ?? at, minutes: n } } : m));
     }
     for (const [ref, l] of Object.entries(caseLinks.current)) {
       const at = live(ref);
-      if (at && !l.done) setCaseAppts((m) => (m[l.caseId] && !m[l.caseId].startedAt ? { ...m, [l.caseId]: { ...m[l.caseId], stage: 'in_service', startedAt: at } } : m));
+      if (!at || l.done) continue;
+      const n = mins(ref);
+      setCaseAppts((m) => (m[l.caseId] && (!m[l.caseId].startedAt || m[l.caseId].minutes !== n) ? { ...m, [l.caseId]: { ...m[l.caseId], stage: 'in_service', startedAt: m[l.caseId].startedAt ?? at, minutes: n } } : m));
     }
   };
   React.useEffect(() => {
@@ -951,7 +977,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         const sp = selfPains[c.id];
         const visits = [...c.visits, ...extra].map((v, i) => (visitRecords[`${c.id}:${i}`] ? { ...v, record: visitRecords[`${c.id}:${i}`] } : v));
         const done = Math.min(c.course.total, c.course.done + extra.length);
-        const appointment = cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage, startedAt: a.startedAt } : c.appointment;
+        const appointment = cancelled ? { today: false, date: '-', time: '-' } : a ? { today: a.today, date: a.date, time: a.time, queue: a.queue, stage: a.stage, startedAt: a.startedAt, minutes: a.minutes } : c.appointment;
         // ครั้งที่ใช้ไป: นับจากในแอป หรือจากคลินิก (เรื่องที่ผูกกับคลินิก) แล้วแต่อันไหนมากกว่า — ชุดเดียวกับการ์ดแผนการรักษา
         const bridged = Object.values(bridgedCase.current).includes(c.id);
         const total = bridged && clinicCourse ? clinicCourse.total : c.course.total;
@@ -1653,7 +1679,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     markAllNoticesRead,
     // บิลเฉพาะเรื่องของคนนี้ (คนใหม่ไม่เห็นของคนไข้ตัวอย่าง)
     bills: bills.filter((b) => !b.caseId || cases.some((c) => c.id === b.caseId)),
-    clinicCourse,
+    // คอร์สจากข้อมูลผู้ป่วยในคลินิก · ยังไม่มี แต่คลินิกลงนัดตามคอร์สไว้แล้ว → คอร์สจากนัดนั้น (ชื่อ · จำนวนครั้ง · ใช้ไป = ครั้งที่ของนัดแรก − 1)
+    clinicCourse: clinicCourse ?? courseOfRows(),
     clinicVisits,
     payBill,
     requestBooking,

@@ -151,7 +151,7 @@ export function AppointmentDetailScreen({ route }: { route: { params?: { caseId?
             </Pressable>
           ) : null}
         </View>
-        {inService ? <ServiceProgress startedAt={appt.startedAt!} minutes={serviceMinutes(appt.service)} /> : null}
+        {inService ? <ServiceProgress startedAt={appt.startedAt!} minutes={appt.minutes ?? serviceMinutes(appt.service)} /> : null}
         {/* วันนัดหลังเช็กอิน (รวมหน้าดูคิวไว้ที่นี่): รออีกกี่คิว → ถึงคิว (เด่น) → กำลังรับบริการ */}
         {/* กำลังรับบริการ → การ์ดผู้ให้บริการพร้อมป้ายสถานะ (แทนแถบข้อความ + ชื่อซ้ำ) */}
         {appt.today && appt.stage === 'in_service' && appt.therapist ? (
