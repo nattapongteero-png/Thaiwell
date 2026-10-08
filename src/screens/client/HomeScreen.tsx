@@ -214,6 +214,8 @@ const DRAG_SLOP = 6;
 /** เวลาจำลองที่ AI ใช้คิดก่อนตอบ (ยังไม่เชื่อม AI จริง) */
 const THINK_MS = 1800;
 /** ขอแก้ข้อมูลที่ตอบไปแล้ว */
+/** ยืนยันข้อมูลในหน้าทบทวน */
+const CONFIRM_ASK = /ยืนยัน|ถูกต้อง|ถูกแล้ว|ใช่แล้ว|ตกลง|โอเค|ok|ครบแล้ว|เรียบร้อย|ส่งเลย|ได้เลย|ไม่(ต้อง|มี(อะไร)?(ที่)?(จะ)?)?\s*แก้/i;
 const EDIT_ASK = /แก้|เปลี่ยน|ผิด|ไม่ใช่|จริง\s*ๆ|ที่จริง|อัปเดต|อัพเดท/;
 /** ขอดูผลการรักษา (เช่น "ขอผลครั้งที่ 1" "ผลการนวดเป็นยังไง") */
 const RESULT_ASK = /ผล\s*(การ)?\s*(รักษา|นวด)|(ขอ|ดู|เปิด)\s*ผล(?!\s*(การ)?\s*ประเมิน)|ผล\s*(ของ)?\s*ครั้ง/;
@@ -1542,9 +1544,9 @@ export function HomeScreen() {
   };
   /** ยืนยันข้อมูลชุดนี้ → สรุปผล (เหมือนตอบครบ) */
   // ถามต่อเฉพาะข้อที่ยังไม่มีคำตอบ (เช่น ใบเก่าก่อนมีคำถามข้อห้ามนวด/แรงนวด) · ครบแล้ว = สรุปผลเลย
-  const confirmReview = () => {
+  const confirmReview = (said = 'ยืนยันข้อมูลนี้') => {
     const missing = (['risk', 'pressure', 'avoid'] as const).find((k) => !assess[k]);
-    answerStep('ยืนยันข้อมูลนี้', {}, undefined, missing ? ASSESS_ORDER[ASSESS_ORDER.indexOf(missing) - 1] : 'avoid');
+    answerStep(said, {}, undefined, missing ? ASSESS_ORDER[ASSESS_ORDER.indexOf(missing) - 1] : 'avoid');
   };
   /** fresh = ผู้ใช้เลือก "ประเมินเรื่องใหม่" เอง → แท็บใหม่เสมอ (ไม่ทำต่อของค้าง ไม่รวมเข้าเรื่องเดิมเอง) */
   const newChat = (fresh = false) => {
@@ -2176,6 +2178,10 @@ export function HomeScreen() {
       notifyClinic('แจ้งอาการเพิ่มหลังเช็กอิน', `${noteTopic}: ${text}`);
       log('ผู้รับบริการ → ผู้ให้บริการ', `แจ้งอาการเพิ่มหลังเช็กอิน (${noteTopic}): ${text}`);
       return reply(text, 'ส่งให้ผู้ให้บริการแล้วค่ะ ผลประเมินเดิมยังอยู่ ผู้ให้บริการจะเห็นข้อความนี้แยกไว้');
+    }
+    // หน้าทบทวน: พูด/พิมพ์ยืนยัน ("ยืนยันข้อมูล" "ถูกต้องแล้ว" "ไม่ต้องแก้") → เหมือนกดยืนยัน · มีขอแก้ปนมา = แก้ก่อน
+    if (assess.step === 'review' && CONFIRM_ASK.test(text) && !EDIT_ASK.test(text.replace(/ไม่(ต้อง|มี(อะไร)?(ที่)?(จะ)?)?\s*แก้(ไข)?/g, ''))) {
+      return confirmReview(text);
     }
     const pend = pendingNow();
     // แชทของเรื่องที่รักษาอยู่: ขอดูผลการรักษา (พิมพ์/พูดเมื่อไหร่ก็ได้ ไม่ต้องมีเมนูค้างอยู่) → การ์ดผลการรักษาเหมือนกดเมนู
@@ -3054,7 +3060,7 @@ export function HomeScreen() {
                   ) : m.card?.type === 'fuAdverse' ? (
                     i === thread.length - 1 ? <ReplyChips options={FU_ADVERSE} onPick={once(answerFuAdverse)} /> : null
                   ) : m.card?.type === 'review' ? (
-                    <ReviewCard assess={assess} onEdit={editStep} onConfirm={confirmReview} active={assess.step === 'review'} />
+                    <ReviewCard assess={assess} onEdit={editStep} onConfirm={() => confirmReview()} active={assess.step === 'review'} />
                   ) : m.card?.type === 'intents' ? (
                     // ตัวเลือกเก่าในแชทกดซ้ำไม่ได้ (เฉพาะข้อความล่าสุด)
                     i === thread.length - 1 ? <IntentChips options={m.card.options} onPick={once(pickIntent)} /> : null
