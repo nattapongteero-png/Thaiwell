@@ -1,14 +1,12 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AIBall, GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
+import { GradientPill, Icon, IconButton, LatticeLoader, Text, componentTokens, radius, space, useGrid, useTheme, type IconName } from '../../design-system';
 import { useNav } from '../../navigation/types';
 import { AudioQuality, IOSOutputFormat, createAudioPlayer, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState, type AudioPlayer } from 'expo-audio';
 import { friendReply, heardSoFar, speak, summarizeTalk, transcribe, type Heard, type VoiceTurn } from '../../services/voiceAI';
 import { EMERGENCY } from '../../data/emergency';
-import { Strands } from '../../design-system/components/Strands';
+import { VoiceRibbon } from '../../design-system/components/VoiceRibbon';
 
 /**
  * คุยด้วยเสียงกับ ThaiWell AI — เหมือนคุยกับเพื่อนเพื่อระบายอาการ แล้ว AI สรุปให้ในรอบเดียว
@@ -225,110 +223,92 @@ export function AIVoiceScreen() {
   const lastUser = [...turns].reverse().find((x) => x.from === 'user');
 
   return (
-    <View style={{ flex: 1, backgroundColor: DARK.bg }}>
-      <StatusBar style="light" />
-      {/* พื้นมืดไล่แสงเขียวเข้มตรงกลาง (แสงเรืองดูสวยบนพื้นมืด) */}
-      <Svg style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 100">
-        <Defs>
-          <RadialGradient id="vbg" cx="50" cy="40" r="75" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor="#0E2A24" />
-            <Stop offset="0.55" stopColor="#06120F" />
-            <Stop offset="1" stopColor="#030807" />
-          </RadialGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100" height="100" fill="url(#vbg)" />
-      </Svg>
+    <View style={{ flex: 1, backgroundColor: colors.surface.canvas, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space[3]) }}>
+      {/* แถบบน */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[2] }}>
+        <IconButton icon="x" label="ปิด" onPress={() => (void stopAll(), nav.goBack())} />
+        <Text variant="labelLg">คุยกับไทยเวล</Text>
+        <IconButton icon="type" label="พิมพ์ในแชทแทน" onPress={() => (void stopAll(), nav.goBack())} />
+      </View>
 
-      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space[3]) }}>
-        {/* แถบบน */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[4], paddingTop: space[2] }}>
-          <GlassIcon icon="x" label="ปิด" onPress={() => (void stopAll(), nav.goBack())} />
-          <Text variant="labelLg" color="rgba(255,255,255,0.85)">
-            คุยกับไทยเวล
-          </Text>
-          <GlassIcon icon="type" label="พิมพ์ในแชทแทน" onPress={() => (void stopAll(), nav.goBack())} />
-        </View>
+      {/* สิ่งที่ไทยเวลจับได้ — ครบ = พร้อมสรุป */}
+      <View style={{ height: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingHorizontal: space[4] }}>
+        {turns.length
+          ? chips.map((c) => (
+              <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: c.value ? colors.brand.subtle : 'transparent', borderWidth: c.value ? 0 : 1, borderStyle: 'dashed', borderColor: colors.border.default }}>
+                {c.value ? <Icon name="check" size="xs" color={colors.brand.primary} /> : null}
+                <Text variant="labelSm" color={c.value ? colors.brand.primary : colors.text.tertiary}>
+                  {c.value ?? c.label}
+                </Text>
+              </View>
+            ))
+          : null}
+      </View>
 
-        {/* สิ่งที่ไทยเวลจับได้ */}
-        <View style={{ height: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingHorizontal: space[4] }}>
-          {turns.length
-            ? chips.map((c) => (
-                <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 28, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: c.value ? 'rgba(95,240,184,0.16)' : 'transparent', borderWidth: c.value ? 0 : 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.22)' }}>
-                  {c.value ? <Icon name="check" size="xs" color={DARK.mint} /> : null}
-                  <Text variant="labelSm" color={c.value ? DARK.mint : 'rgba(255,255,255,0.45)'}>
-                    {c.value ?? c.label}
-                  </Text>
-                </View>
-              ))
-            : null}
-        </View>
-
-        {/* เวที: เส้นแสงออกจากลูกแก้ว — เงียบ = เส้นตรงขยับนิดเดียว · พูด = พลิ้วตามเสียง */}
-        <View style={{ height: STAGE, alignItems: 'center', justifyContent: 'center' }}>
-          <Strands level={vol} active style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, height: undefined }} />
-          <View style={{ transform: [{ scale: 1 + vol * 0.08 }] }}>
-            <AIBall size={BALL} />
+      {/* คำบรรยาย: สิ่งที่พูดล่าสุด (เล็ก) + ไทยเวล (ใหญ่) · สรุป */}
+      <View style={{ flex: 1, justifyContent: 'flex-end', paddingHorizontal: space[6], gap: space[2], paddingBottom: space[4] }}>
+        {phase === 'summary' ? (
+          <View style={{ gap: space[2], padding: space[5], borderRadius: 24, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
+            <Text variant="labelSm" tone="secondary">
+              สรุปจากที่คุยกัน
+            </Text>
+            <Text variant="titleSm">{summary}</Text>
+            <Text variant="bodyXs" tone="tertiary">
+              ในแชทจะถามต่อเฉพาะข้อที่ยังขาด รวมถึงข้อห้ามนวด
+            </Text>
           </View>
-        </View>
-
-        {/* สถานะ + คำบรรยาย / สรุป */}
-        <View style={{ flex: 1, paddingHorizontal: space[6], alignItems: 'center', gap: space[3] }}>
-          {busy ? (
-            <ActivityIndicator color={DARK.mint} />
-          ) : (
-            <Text variant="labelMd" align="center" color={phase === 'emergency' || phase === 'error' ? '#FF8A80' : 'rgba(200,255,235,0.7)'}>
-              {STATUS[phase]}
+        ) : !turns.length ? (
+          <>
+            <Text variant="bodyMd" tone="tertiary" align="center">
+              สวัสดีค่ะ
             </Text>
-          )}
-          {phase === 'summary' ? (
-            <View style={{ alignSelf: 'stretch', gap: space[2], padding: space[4], borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
-              <Text variant="labelSm" color="rgba(255,255,255,0.55)">
-                สรุปจากที่คุยกัน
-              </Text>
-              <Text variant="titleSm" color="#FFFFFF">
-                {summary}
-              </Text>
-              <Text variant="bodyXs" color="rgba(255,255,255,0.5)">
-                ในแชทจะถามต่อเฉพาะข้อที่ยังขาด รวมถึงข้อห้ามนวด
-              </Text>
-            </View>
-          ) : !turns.length ? (
-            <Text variant="bodyMd" align="center" color="rgba(255,255,255,0.6)">
-              เล่าให้ฟังได้เลย เหมือนคุยกับเพื่อน{'\n'}ปวดตรงไหน เหนื่อยแค่ไหน แล้วกด "สรุป"
+            <Text variant="headlineSm" align="center">
+              วันนี้เป็นยังไงบ้าง{'\n'}เหนื่อยหรือปวดตรงไหนคะ
             </Text>
-          ) : (
-            <>
-              {lastUser ? (
-                <Text variant="bodySm" align="center" numberOfLines={2} color="rgba(255,255,255,0.5)">
-                  “{lastUser.text}”
-                </Text>
-              ) : null}
-              {lastAi ? (
-                <Text variant="titleMd" align="center" numberOfLines={4} color={phase === 'emergency' ? '#FF8A80' : '#FFFFFF'}>
-                  {lastAi.text}
-                </Text>
-              ) : null}
-            </>
-          )}
-        </View>
+          </>
+        ) : (
+          <>
+            {lastUser ? (
+              <Text variant="bodySm" tone="tertiary" align="center" numberOfLines={2}>
+                “{lastUser.text}”
+              </Text>
+            ) : null}
+            {lastAi ? (
+              <Text variant="headlineSm" align="center" numberOfLines={4} color={phase === 'emergency' ? colors.status.danger.fg : colors.text.primary}>
+                {lastAi.text}
+              </Text>
+            ) : null}
+          </>
+        )}
+      </View>
 
-        {/* แถบควบคุม */}
+      {/* ริบบิ้นอนุภาคตามเสียง: เงียบ = เส้นบางเกือบตรง · พูด = พลิ้วเป็นคลื่น */}
+      <VoiceRibbon level={vol} style={{ height: 200 }} />
+
+      {/* สถานะ */}
+      <View style={{ height: 40, alignItems: 'center', justifyContent: 'center' }}>
+        {busy ? (
+          <ActivityIndicator color={colors.text.tertiary} />
+        ) : (
+          <Text variant="labelMd" align="center" color={phase === 'emergency' || phase === 'error' ? colors.status.danger.fg : colors.text.tertiary}>
+            {STATUS[phase]}
+          </Text>
+        )}
+      </View>
+
+      {/* แถบควบคุม */}
+      <View style={{ flex: 0.6, justifyContent: 'flex-end' }}>
         {phase === 'summary' ? (
           <View style={{ gap: space[2], paddingHorizontal: space[5] }}>
-            <Pressable accessibilityRole="button" onPress={toChat} style={({ pressed }) => ({ height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: space[2], backgroundColor: '#FFFFFF', opacity: pressed ? 0.85 : 1 })}>
-              <Icon name="message-circle" size="sm" color={DARK.bg} />
-              <Text variant="labelLg" color={DARK.bg}>
-                ประเมินต่อในแชท
-              </Text>
-            </Pressable>
+            <GradientPill label="ประเมินต่อในแชท" icon="message-circle" onPress={toChat} />
             <Pressable accessibilityRole="button" onPress={() => void listen()} style={{ alignItems: 'center', paddingVertical: space[2] }}>
-              <Text variant="labelMd" color="rgba(255,255,255,0.65)">
+              <Text variant="labelMd" tone="secondary">
                 คุยต่ออีกหน่อย
               </Text>
             </Pressable>
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: space[8], paddingTop: space[2] }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: space[8] }}>
             <SideAction icon="rotate-ccw" label="เริ่มใหม่" disabled={!turns.length} onPress={() => void stopAll().then(start)} />
             <MicButton phase={phase} onPress={phase === 'emergency' ? () => nav.navigate('RedFlag', { reason: 'อาการที่เล่าในโหมดเสียง' }) : tapOrb} />
             <SideAction icon="check" label="สรุป" disabled={!canSummarize} onPress={() => void summarize()} />
@@ -339,26 +319,13 @@ export function AIVoiceScreen() {
   );
 }
 
-/** สีของโหมดเสียง (พื้นมืดเสมอ ไม่ตามธีม) */
-const DARK = { bg: '#06120F', mint: '#9FF5D4' };
-/** ความสูงเวทีเส้นแสง · ขนาดลูกแก้ว */
-const STAGE = 300;
-
-/** ปุ่มไอคอนกระจกบนพื้นมืด */
-function GlassIcon({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={6} style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)' })}>
-      <Icon name={icon} size="sm" color="#DDF7EE" />
-    </Pressable>
-  );
-}
-
 /** ปุ่มไมค์หลัก: ว่าง = เริ่มพูด · ฟัง = ส่งที่พูด · AI พูด = ขัดแล้วพูดต่อ · ฉุกเฉิน = ดูคำแนะนำ */
 function MicButton({ phase, onPress }: { phase: Phase; onPress: () => void }) {
+  const { colors } = useTheme();
   const busy = phase === 'transcribing' || phase === 'thinking' || phase === 'summarizing';
   const icon: IconName = phase === 'listening' ? 'arrow-up' : phase === 'speaking' ? 'pause' : phase === 'emergency' ? 'alert-triangle' : 'mic';
   const label = phase === 'listening' ? 'ส่งที่พูด' : phase === 'speaking' ? 'หยุดแล้วพูด' : phase === 'emergency' ? 'ดูคำแนะนำ' : phase === 'idle' ? 'เริ่มคุย' : 'พูด';
-  const danger = phase === 'emergency';
+  const bg = phase === 'emergency' ? colors.status.danger.fg : colors.text.primary;
   return (
     <View style={{ alignItems: 'center', gap: space[2] }}>
       <Pressable
@@ -366,11 +333,11 @@ function MicButton({ phase, onPress }: { phase: Phase; onPress: () => void }) {
         accessibilityLabel={label}
         disabled={busy}
         onPress={onPress}
-        style={({ pressed }) => ({ width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center', backgroundColor: danger ? '#E5484D' : '#FFFFFF', opacity: busy ? 0.35 : pressed ? 0.85 : 1, shadowColor: danger ? '#E5484D' : '#5FF0B8', shadowOpacity: 0.55, shadowRadius: 18, shadowOffset: { width: 0, height: 0 } })}
+        style={({ pressed }) => ({ width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: bg, opacity: busy ? 0.35 : pressed ? 0.85 : 1, shadowColor: bg, shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } })}
       >
-        <Icon name={icon} size="lg" color={danger ? '#FFFFFF' : DARK.bg} />
+        <Icon name={icon} size="lg" color="#FFFFFF" />
       </Pressable>
-      <Text variant="labelSm" color="rgba(255,255,255,0.6)">
+      <Text variant="labelSm" tone="secondary">
         {label}
       </Text>
     </View>
@@ -379,12 +346,13 @@ function MicButton({ phase, onPress }: { phase: Phase; onPress: () => void }) {
 
 /** ปุ่มข้าง (เริ่มใหม่ · สรุป) */
 function SideAction({ icon, label, onPress, disabled }: { icon: IconName; label: string; onPress: () => void; disabled?: boolean }) {
+  const { colors } = useTheme();
   return (
-    <View style={{ alignItems: 'center', gap: space[2], opacity: disabled ? 0.3 : 1, paddingTop: 12 }}>
-      <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' })}>
-        <Icon name={icon} size="md" color="#DDF7EE" />
+    <View style={{ alignItems: 'center', gap: space[2], opacity: disabled ? 0.35 : 1, paddingTop: 11 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? colors.surface.sunken : colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle })}>
+        <Icon name={icon} size="md" color={colors.text.primary} />
       </Pressable>
-      <Text variant="labelSm" color="rgba(255,255,255,0.6)">
+      <Text variant="labelSm" tone="secondary">
         {label}
       </Text>
     </View>
