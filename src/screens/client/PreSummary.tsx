@@ -229,7 +229,7 @@ export function CheckInScreen({ route }: { route?: { params?: { caseId?: string;
                 <View style={{ flex: 1 }}>
                   <TextField label="หรือพิมพ์รหัส 6 ตัวใต้ QR" value={code} onChangeText={(v) => setCode(v.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6))} placeholder="เช่น K7P2QX" autoCapitalize="characters" autoCorrect={false} />
                 </View>
-                <Button label="เช็กอิน" size="md" fullWidth={false} disabled={code.length !== 6 || sending} loading={sending} onPress={() => void submit(code)} />
+                <Button label="เช็กอิน" size="md" fullWidth={false} style={{ alignSelf: 'flex-end' }} disabled={code.length !== 6 || sending} loading={sending} onPress={() => void submit(code)} />
               </View>
               {issue ? (
                 <Text variant="bodySm" color={colors.status.danger.fg}>
