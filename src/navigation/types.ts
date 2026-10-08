@@ -12,7 +12,6 @@ export type RootStackParamList = {
   Consent: { from?: 'signup' } | undefined;
   ElementQuiz: undefined;
   Interview: undefined;
-  AIVoice: undefined;
   BodyMap: undefined;
   Assessment: undefined;
   PreSummary: undefined;

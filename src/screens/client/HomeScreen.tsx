@@ -68,6 +68,8 @@ import { ASSESS_LOCK_TEXT, assessLock, caseClinic, needsConfirm, preVisitOpensOn
 import { isoToLabel, readAvailability, todayISO } from '../../services/clinicBridge';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findTherapist } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
+import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
+import { VoiceChatDock } from './home/VoiceChatDock';
 import { classifyTurn, isPlainAnswer, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
@@ -212,6 +214,33 @@ const FOCUS_SCALE = 0.94;
 const DRAG_SLOP = 6;
 /** เวลาจำลองที่ AI ใช้คิดก่อนตอบ (ยังไม่เชื่อม AI จริง) */
 const THINK_MS = 1800;
+/** สถานะในแถบเสียงของแชท */
+const VOICE_STATUS: Record<VoicePhase, string> = {
+  off: '',
+  listening: 'กำลังฟัง… พูดได้เลยค่ะ',
+  transcribing: 'กำลังฟังให้ชัด…',
+  waiting: 'กำลังคิด…',
+  speaking: 'ไทยเวลกำลังพูด',
+  paused: 'แตะไมค์เพื่อพูดต่อ',
+  error: 'เชื่อมต่อไม่ได้ แตะไมค์ลองใหม่',
+};
+/** การ์ดที่ตอบด้วยเสียงไม่ได้ (ต้องแตะเลือก) → พักไมค์ */
+const VOICE_TAP_ONLY = ['slotPick', 'therapistPick', 'placePick', 'bookConfirm'];
+/** ข้อความที่อ่านออกเสียง: ตัดชื่อผู้ใช้ (ไม่ส่งไป endpoint ที่ไม่มี key) · ตัดสัญลักษณ์ · สั้นพอฟังรู้เรื่อง (รายละเอียดอยู่ในการ์ด) */
+function spokenOf(texts: string[], name: string) {
+  const first = name.trim().split(/\s+/)[0];
+  let t = texts
+    .join(' ')
+    .replace(/[*#_`>•·|→←↗✓✔︎]/g, ' ')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  for (const n of [name.trim(), first]) if (n) t = t.split(`คุณ${n}`).join('').split(n).join('');
+  t = t.replace(/\s+/g, ' ').trim();
+  if (t.length <= 180) return t;
+  const cut = t.slice(0, 180);
+  return cut.slice(0, Math.max(cut.lastIndexOf(' '), 80)).trim();
+}
 /**
  * padding ล่างภายใน header (ใต้ข้อความ) = ช่วงที่เนื้อหาเลื่อนผ่านจะจางหาย
  *   ข้อความ header ─ ช่องว่างล้วน (HEADER_CLEAR) ─ ช่วงจาง (FADE_TAIL) ─ เนื้อหาชัดเต็มที่
@@ -1273,7 +1302,7 @@ export function HomeScreen() {
     newChat();
   };
   /** มาจากเช็กอิน "ประเมินก่อนนวด" → เปิดเรื่องนั้นแล้วเริ่มถามในแชทของเรื่องนั้น */
-  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string; voiceText?: string } }>();
+  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string } }>();
   const assessFor = React.useRef<string | null>(null);
   React.useEffect(() => {
     const id = route.params?.assessCase;
@@ -1555,8 +1584,17 @@ export function HomeScreen() {
     const y = target ? itemY.current[target.id] : undefined;
     if (y !== undefined) scrollToY(threadY.current + y);
   };
-  // ไมค์ในช่องแชท → โหมดคุยด้วยเสียง (ref: AI Receptionist)
-  const openVoice = () => nav.navigate('AIVoice');
+  /* ---------- คุยด้วยเสียงในแชท ----------
+   * ไมค์ในช่องแชท → ช่องพิมพ์กลายเป็นแถบเสียง · คำที่พูด = ข้อความของผู้ใช้ (ผ่าน send เหมือนพิมพ์)
+   * คำตอบขึ้นในแชทเป็นการ์ด/ข้อความแบบเดิม แล้วอ่านข้อความสั้นออกเสียง → ฟังต่อเอง
+   * การ์ดที่ต้องแตะ (เลือกเวลา/ผู้ให้บริการ/สถานที่/ยืนยันจอง) หรือคำเตือนฉุกเฉิน → พักไมค์ ให้แตะในแชท */
+  const sendRef = React.useRef<(text: string) => void>(() => undefined);
+  const voiceSeen = React.useRef<Set<string>>(new Set());
+  const voice = useVoiceChat((text) => sendRef.current(text));
+  const openVoice = () => {
+    voiceSeen.current = new Set(thread.map((m) => m.id));
+    void voice.listen();
+  };
   // ยังไม่เชื่อม AI จริง — ตอบกลับตัวอย่างเพื่อแสดง concept
   /* ---------- หน้าแรกแบบแชท (ยังไม่มีข้อมูลอะไรเลย) ---------- */
   const startAssess = (userText: string) => {
@@ -2111,29 +2149,32 @@ export function HomeScreen() {
     if (pend && shortOk && isPlainAnswer(text, pend.options)) return routeAnswer(text);
     triage(text, pend);
   };
-  /**
-   * สรุปจากโหมดเสียง → แชทใหม่ แล้วส่งสรุปเหมือนผู้ใช้พิมพ์เล่า (ระบบดึงอาการ/คะแนน/ระยะเวลา แล้วถามข้อที่ยังขาด)
-   * แชทใหม่ไม่ถาม "เรื่องเดิมหรืออาการใหม่" (เล่ามาแล้วว่าเป็นอะไร)
-   */
-  const [voicePending, setVoicePending] = React.useState<string | null>(null);
+  sendRef.current = send;
+  // แชทตอบแล้ว (ข้อความใหม่หลังจากที่พูด/แตะ) → อ่านออกเสียงข้อความสั้น ๆ แล้วฟังต่อ หรือพักถ้าต้องแตะการ์ด
   React.useEffect(() => {
-    const v = route.params?.voiceText;
-    if (!v) return;
-    nav.setParams({ voiceText: undefined } as never);
-    setVoicePending(v);
-    newChat(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.params?.voiceText]);
-  React.useEffect(() => {
-    if (!voicePending || active.items.some((m) => m.from === 'user')) return;
-    if (assess.step === 'topic') {
-      setAssess((a) => ({ ...a, step: 'idle' }));
+    if (voice.phase !== 'waiting' && voice.phase !== 'paused') {
+      thread.forEach((m) => voiceSeen.current.add(m.id));
       return;
     }
-    setVoicePending(null);
-    send(voicePending);
+    const last = thread[thread.length - 1];
+    if (!last || last.from !== 'ai' || last.thinking) return;
+    const fresh = thread.filter((m) => m.from === 'ai' && !voiceSeen.current.has(m.id));
+    if (!fresh.length) return;
+    const tm = setTimeout(() => {
+      thread.forEach((m) => voiceSeen.current.add(m.id));
+      const urgent = fresh.some((m) => m.card?.type === 'action' && m.card.to === 'RedFlag');
+      const tapOnly = !!last.card && VOICE_TAP_ONLY.includes(last.card.type);
+      void voice.say(spokenOf(fresh.map((m) => m.text ?? ''), client.name), urgent || tapOnly ? 'pause' : 'listen', urgent ? 'ดูคำแนะนำในแชท' : tapOnly ? 'แตะเลือกบนการ์ดได้เลย' : undefined);
+    }, 350);
+    return () => clearTimeout(tm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voicePending, activeId, assess.step]);
+  }, [thread, voice.phase]);
+  // ออกจากแชท / เปลี่ยนแชท / ไปแท็บอื่น → ปิดไมค์
+  const homeFocused = useIsFocused();
+  React.useEffect(() => {
+    if (!started || !homeFocused) void voice.off();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, homeFocused, activeId]);
   const triage = (text: string, pend: ReturnType<typeof pendingNow>) => {
     const sid = activeId;
     const time = nowTimeText();
@@ -2325,11 +2366,15 @@ export function HomeScreen() {
         <ReplyChips options={shortcuts} onPick={pickShortcut} />
       </ScrollView>
       ) : null}
-      <ChatComposer onSend={send} onVoice={openVoice} />
+      {voice.phase === 'off' ? (
+        <ChatComposer onSend={send} onVoice={openVoice} />
+      ) : (
+        <VoiceChatDock voice={voice} status={voice.hint ?? VOICE_STATUS[voice.phase]} />
+      )}
     </Animated.View>
     </View>
     ),
-    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases, shortcuts.join('|'), assess.step, caseToday],
+    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases, shortcuts.join('|'), assess.step, caseToday, voice.phase, voice.hint, voice.muted],
   );
 
   /* ---------- หน้าเริ่มต้น: ป้ายชี้บริเวณที่รักษาครั้งล่าสุดบนหุ่น ---------- */

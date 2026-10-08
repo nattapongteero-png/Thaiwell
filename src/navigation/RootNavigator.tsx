@@ -18,7 +18,6 @@ import { AppointmentDetailScreen } from '../screens/client/AppointmentDetail';
 import { PlaceDetailScreen } from '../screens/client/places/PlaceDetail';
 import { ElementQuizScreen } from '../screens/client/ElementQuizScreen';
 import { InterviewScreen } from '../screens/client/InterviewScreen';
-import { AIVoiceScreen } from '../screens/client/AIVoiceScreen';
 import { BodyMapScreen, AssessmentScreen } from '../screens/client/PreScreening';
 import { PreSummaryScreen, CheckInScreen, RedFlagScreen } from '../screens/client/PreSummary';
 import { PostAssessmentScreen, SessionResultScreen, FollowUpScreen, SelfCareScreen, StretchListScreen } from '../screens/client/AfterService';
@@ -87,7 +86,6 @@ export function RootNavigator() {
         <Stack.Screen name="Consent" component={ConsentScreen} />
         <Stack.Screen name="ElementQuiz" component={ElementQuizScreen} />
         <Stack.Screen name="Interview" component={InterviewScreen} />
-        <Stack.Screen name="AIVoice" component={AIVoiceScreen} options={{ presentation: 'fullScreenModal', animation: 'fade_from_bottom' }} />
         <Stack.Screen name="BodyMap" component={BodyMapScreen} />
         <Stack.Screen name="Assessment" component={AssessmentScreen} />
         <Stack.Screen name="PreSummary" component={PreSummaryScreen} />
