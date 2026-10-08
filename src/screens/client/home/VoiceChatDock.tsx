@@ -29,8 +29,8 @@ export function VoiceChatDock({ voice, status, onSend, onVoice }: { voice: Voice
       if (v.phase === 'listening') {
         const m = v.recorder.getStatus().metering;
         v.tick(m);
-        // dBFS → 0–1 (ไม่ยกกำลัง: เสียงเบาก็เห็นคลื่นขยับ)
-        target = Math.max(0, Math.min(1, ((m ?? -60) + 52) / 36));
+        // เทียบกับเสียงพื้นหลัง → เสียงแวดล้อมไม่ทำให้คลื่นขึ้น ขึ้นเมื่อพูดจริง
+        target = v.levelOf(m);
       } else if (v.phase === 'speaking' && !v.muted) {
         // ไทยเวลพูด (ไม่มีระดับเสียงจากเครื่องเล่น) → จังหวะพูดจำลอง ขึ้นลงไม่สม่ำเสมอ
         target = 0.35 + 0.3 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.9 + 1));

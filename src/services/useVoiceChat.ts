@@ -21,7 +21,12 @@ const REC_OPTIONS = {
 };
 /** เงียบหลังพูดนานเท่านี้ = จบประโยค (ms) · พูดยาวสุดต่อรอบ · รอแชทตอบนานสุด */
 const SILENCE_MS = 1400;
-const MAX_TURN_MS = 40000;
+/** วัดเสียงพื้นหลังหลังเปิดไมค์ (ms) · ดังกว่าพื้นหลังกี่ dB = พูด · ต่ำกว่ากี่ dB = เงียบ · ดังต่อเนื่องนานเท่าไหร่ถึงนับว่าพูด */
+const CALIBRATE_MS = 350;
+const SPEAK_DB = 12;
+const QUIET_DB = 6;
+const MIN_SPEECH_MS = 250;
+const MAX_TURN_MS = 25000;
 const MAX_WAIT_MS = 60000;
 
 export function useVoiceChat(onHeard: (text: string) => void) {
@@ -73,6 +78,7 @@ export function useVoiceChat(onHeard: (text: string) => void) {
       startedAt.current = Date.now();
       lastTick.current = Date.now();
       floor.current = -50;
+      loudFor.current = 0;
       await recorder.prepareToRecordAsync();
       recorder.record();
       if (alive.current && phaseRef.current === 'starting') setPhase('listening');
@@ -98,7 +104,8 @@ export function useVoiceChat(onHeard: (text: string) => void) {
     try {
       const text = await transcribe(uri);
       if (!alive.current || phaseRef.current !== 'transcribing') return;
-      if (!text) return void listen();
+      // ถอดได้แค่เสียงรบกวน (ว่าง / 1 ตัวอักษร) → ฟังต่อ ไม่ส่งเข้าแชท
+      if (text.replace(/[\s.,!?…]/g, '').length < 2) return void listen();
       setPhase('waiting');
       heardRef.current(text);
       // แชทไม่ตอบ (ค้าง) → พักไว้ ไม่ค้างหน้า "กำลังคิด"
@@ -157,24 +164,41 @@ export function useVoiceChat(onHeard: (text: string) => void) {
   };
 
   // จับช่วงเงียบ (ระดับเสียงมาจาก tick ถี่ ๆ — วัดใน component ช่องแชท ไม่ให้หน้าแชททั้งหน้า render ตาม)
-  // ระดับเสียงสูงกว่าพื้นหลังพอ = กำลังพูด · พูดแล้วเงียบนาน = จบประโยค
+  // ตัดเสียงแวดล้อม: วัดระดับเสียงพื้นหลังตลอด (ลงเร็ว ขึ้นช้า — เสียงพัดลม/แอร์/คนคุยรอบ ๆ ที่ดังคงที่ = พื้นหลัง)
+  // พูด = ดังกว่าพื้นหลัง ≥ SPEAK_DB ต่อเนื่องพอ (ไม่นับเสียงกระแทกสั้น ๆ) · เงียบ = กลับมาใกล้พื้นหลัง (< พื้นหลัง + QUIET_DB)
   const spoke = React.useRef(false);
   const silentFor = React.useRef(0);
+  const loudFor = React.useRef(0);
   const startedAt = React.useRef(0);
   const floor = React.useRef(-50);
   const lastTick = React.useRef(0);
   const tick = (metering: number | undefined) => {
     if (phaseRef.current !== 'listening' || !recorder.isRecording) return;
+    const now = Date.now();
+    const dt = Math.min(200, now - lastTick.current);
+    lastTick.current = now;
     const m = metering ?? -160;
-    if (!spoke.current) floor.current = Math.min(-30, Math.max(-70, floor.current * 0.9 + m * 0.1));
-    if (m > Math.max(floor.current + 10, -42)) {
-      spoke.current = true;
+    // ช่วงแรกหลังเปิดไมค์ = วัดพื้นหลังอย่างเดียว
+    if (now - startedAt.current < CALIBRATE_MS) {
+      floor.current = floor.current === -50 ? m : floor.current * 0.7 + m * 0.3;
+      return;
+    }
+    // ลงเร็ว (เงียบลง) · ขึ้นช้ามาก (ไม่ให้เสียงพูดดันพื้นหลังขึ้นมา)
+    floor.current = m < floor.current ? floor.current * 0.6 + m * 0.4 : floor.current + Math.min(m - floor.current, 6) * (spoke.current ? 0.004 : 0.03) * (dt / 50);
+    const over = m - floor.current;
+    if (over >= SPEAK_DB) {
+      loudFor.current += dt;
+      if (loudFor.current >= MIN_SPEECH_MS) spoke.current = true;
       silentFor.current = 0;
-    } else if (spoke.current) silentFor.current += Date.now() - lastTick.current;
-    lastTick.current = Date.now();
-    if ((spoke.current && silentFor.current >= SILENCE_MS) || Date.now() - startedAt.current > MAX_TURN_MS) void finishTurn();
+    } else {
+      loudFor.current = Math.max(0, loudFor.current - dt);
+      if (spoke.current && over < QUIET_DB) silentFor.current += dt;
+    }
+    if ((spoke.current && silentFor.current >= SILENCE_MS) || now - startedAt.current > MAX_TURN_MS) void finishTurn();
   };
+  /** ระดับเสียงสำหรับเส้นแสง: เทียบกับพื้นหลัง (เสียงแวดล้อมไม่ทำให้คลื่นขึ้น) */
+  const levelOf = (metering: number | undefined) => Math.max(0, Math.min(1, ((metering ?? -160) - floor.current - QUIET_DB) / 26));
 
-  return { phase, hint, muted, setMuted, recorder, tick, listen, pause, say, off, toggle };
+  return { phase, hint, muted, setMuted, recorder, tick, levelOf, listen, pause, say, off, toggle };
 }
 export type VoiceChat = ReturnType<typeof useVoiceChat>;
