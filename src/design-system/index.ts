@@ -20,6 +20,7 @@ export * from './components/Wellness';
 export * from './components/TabBar';
 export * from './components/DockIcons';
 export * from './components/Body3D';
+export * from './components/BodyIcon';
 export * from './components/StretchDemo';
 export * from './components/Skeleton';
 export * from './components/Glass';

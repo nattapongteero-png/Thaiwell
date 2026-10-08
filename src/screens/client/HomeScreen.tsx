@@ -46,6 +46,7 @@ import {
   type Body3DHandle,
   type BodyPoint,
   type BodyPin,
+  BodyIcon,
   type IconName,
   type BodyRegion,
   stretchGif,
@@ -3251,7 +3252,7 @@ export function HomeScreen() {
                     {i ? 'ร่วมด้วย' : 'ปวดมากสุด'}
                   </Text>
                 ) : null}
-                <BodyTagPill dot={modelTag.color} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
+                <BodyTagPill dot={modelTag.color} body={modelTag.pins?.[i]} label={it} onPress={() => facePinOf(modelTag.pins?.[i])} />
               </React.Fragment>
             ))}
             {modelTag.note ? (
@@ -6067,7 +6068,7 @@ function ChatHistorySheet({
 }
 
 /** ป้ายบนหุ่นหน้าแรก: จุด (สีตามระดับปวด) หรือไอคอน + คำสั้น · warn = ส้ม · avoid = เทา */
-function BodyTagPill({ dot, icon, label, tone, onPress }: { dot?: string; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
+function BodyTagPill({ dot, body, icon, label, tone, onPress }: { dot?: string; /** มีจุดบนหุ่น → ไอคอนหุ่นจิ๋วระบายบริเวณนั้น (สี dot) แทนจุดสี */ body?: BodyPin; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
   const { colors } = useTheme();
   const fg = tone === 'warn' ? colors.status.warning.fg : tone === 'avoid' ? colors.text.secondary : colors.text.primary;
   const bg = tone === 'warn' ? colors.status.warning.bg : colors.surface.default;
@@ -6076,9 +6077,9 @@ function BodyTagPill({ dot, icon, label, tone, onPress }: { dot?: string; icon?:
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: body ? space[1] : space[3], paddingRight: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
     >
-      {dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
+      {dot && body ? <BodyIcon pins={[body]} color={dot} size={22} /> : dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
       {icon ? <Icon name={icon} size="xs" color={fg} /> : null}
       <Text variant="labelSm" numberOfLines={1} color={fg}>
         {label}
