@@ -41,19 +41,26 @@ export function TreatmentDetailBody({ tc, visit = null }: { tc: TreatmentCase; /
   // นัดที่คลินิกลงไว้แล้ว (นัดตามแผน) · ไม่มี = นัดครั้งถัดไปนัดเดียว
   const booked = Math.min(total - used, Math.max(plannedVisits[tc.id]?.length ?? 0, hasNext ? 1 : 0));
   const areaText = tc.areas.map((a) => a.label).join(' · ');
+  // ครบคอร์สและไม่มีนัดค้าง (ชุดเดียวกับที่ย้ายไป "รักษาจบแล้ว")
+  const done = tc.finished ?? (used >= total && !hasNext);
 
   return (
     <View style={{ gap: space[3] }}>
       {/* สรุป 4 ช่อง (พื้นเทาอ่อน ไม่มีขอบ แบบหลังบ้าน) */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
-        <Stat label="รับบริการแล้ว" value={`${tc.visits.length}`} unit="ครั้ง" />
+        {/* ครบคอร์สแล้ว → บอกตรง ๆ ว่าจบ (ตัวเลขเฉย ๆ ไม่รู้ว่าจบหรือยัง) · ยังไม่ครบ = ครั้งที่ใช้ไป/ทั้งหมด */}
+        {done ? (
+          <Stat label="คอร์สการรักษา" value="ครบแล้ว" unit={`รับบริการ ${used}/${total} ครั้ง`} color={colors.brand.primary} />
+        ) : (
+          <Stat label="รับบริการแล้ว" value={`${used}/${total}`} unit="ครั้ง" />
+        )}
         <Stat label="Pain ล่าสุด" value={`${latest ?? '-'}`} unit="/10" color={latest !== undefined ? painColor(latest) : undefined} />
         <Stat label="เปลี่ยนแปลง" value={`${change > 0 ? '↘ ' : ''}${Math.abs(change)}`} unit={change > 0 ? 'ดีขึ้น' : 'เท่าเดิม'} color={change > 0 ? colors.brand.primary : undefined} />
-        <Stat label="นัดถัดไป" value={hasNext ? tc.appointment.time : '-'} unit={hasNext ? tc.appointment.date : 'ยังไม่มีนัด'} small />
+        <Stat label="นัดถัดไป" value={hasNext ? tc.appointment.time : '-'} unit={hasNext ? tc.appointment.date : done ? 'จบการรักษาแล้ว' : 'ยังไม่มีนัด'} small />
       </View>
 
       {/* คอร์สการรักษา */}
-      <Section icon="clipboard" tint="#C2782B" title="คอร์สการรักษา" right={<Chip text={`เหลือ ${total - used} ครั้ง`} />}>
+      <Section icon="clipboard" tint="#C2782B" title="คอร์สการรักษา" right={<Chip text={done ? 'ครบแล้ว' : `เหลือ ${total - used} ครั้ง`} tone={done ? 'good' : undefined} />}>
         <View style={{ gap: 2 }}>
           <Text variant="labelLg">{clinicCourse ? clinicCourse.name : tc.plan} {total} ครั้ง</Text>
           {clinicCourse?.expiresOn ? (
