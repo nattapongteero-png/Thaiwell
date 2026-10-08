@@ -3338,8 +3338,8 @@ export function HomeScreen() {
             </View>
               <View pointerEvents="box-none" style={{ flexDirection: 'row' }}>
                 {/* pill ธาตุแบบ back-office: ไอคอนสีธาตุ + ป้าย + ชื่อธาตุ · ธาตุกำเนิด (คนไข้ใหม่) = ธาตุเจ้าเรือน · จากแบบประเมิน = ธาตุปัจจุบัน */}
-                {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น (หัวสั้นลง 1 บรรทัด) */}
-                {tagElement && !modelTag ? (
+                {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น (หัวสั้นลง 1 บรรทัด) · หน้าแชท = ไม่แสดงธาตุ */}
+                {tagElement && !modelTag && !started ? (
                   <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
                 ) : null}
               </View>
