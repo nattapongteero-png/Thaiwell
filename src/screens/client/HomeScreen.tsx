@@ -71,8 +71,9 @@ import { isoToLabel, readAvailability, todayISO } from '../../services/clinicBri
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findTherapist } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
+import type { HeardContext } from '../../services/voiceAI';
 import { VoiceChatDock } from './home/VoiceChatDock';
-import { EMPTY_FIELDS, classifyTurn, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
+import { EMPTY_FIELDS, classifyTurn, evidenced, extractStory, isPlainAnswer, mergeFields, type Turn, type TurnEnums, type TurnFields } from '../../services/chatTurn';
 import { askKnowledge, planMassage } from '../../services/knowledgeSearch';
 import { buildIntake } from '../../data/massageIntake';
 import { guideFor, guideKeyOf } from '../../data/treatmentGuides';
@@ -1701,7 +1702,11 @@ export function HomeScreen() {
    * การ์ดที่ต้องแตะ (เลือกเวลา/ผู้ให้บริการ/สถานที่/ยืนยันจอง) หรือคำเตือนฉุกเฉิน → พักไมค์ ให้แตะในแชท */
   const sendRef = React.useRef<(text: string) => void>(() => undefined);
   const voiceSeen = React.useRef<Set<string>>(new Set());
-  const voice = useVoiceChat((text) => sendRef.current(text));
+  const ctxRef = React.useRef<() => HeardContext>(() => ({}));
+  const voice = useVoiceChat(
+    (text) => sendRef.current(text),
+    () => ctxRef.current(),
+  );
   const openVoice = () => {
     voiceSeen.current = new Set(thread.map((m) => m.id));
     void voice.listen();
@@ -1985,7 +1990,8 @@ export function HomeScreen() {
       if (turn) {
         if (st === 'pain' && turn.fields.pain !== null) return answerStep(text, { pain: turn.fields.pain }, { pain: turn.fields.pain });
         const v = turn.option ?? (turn.fields as unknown as Record<string, string | null>)[st];
-        if (st !== 'pain' && st !== 'symptoms' && st !== 'related' && typeof v === 'string' && opts[st].includes(v)) return answerStep(text, { [st]: v } as Partial<Assessment>);
+        // โรค / ยา / การแพ้ ตอบได้หลายข้อ + ชื่ออิสระ → ดึงเป็นรายการด้านล่าง (ตัวเลือกเดียวจากตัวคัดแยกจะทำข้ออื่นหาย)
+        if (st !== 'pain' && st !== 'symptoms' && st !== 'related' && st !== 'health' && st !== 'meds' && st !== 'allergy' && typeof v === 'string' && opts[st].includes(v)) return answerStep(text, { [st]: v } as Partial<Assessment>);
         if (st === 'symptoms' && turn.fields.symptoms?.length) {
           pickSymptoms(turn.fields.symptoms);
           return answerStep(text);
@@ -2339,6 +2345,14 @@ export function HomeScreen() {
     triage(text, pend);
   };
   sendRef.current = send;
+  // บริบทให้ถอดเสียง/ตรวจคำที่ได้ยิน: ข้อความล่าสุดของผู้ช่วย + ตัวเลือกของข้อที่ถามอยู่ + ที่ผู้ใช้พูดก่อนหน้า
+  ctxRef.current = () => {
+    const lastAi = [...thread].reverse().find((m) => m.from === 'ai' && m.text);
+    const recent = thread.filter((m) => m.from === 'user' && m.text).slice(-3).map((m) => m.text!);
+    const st = assess.step;
+    const opts = st !== 'idle' && st !== 'done' && st !== 'review' ? stepOpts()[st] : undefined;
+    return { question: lastAi?.text, options: opts?.length ? opts : undefined, recent };
+  };
   /**
    * ส่งข้อความเดิมต่อในแชทอื่น: to = แชทของเรื่องนั้น (เช่น ขอจองนัดของอีกเรื่อง) · ไม่มี to = แชทใหม่
    * แชทใหม่ข้ามข้อ "เรื่องเดิม/อาการใหม่" เพราะบอกแล้วว่าใหม่
@@ -2441,8 +2455,10 @@ export function HomeScreen() {
     const ENUMS: TurnEnums = { symptoms: ALL_SYMPTOMS, duration: DURATION_OPTIONS, cause: CAUSE_OPTIONS, health: HEALTH_OPTIONS, risk: RISK_OPTIONS, pressure: PRESSURE_OPTIONS, avoid: AVOID_OPTIONS, radiate: ALL_RADIATE_OPTIONS };
     // เล่ายาว (หลายข้อในทีเดียว) → ดึงข้อมูลแต่ละข้อแบบเจาะจงคู่ขนาน แล้วรวมกับผลตัวคัดแยก
     const long = text.trim().length >= 25;
+    const st0 = assess.step;
     Promise.all([classifyTurn(text, pend, ENUMS, SYMPTOM_PROMPT), long ? extractStory(text, { ...ENUMS, related: HOME_CONTENT.related }, SYMPTOM_PROMPT, STEP_HINT).catch(() => null) : null])
-      .then(([t0, story]) => ({ ...t0, fields: mergeFields(t0.fields, story) }))
+      // ตัดข้อที่ข้อความไม่ได้พูดถึงจริง · อาการชา/อ่อนแรงตอนตอบข้ออาการร่วม/อาการร้าว = คำตอบข้อนั้น (กฎคัดกรองตัดสิน) ไม่ใช่เหตุฉุกเฉินจาก AI
+      .then(([t0, story]) => ({ ...t0, danger: t0.danger && !(st0 === 'related' || st0 === 'radiate'), fields: evidenced(mergeFields(t0.fields, story), text) }))
       .then(async (turn) => {
         const tc = chatCase();
         const st = assess.step;

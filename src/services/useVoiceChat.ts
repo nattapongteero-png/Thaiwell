@@ -1,6 +1,6 @@
 import React from 'react';
 import { AudioQuality, IOSOutputFormat, createAudioPlayer, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, type AudioPlayer } from 'expo-audio';
-import { speak, transcribe } from './voiceAI';
+import { speak, transcribe, understandHeard, type HeardContext } from './voiceAI';
 
 /**
  * คุยด้วยเสียงในแชท: ฟัง (จับช่วงเงียบตัดประโยค) → ถอดเสียง → ส่งเข้าแชทเหมือนพิมพ์ (onHeard)
@@ -29,7 +29,7 @@ const MIN_SPEECH_MS = 250;
 const MAX_TURN_MS = 60000;
 const MAX_WAIT_MS = 60000;
 
-export function useVoiceChat(onHeard: (text: string) => void) {
+export function useVoiceChat(onHeard: (text: string) => void, contextOf?: () => HeardContext) {
   const [phase, setPhaseState] = React.useState<VoicePhase>('off');
   const [hint, setHint] = React.useState<string | null>(null);
   const [muted, setMuted] = React.useState(false);
@@ -42,6 +42,8 @@ export function useVoiceChat(onHeard: (text: string) => void) {
   mutedRef.current = muted;
   const heardRef = React.useRef(onHeard);
   heardRef.current = onHeard;
+  const ctxRef = React.useRef(contextOf);
+  ctxRef.current = contextOf;
   const recorder = useAudioRecorder(REC_OPTIONS);
   const player = React.useRef<AudioPlayer | null>(null);
   const alive = React.useRef(true);
@@ -116,10 +118,16 @@ export function useVoiceChat(onHeard: (text: string) => void) {
     if (!uri || !spoke.current) return force ? pause() : void listen();
     setPhase('transcribing');
     try {
-      const text = await transcribe(uri);
+      const ctx = ctxRef.current?.();
+      const raw = await transcribe(uri, ctx);
       if (!alive.current || phaseRef.current !== 'transcribing') return;
-      // ถอดได้แค่เสียงรบกวน (ว่าง / 1 ตัวอักษร) → ฟังต่อ ไม่ส่งเข้าแชท
-      if (text.replace(/[\s.,!?…]/g, '').length < 2) return void listen();
+      // ถอดได้แค่เสียงรบกวน (ว่าง / 1 ตัวอักษร · ถอดเป็นภาษาอื่นแล้วถูกตัดทิ้ง) → พูดแล้วแต่ไม่ได้ความ = ขอให้พูดใหม่ (ไม่เงียบไปเฉย ๆ)
+      if (raw.replace(/[\s.,!?…]/g, '').length < 2) return void say('ขอโทษค่ะ ฟังไม่ชัด พูดอีกครั้งได้ไหมคะ', 'listen');
+      // เทียบกับบทสนทนา: แก้คำที่ถอดเพี้ยน · ฟังไม่ได้ความ → ขอให้พูดใหม่ (ไม่ส่งคำผิด ๆ เข้าแชท)
+      const heard = await understandHeard(raw, ctx);
+      if (!alive.current || phaseRef.current !== 'transcribing') return;
+      if (!heard.clear) return void say('ขอโทษค่ะ ฟังไม่ชัด พูดอีกครั้งได้ไหมคะ', 'listen');
+      const text = heard.text;
       setPhase('waiting');
       heardRef.current(text);
       // แชทไม่ตอบ (ค้าง) → พักไว้ ไม่ค้างหน้า "กำลังคิด"
