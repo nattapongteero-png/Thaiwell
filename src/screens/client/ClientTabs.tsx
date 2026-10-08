@@ -24,13 +24,13 @@ import {
   radius,
   space,
   useTheme,
-  type IconName, ScreenSkeleton, useScreenData, Panel, StatTile, Tag, RowLink, TINT, ProfileAvatar, ElementPill, BottomSheet, TextField, ReplyChips, InfoRow,
+  type IconName, painColor, ScreenSkeleton, useScreenData, Panel, StatTile, Tag, RowLink, TINT, ProfileAvatar, ElementPill, BottomSheet, TextField, ReplyChips, InfoRow,
 } from '../../design-system';
 import { NotFoundScreen } from './NotFound';
 import { birthElement, dominantElement } from '../../data/thaiMassageKnowledge';
 import { HISTORY, useJourney } from '../../state/JourneyContext';
 import { TREATMENT_CASES, ARCHIVED_CASES, type TreatmentCase } from '../../data/homeFeed';
-import { PainPill, TreatmentDetailBody, VisitTabs } from './home/TreatmentDetailBody';
+import { TreatmentDetailBody, VisitTabs } from './home/TreatmentDetailBody';
 
 import { useNav } from '../../navigation/types';
 
@@ -50,42 +50,84 @@ export function ProgressScreen() {
   const active = cases.filter((c) => c.visits.length > 0 && !c.finished);
   // จบคอร์สแล้ว (ครบครั้ง ไม่มีนัดค้าง) → รักษาจบแล้ว · ล่าสุดก่อน
   const done = [...cases.filter((c) => c.finished && c.visits.length > 0).reverse(), ...(newPatient ? [] : ARCHIVED_CASES)];
-  /** การ์ดเรื่องที่รักษา (แบบรายการผู้มารับบริการของหลังบ้าน): ไอคอน · ชื่อ · ครั้ง/ช่วงวัน · ดีขึ้น % · ป้ายคะแนนหลังนวดล่าสุด */
+  /**
+   * การ์ดเรื่องที่รักษา: ชื่อ + แผน · ดีขึ้น % (ขวา) · ปวดก่อน → ล่าสุด (ตัวเลขใหญ่ สีตามระดับปวด) + แท่งคะแนนทุกครั้ง
+   * แถบคอร์ส (ครั้งที่ใช้ไป/ทั้งหมด) · กำลังรักษา = นัดถัดไป · จบแล้ว = ช่วงวันที่รักษา
+   */
   const Row = ({ c, finished }: { c: TreatmentCase; finished?: boolean }) => {
     const first = c.visits[0];
     const last = c.visits[c.visits.length - 1];
-    const pct = Math.round(((first.painBefore - last.painAfter) / first.painBefore) * 100);
+    const now = last.selfPain ?? last.painAfter;
+    const pct = first.painBefore ? Math.round(((first.painBefore - now) / first.painBefore) * 100) : 0;
+    const good = pct > 0;
+    const trend = [first.painBefore, ...c.visits.map((v) => v.selfPain ?? v.painAfter)];
+    const used = Math.min(c.course.total, Math.max(c.course.done, c.visits.length));
+    const hasNext = !finished && c.appointment.date !== '-';
+    const accent = finished ? colors.text.secondary : colors.brand.primary;
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${c.short} ${c.visits.length} ครั้ง ดีขึ้น ${pct}% ดูรายละเอียด`}
+        accessibilityLabel={`${c.short} ปวด ${first.painBefore} เหลือ ${now} ${good ? `ดีขึ้น ${pct}%` : ''} ${used}/${c.course.total} ครั้ง ดูรายละเอียด`}
         onPress={() => nav.navigate('TreatmentHistory', { caseId: c.id })}
-        style={({ pressed }) => ({ gap: space[3], padding: space[4], borderRadius: 20, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.85 : 1 })}
+        style={({ pressed }) => ({ gap: space[4], padding: space[4], borderRadius: 24, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.85 : 1 })}
       >
+        {/* ชื่อเรื่อง · ผลรวม */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-          <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: finished ? colors.surface.sunken : colors.brand.subtle }}>
-            <Icon name={finished ? 'check' : 'activity'} size="sm" color={finished ? colors.text.secondary : colors.brand.primary} />
+          <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: finished ? colors.surface.sunken : colors.brand.subtle }}>
+            <Icon name={finished ? 'check' : 'activity'} size="sm" color={accent} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text variant="labelLg">{c.short}</Text>
-            <Text variant="bodyXs" tone="secondary">
-              {c.plan} · {c.visits.length} ครั้ง
+            <Text variant="labelLg" numberOfLines={1}>
+              {c.short}
+            </Text>
+            <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+              {c.plan}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text variant="labelMd" color={pct >= 0 ? colors.brand.primary : colors.status.danger.fg}>
-              {pct >= 0 ? '↘' : '↗'} {Math.abs(pct)}%
-            </Text>
-            <Text variant="bodyXs" tone="tertiary">
-              {pct >= 0 ? 'ดีขึ้น' : 'แย่ลง'}
-            </Text>
+          {pct !== 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 26, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: good ? colors.brand.subtle : colors.status.danger.bg }}>
+              <Icon name={good ? 'trending-down' : 'trending-up'} size="xs" color={good ? colors.brand.primary : colors.status.danger.fg} />
+              <Text variant="labelSm" color={good ? colors.brand.primary : colors.status.danger.fg}>
+                {good ? 'ดีขึ้น' : 'ปวดเพิ่ม'} {Math.abs(pct)}%
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ปวดก่อนเริ่ม → ล่าสุด · แท่งคะแนนทุกครั้ง */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space[3] }}>
+            <PainNum label="ก่อนเริ่ม" v={first.painBefore} muted />
+            <View style={{ marginBottom: 8 }}>
+              <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
+            </View>
+            <PainNum label="ล่าสุด" v={now} />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 40 }}>
+            {trend.slice(-8).map((v, i, arr) => (
+              <View key={i} style={{ width: 8, height: Math.max(4, (v / 10) * 40), borderRadius: 3, backgroundColor: painColor(v), opacity: i === arr.length - 1 ? 1 : 0.45 }} />
+            ))}
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text variant="bodyXs" tone="tertiary">
-            {first.date} – {last.date}
-          </Text>
-          <PainPill label="หลังล่าสุด" v={last.painAfter} />
+
+        {/* คอร์ส: ครั้งที่ใช้ไป · นัดถัดไป / ช่วงวันที่ */}
+        <View style={{ gap: space[2] }}>
+          <View style={{ flexDirection: 'row', gap: 3 }}>
+            {Array.from({ length: c.course.total }, (_, i) => (
+              <View key={i} style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: i < used ? accent : colors.border.subtle }} />
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text variant="labelSm" color={accent}>
+              {finished ? `ครบ ${c.course.total} ครั้ง` : `ครั้งที่ ${used}/${c.course.total}`}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <Text variant="bodyXs" tone="tertiary">
+                {hasNext ? `นัดถัดไป ${c.appointment.today ? 'วันนี้' : c.appointment.date}` : first.date === last.date ? first.date : `${first.date} – ${last.date}`}
+              </Text>
+              <Icon name="chevron-right" size="xs" color={colors.text.tertiary} />
+            </View>
+          </View>
         </View>
       </Pressable>
     );
@@ -486,5 +528,25 @@ export function PrivacyScreen() {
         </Panel>
       ) : null}
     </Screen>
+  );
+}
+
+/** คะแนนปวดตัวเลขใหญ่ + ป้ายเล็ก (สีตามระดับปวด · muted = ค่าก่อนเริ่ม) */
+function PainNum({ label, v, muted }: { label: string; v: number; muted?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ gap: 2 }}>
+      <Text variant="caption" tone="tertiary">
+        {label}
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
+        <Text variant="headlineSm" color={muted ? colors.text.secondary : painColor(v)}>
+          {v}
+        </Text>
+        <Text variant="bodyXs" tone="tertiary">
+          /10
+        </Text>
+      </View>
+    </View>
   );
 }
