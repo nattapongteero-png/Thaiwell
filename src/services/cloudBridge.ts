@@ -326,11 +326,12 @@ export interface ClinicVisit {
   advice?: string;
 }
 /** คอร์ส + ประวัติการรักษาที่คลินิกส่งให้ (tw_patients.profile) */
-export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[]; resetAt?: string }> {
+export async function fetchMyCourse(userId: string): Promise<{ course: ClinicCourse | null; visits: ClinicVisit[]; resetAt?: string; resetAll?: boolean }> {
   const { data } = await cloud.from('tw_patients').select('profile').eq('user_id', userId).maybeSingle();
-  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[]; resetAt?: string };
+  const p = (data?.profile ?? {}) as { course?: ClinicCourse | null; visits?: ClinicVisit[]; resetAt?: string; resetAll?: boolean };
   // resetAt = คลินิกรีเซ็ตข้อมูลการรักษาของบัญชีนี้ (ทดสอบ) → แอปล้างข้อมูลการรักษาในเครื่องตาม
-  return { course: p.course ?? null, visits: p.visits ?? [], resetAt: p.resetAt };
+  // resetAll = คลินิกรีเซ็ตทั้งระบบ → แอปล้างทุกอย่าง เหมือนเพิ่งเริ่มใช้ (ยกเว้นบัญชี)
+  return { course: p.course ?? null, visits: p.visits ?? [], resetAt: p.resetAt, resetAll: !!p.resetAll };
 }
 /** HN ที่คลินิกออกให้ (หลังคลินิกรับคำขอจองครั้งแรก) */
 export async function fetchMyHn(userId: string): Promise<string | null> {

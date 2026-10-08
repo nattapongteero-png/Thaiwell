@@ -500,6 +500,8 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
   /** คลินิกรีเซ็ตข้อมูลการรักษา (ล่าสุดที่เห็น / ที่ล้างไปแล้ว) */
   const [resetSignal, setResetSignal] = useState<string | null>(null);
+  /** สัญญาณล่าสุดเป็นรีเซ็ตทั้งระบบ (ล้างทุกอย่าง ยกเว้นบัญชี) */
+  const resetAllRef = React.useRef(false);
   const [resetSeen, setResetSeen] = useState<string | null>(() => saved('resetSeen', null));
   /** อ่านคอร์สจากคลินิกใหม่ (คลินิกลงนัด/นวดเสร็จ → จำนวนครั้งที่ใช้เปลี่ยน) */
   const refreshCourse = useCallback(() => {
@@ -509,7 +511,10 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         .then((r) => {
           setClinicCourse(r.course);
           setClinicVisits(r.visits);
-          if (r.resetAt) setResetSignal(r.resetAt);
+          if (r.resetAt) {
+            resetAllRef.current = !!r.resetAll;
+            setResetSignal(r.resetAt);
+          }
         })
         .catch(() => undefined);
   }, []);
@@ -1396,6 +1401,19 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     setCareStage('new');
     setBills([]);
     setCheckinErrors({});
+    if (resetAllRef.current) {
+      // รีเซ็ตทั้งระบบ: เหมือนเพิ่งเริ่มใช้แอป — ล้างข้อมูลสุขภาพ ธาตุ แจ้งเตือน ประวัติ (บัญชี/การเข้าสู่ระบบยังอยู่)
+      caseLinks.current = {};
+      queueNo.current = 11;
+      setProfile((pf) => ({ ...pf, flags: Object.fromEntries(Object.keys(pf.flags ?? {}).map((k) => [k, false])) as typeof pf.flags, conditions: [], medications: [], allergies: [], healthKnown: false, phrSource: undefined, pregnant: false, surgeryWithin1Month: false, injuryWithin48h: false, bp: undefined, bpSymptoms: false, temperature: undefined, pulse: undefined }));
+      setElementsDone(false);
+      setNewPatient(true);
+      setAudit([]);
+      setApptNotices([]);
+      setClinicCourse(null);
+      setClinicVisits([]);
+      return;
+    }
     setApptNotices([{ id: `n-reset-${resetSignal}`, kind: 'cancelled', text: 'คลินิกรีเซ็ตข้อมูลการรักษาของคุณแล้ว (ทดสอบระบบ) · เริ่มประเมินและจองใหม่ได้เลย', at: nowAtLabel() }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetSignal, resetSeen, uid, restoredTick]);
