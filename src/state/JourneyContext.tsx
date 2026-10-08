@@ -514,8 +514,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const cancelAppointment = useCallback((caseId: string) => setCancelledAppts((ids) => (ids.includes(caseId) ? ids : [...ids, caseId])), []);
   const [caseAppts, setCaseAppts] = useState<Record<string, CaseAppt>>(() => saved('caseAppts', {}));
   // จองใหม่ → ไม่ถือว่ายกเลิกแล้ว
+  /** สถานะวันนัดจากแถวในคลินิก (เช็กอิน · เรียกคิว · กำลังรับบริการ + เวลาเริ่ม) */
+  const stageOfRow = (r: CloudRow): Pick<CaseAppt, 'stage' | 'startedAt'> =>
+    r.status === 'in_service' ? { stage: 'in_service', startedAt: r.updated_at } : r.status === 'called' ? { stage: 'called' } : r.status === 'checked_in' ? { stage: 'checked_in' } : {};
   const setCaseAppointment = useCallback((caseId: string, appt: CaseAppt) => {
-    setCaseAppts((m) => ({ ...m, [caseId]: appt }));
+    // เวลาเริ่มรับบริการ: ใช้ค่าแรกที่ได้ (แถวในคลินิกอัปเดตระหว่างนวด เวลาแก้ไขล่าสุดจะเลื่อน)
+    // นัดเดิม (วัน-เวลาเดียวกัน) → คงสถานะที่คลินิก (เช็กอิน · เรียกคิว · กำลังรับบริการ + เวลาเริ่ม) ไว้ ไม่ให้การดึงนัดซ้ำล้างทิ้ง
+    setCaseAppts((m) => {
+      const cur = m[caseId];
+      const same = cur && cur.date === appt.date && cur.time === appt.time;
+      return { ...m, [caseId]: same ? { ...appt, queue: appt.queue ?? cur.queue, stage: appt.stage ?? cur.stage, startedAt: (cur.stage === 'in_service' && cur.startedAt) || appt.startedAt } : appt };
+    });
     setCancelledAppts((ids) => ids.filter((x) => x !== caseId));
   }, []);
   /** ครั้งที่นวดเพิ่มของใบการรักษา (ต่อท้าย visits เดิม) */
@@ -1058,7 +1067,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         }
         if (['confirmed', 'checked_in', 'called', 'in_service'].includes(r.status) && r.date) {
           const date = isoToLabel(r.date);
-          setCaseAppointment(l.caseId, { today: date === 'วันนี้', date, time: r.start ?? '', clinic: '', therapist: r.therapist ?? '', queue: r.queue_no ?? undefined });
+          setCaseAppointment(l.caseId, { today: date === 'วันนี้', date, time: r.start ?? '', clinic: '', therapist: r.therapist ?? '', queue: r.queue_no ?? undefined, ...stageOfRow(r) });
         } else if (r.status === 'cancelled' || r.status === 'no_show') {
           setCaseAppts((m) => ({ ...m, [l.caseId]: { today: false, date: '-', time: '-', clinic: '', therapist: '' } }));
         }
@@ -1119,7 +1128,7 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
       const first = planned[0];
       if (first && real) {
         const date = isoToLabel(first.date!);
-        setCaseAppointment(caseId, { today: date === 'วันนี้', date, time: first.start!, clinic: '', therapist: first.therapist ?? '', queue: first.queue_no ?? undefined });
+        setCaseAppointment(caseId, { today: date === 'วันนี้', date, time: first.start!, clinic: '', therapist: first.therapist ?? '', queue: first.queue_no ?? undefined, ...stageOfRow(first) });
       }
     });
   };
