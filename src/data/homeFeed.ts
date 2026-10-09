@@ -1,3 +1,4 @@
+import { holdOf } from './hold';
 /**
  * HOME FEED — ข้อมูลที่หน้าแรกแสดง "หลังจากคุยกับ AI และผ่านการคัดกรอง/วิเคราะห์แล้ว"
  * ------------------------------------------------------------------
@@ -258,7 +259,7 @@ export function assessmentResults(a: Assessment, symptoms: string[], related: st
       id: `r-safe-${k}`,
       day: 'today',
       from: 'ai',
-      text: safety.level === 'green' ? 'ตรวจความปลอดภัยแล้ว ไม่พบข้อห้าม' : safety.level === 'red' ? 'พบข้อห้ามนวด แนะนำให้พบแพทย์ก่อน' : 'ตรวจความปลอดภัยแล้ว พบข้อควรระวัง',
+      text: safety.level === 'green' ? 'ตรวจความปลอดภัยแล้ว ไม่พบข้อห้าม' : safety.level === 'red' ? (holdOf(safety.items)?.kind === 'heal' ? 'พบข้อห้ามนวด พักให้หายก่อน' : 'พบข้อห้ามนวด แนะนำให้พบแพทย์ก่อน') : 'ตรวจความปลอดภัยแล้ว พบข้อควรระวัง',
       card: { type: 'safety', level: safety.level, items: safety.items },
       source: 'Safety Rule Engine',
       time: t,
@@ -289,7 +290,15 @@ export function assessmentResults(a: Assessment, symptoms: string[], related: st
       id: `r-book-${k}`,
       day: 'today',
       from: 'ai',
-      text: 'เพื่อความปลอดภัย ควรพบแพทย์ก่อนนวดค่ะ',
+      // ไม่ใช่ทางตัน: บอกว่าเรื่องนี้พักไว้ และกลับมาได้เมื่อไหร่ (ตามประเภทข้อห้าม)
+      text: (() => {
+        const kind = holdOf(base.items)?.kind ?? 'doctor';
+        return kind === 'emergency'
+          ? 'ไปโรงพยาบาลหรือโทร 1669 ทันทีค่ะ ยังไม่ควรนวด'
+          : kind === 'heal'
+            ? 'ตอนนี้ยังนวดไม่ได้ค่ะ พักให้หายก่อน เรื่องนี้พักไว้ที่หน้าแรก หายแล้วกลับมาประเมินใหม่ได้'
+            : 'เพื่อความปลอดภัย ควรพบแพทย์ก่อนนวดค่ะ เรื่องนี้พักไว้ที่หน้าแรก พบแพทย์แล้วกลับมาประเมินใหม่ได้';
+      })(),
       card: { type: 'book', service: '', red: true },
       source: 'Safety Rule Engine',
       time: t,

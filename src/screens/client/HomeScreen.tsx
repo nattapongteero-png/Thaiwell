@@ -139,6 +139,7 @@ import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/Servi
 import { serviceMinutesOf } from '../../data/serviceMinutes';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
 import { StretchCard } from './home/StretchCard';
+import { HOLD_DAYS, HOLD_TEXT, addDaysISO, holdOf, todayISOLocal } from '../../data/hold';
 import { Chip as DetailChip, afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
 import { EMERGENCY } from '../../data/emergency';
 import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
@@ -174,7 +175,13 @@ const GREET_LATER = 'ไว้ทีหลัง';
 const GREET_BETTER = 'ดีขึ้นแล้ว';
 const GREET_STILL = 'ยังปวดอยู่';
 const GREET_PRE = 'เล่าอาการก่อนนัด';
+const GREET_NOT_YET = 'ยังไม่หาย';
 const GREET_KEY = 'thaiwell.greet.v1';
+/** yyyy-mm-dd → "12 ต.ค." */
+const shortDate = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return y ? `${d} ${['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][m - 1]}` : iso;
+};
 /** ขอเลือก/เปลี่ยนบริเวณที่ปวดมากที่สุด (บริเวณหลัก) */
 const PRIMARY_ASK = /(ปวด|เจ็บ)\s*(ที่)?\s*(สุด|มากสุด|มากที่สุด|หนักสุด)|บริเวณหลัก|จุดหลัก|ปวดมากกว่า/;
 /** แท็บนัดที่ยังไม่ประเมิน: ประเมินสำหรับนัดนี้ (ผูกกับนัด) — อีกทางคือประเมินเรื่องใหม่ (แท็บใหม่ ไม่ผูก) */
@@ -717,7 +724,7 @@ export function HomeScreen() {
   const modelTag = ((): { items: string[]; note?: string; /** good = ดีขึ้น (พื้นเขียว) */ noteTone?: 'good' | 'bad'; color: string; /** ปวดหลายบริเวณที่จัดลำดับแล้ว (ประเมิน) → หัวข้อ ปวดมากสุด/ร่วมด้วย */ ranked?: boolean; /** จุดบนหุ่นของแต่ละป้าย (แตะ → หันไปหา) */ pins?: (BodyPin | undefined)[] } | null => {
     if (started || chatHome) return null;
     // ยังไม่ได้รักษา: บริเวณที่ปวด (บริเวณหลักก่อน) · ระดับปวดอยู่ในการ์ดผลประเมินแล้ว ไม่ซ้ำ
-    if (selDraft) return { items: draftRegions(selDraft), pins: draftRegions(selDraft).map((r) => pinOfRegion(r, selDraft.symptoms)), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? 'ควรพบแพทย์ก่อนนวด' : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
+    if (selDraft) return { items: draftRegions(selDraft), pins: draftRegions(selDraft).map((r) => pinOfRegion(r, selDraft.symptoms)), ranked: draftRegions(selDraft).length > 1, note: selDraft.red ? (selDraft.hold?.kind === 'heal' ? 'พักให้หายก่อนนวด' : 'ควรพบแพทย์ก่อนนวด') : undefined, color: selDraft.red ? colors.status.danger.fg : painColorOf(selDraft.pain) };
     // จองแล้วแต่ยังไม่เคยประเมิน → ยังไม่รู้จุดที่ปวด
     if (selLoose) return { items: [], note: 'ยังไม่ได้บอกจุดที่ปวด', color: colors.border.default };
     if (selCase && cases.length) {
@@ -1171,6 +1178,8 @@ export function HomeScreen() {
       ];
       const level = ev.level === 'red' || ro?.level === 'red' || contagious || weak ? 'red' : ev.level === 'amber' || ro?.level === 'amber' || period || numb ? 'amber' : 'green';
       const caution = [amber ? SHORT_CAUTION[amber.ruleId] ?? amber.title : ro?.level === 'amber' ? ro.note : numb ? 'มีอาการชา แพทย์ตรวจก่อนนวด' : undefined, period ? 'งดนวดท้อง' : undefined, after.avoid && after.avoid !== 'ไม่มี' ? `ไม่นวด${after.avoid}` : undefined].filter(Boolean).join(' · ') || undefined;
+      // ข้อห้ามนวด → พักเรื่องนี้ไว้ (ประเภท + วันถามอีกครั้ง) · ไม่มีแล้ว = ล้าง
+      const hold = level === 'red' ? holdOf([...roHit, ...ev.hits.map((h) => ({ id: h.ruleId, title: h.title }))]) ?? { kind: 'doctor' as const, reasons: ['ควรพบแพทย์ก่อน'], since: todayISOLocal(), recheck: addDaysISO(HOLD_DAYS.doctor) } : undefined;
       const results = assessmentResults(after, sym, rel, withAppt, {
         level,
         items: [...roHit, ...ev.hits.map((h) => ({ id: h.ruleId, title: h.title, evidence: h.evidence, source: h.source }))],
@@ -1308,6 +1317,7 @@ export function HomeScreen() {
           const g = results.find((r) => r.card?.type === 'guideline')?.card;
           return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution, areas: g.areas } : old?.guide;
         })(),
+        hold,
         // ปวดหลายบริเวณ → รอผู้ใช้เลือกบริเวณหลักเอง (ออกจากแชทก่อนตอบ = ยังไม่เลือก ไม่เดาให้)
         primary: undefined,
         primaryPending: (() => {
@@ -1420,6 +1430,12 @@ export function HomeScreen() {
     }
   };
   const greetItem = (): { caseId: string; key: string; item: ThreadItem } | null => {
+    // เรื่องที่พักไว้ (ข้อห้ามนวด) ถึงวันถามอีกครั้ง → ถามว่าหายแล้วหรือยัง
+    for (const d of drafts) {
+      const key = `hold:${d.id}:${d.hold?.recheck}`;
+      if (!d.hold || d.hold.recheck > todayISOLocal() || !canGreet(key)) continue;
+      return { caseId: `draft:${d.id}`, key, item: aiText(`สวัสดีค่ะ เรื่อง${d.title}ที่พักไว้ (${d.hold.reasons[0]}) ตอนนี้เป็นยังไงบ้างคะ?`, { type: 'intents', options: [HOLD_TEXT[d.hold.kind].again, GREET_NOT_YET, GREET_LATER] }) };
+    }
     for (const c of cases) {
       const lv = c.visits[c.visits.length - 1];
       const key = `post:${c.id}:${c.visits.length}`;
@@ -1581,7 +1597,7 @@ export function HomeScreen() {
     newChat();
   };
   /** มาจากเช็กอิน "ประเมินก่อนนวด" → เปิดเรื่องนั้นแล้วเริ่มถามในแชทของเรื่องนั้น */
-  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string } }>();
+  const route = useRoute<{ key: string; name: string; params?: { assessCase?: string; recheckDraft?: string } }>();
   const assessFor = React.useRef<string | null>(null);
   React.useEffect(() => {
     const id = route.params?.assessCase;
@@ -1594,6 +1610,17 @@ export function HomeScreen() {
     nav.setParams({ assessCase: undefined } as never);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.assessCase]);
+  // แจ้งเตือน "เรื่องที่พักไว้ หายแล้วหรือยัง" → เปิดแท็บเรื่องนั้นแล้วประเมินแบบสั้น
+  React.useEffect(() => {
+    const id = route.params?.recheckDraft;
+    if (!id) return;
+    nav.setParams({ recheckDraft: undefined } as never);
+    const i = drafts.findIndex((d) => d.id === id);
+    if (i < 0) return;
+    setCaseIdx(caseCount + i);
+    recheckDraft(drafts[i]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.recheckDraft]);
   React.useEffect(() => {
     if (assessFor.current && assessFor.current === tcase.id) {
       assessFor.current = null;
@@ -1792,6 +1819,38 @@ export function HomeScreen() {
     }
     scrollToEnd();
   };
+  /**
+   * เรื่องที่พักไว้ (ข้อห้ามนวด) หายแล้ว → ประเมินแบบสั้น: ใช้คำตอบเดิมทั้งหมด ถามใหม่แค่
+   * อาการร่วม (ถ้าเคยติดเรื่องชา/อ่อนแรง/ร้าว) · ปวดวันนี้ · ข้อห้ามช่วงนี้ → ผลใหม่แทนของเดิม (รอบที่ติดข้อห้ามเก็บในประวัติ)
+   */
+  const recheckDraft = (d: DraftCase) => {
+    const nerve = !!d.hold?.reasons.some((r) => /ประสาท|อ่อนแรง|ชา|ร้าว/.test(r));
+    const step: AssessStep = nerve ? 'related' : 'pain';
+    const base: Assessment = {
+      ...blankAssessment(),
+      step,
+      sel: Object.fromEntries(d.symptoms.map((x) => [x, null])),
+      radiate: d.radiate,
+      topic: d.title,
+      reuseHealth: d.health,
+      reuseMeds: d.meds,
+      reuseAllergy: d.allergy,
+    };
+    const lead = `ประเมินเรื่อง${d.title}อีกครั้งค่ะ ข้อมูลเดิมใช้ต่อได้ ขอถามแค่ไม่กี่ข้อ`;
+    let sid = d.chatId && sessions.some((c) => c.id === d.chatId) ? d.chatId : null;
+    if (sid) updateSession(sid, (c) => ({ ...c, assess: base, items: [...c.items, askItem(step, lead)] }));
+    else {
+      const ss: ChatSession = { ...newChatSession(), title: `ประเมิน${d.title}`, items: [askItem(step, lead)], assess: base };
+      setSessions((all) => [ss, ...all]);
+      upsertDraft({ ...d, chatId: ss.id });
+      sid = ss.id;
+    }
+    // ข้อเดิมที่ไม่ได้เกี่ยวกับข้อห้าม → ข้ามไป (ใช้คำตอบเดิม)
+    prefill.current[sid] = { ...prefill.current[sid], duration: d.duration, cause: d.cause, pressure: d.pressure, avoid: d.avoid };
+    if (!nerve && d.related) prefillRelated.current[sid] = d.related;
+    delete freshFor.current[sid];
+    openChat(sid);
+  };
   /** การ์ดสรุปอาการ → "แก้ไข": ทบทวนคำตอบชุดนี้ในแชทเดิม (แตะแก้ทีละข้อ แล้วยืนยันใหม่) */
   const editAssessment = () => {
     // ผลของแชทนี้เป็นใบไหน → แก้แล้วอัปเดตใบเดิม (ไม่สร้างใบซ้ำ)
@@ -1921,6 +1980,23 @@ export function HomeScreen() {
     if (label === GREET_LATER) return aiReply(activeId, label, () => [aiText('ได้เลยค่ะ ไว้ค่อยบอกทีหลังนะคะ'), ...afterGreet(activeId)]);
     if (label === GREET_BETTER) return aiReply(activeId, label, () => [aiText('ดีใจด้วยค่ะ ถ้ากลับมาปวดอีก บอกได้ตลอดนะคะ'), ...afterGreet(activeId)]);
     if (label === GREET_STILL || label === GREET_PRE) return greetToCase(activeId);
+    // เรื่องที่พักไว้: หายแล้ว → ประเมินสั้นในแชทของเรื่องนั้น · ยังไม่หาย → เลื่อนวันถามออกไป
+    {
+      const gd = greetFor.current[activeId]?.caseId.startsWith('draft:') ? drafts.find((d) => `draft:${d.id}` === greetFor.current[activeId]!.caseId) : undefined;
+      if (gd?.hold && Object.values(HOLD_TEXT).some((t) => t.again === label)) {
+        delete greetFor.current[activeId];
+        const sid = activeId;
+        setSessions((all) => all.filter((c) => c.id !== sid));
+        const i = drafts.indexOf(gd);
+        setCaseIdx(caseCount + i);
+        return recheckDraft(gd);
+      }
+      if (gd?.hold && label === GREET_NOT_YET) {
+        const next = addDaysISO(HOLD_DAYS[gd.hold.kind]);
+        upsertDraft({ ...gd, hold: { ...gd.hold, recheck: next } });
+        return aiReply(activeId, label, () => [aiText(`พักไว้ก่อนนะคะ ${HOLD_TEXT[gd.hold!.kind].todo} อีก ${HOLD_DAYS[gd.hold!.kind]} วันจะถามอีกครั้งค่ะ`), ...afterGreet(activeId)]);
+      }
+    }
     const born = account ? birthElement(account.birthDate) : null;
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
     if (label === NEW_TOPIC_INTENT) return newChat(true);
@@ -3407,6 +3483,11 @@ export function HomeScreen() {
                     onSelfCare={(groupId) => (groupId ? setSheetStretch(groupId) : nav.navigate('SelfCare'))}
                     onReassess={() => reassessDraft(selDraft)}
                     onPrimary={openAI}
+                    onRecheck={() => recheckDraft(selDraft)}
+                    onCloseTopic={() => {
+                      removeDraft(selDraft.id);
+                      setCaseIdx(0);
+                    }}
                   />
                 ) : caseIdx >= cases.length ? null : (
                 <HomeBento
@@ -4894,7 +4975,13 @@ function DraftBento({
   onOpen,
   onReassess,
   onPrimary,
+  onRecheck,
+  onCloseTopic,
 }: {
+  /** เรื่องที่พักไว้: หายแล้ว/พบแพทย์แล้ว → ประเมินแบบสั้น */
+  onRecheck: () => void;
+  /** ปิดเรื่องนี้ (ไม่รักษาต่อ) */
+  onCloseTopic: () => void;
   /** ประเมินเรื่องนี้ใหม่ทั้งชุด (อาการเปลี่ยนบริเวณ) */
   onReassess: () => void;
   /** ยังไม่ได้เลือกบริเวณหลัก → เปิดแชทที่ถามค้างไว้ */
@@ -4922,6 +5009,8 @@ function DraftBento({
   const near = nearestClinic();
   const hospital = nearestHospital();
   const booked = !!b && !d.red && !served;
+  const hold = HOLD_TEXT[d.hold?.kind ?? 'doctor'];
+  const [closing, setClosing] = React.useState(false);
   const [guideOpen, setGuideOpen] = React.useState(false);
   const [planOpen, setPlanOpen] = React.useState(false);
   const nav = useNav();
@@ -5042,13 +5131,21 @@ function DraftBento({
         }}
       />
 
-      {/* 1) การ์ดหลักเต็มแถว */}
+      {/* 1) การ์ดหลักเต็มแถว · มีข้อห้ามนวด = พักไว้ (ไม่ใช่ทางตัน): ทำอะไรต่อ · ถามอีกครั้งเมื่อไหร่ · หายแล้วประเมินสั้น ๆ */}
       {d.red ? (
-        <Tile style={{ gap: space[2] }} onPress={onRedFlag} accessibilityLabel="ควรพบแพทย์ก่อน">
-          <TileTitle title="นัด" />
-          <Text variant="titleSm" color={colors.status.danger.fg}>
-            ควรพบแพทย์ก่อน
-          </Text>
+        <Tile style={{ gap: space[3] }} onPress={onRedFlag} accessibilityLabel={`พักเรื่องนี้ไว้ก่อน ${hold.todo}`}>
+          <TileTitle title="พักไว้ก่อน" meta={d.hold ? `ถามอีกครั้ง ${shortDate(d.hold.recheck)}` : undefined} />
+          <View style={{ gap: 2 }}>
+            <Text variant="titleSm" color={colors.status.danger.fg}>
+              {hold.todo}
+            </Text>
+            <Text variant="bodyXs" tone="secondary" numberOfLines={2}>
+              {(d.hold?.reasons ?? ['มีข้อห้ามนวด']).join(' · ')}
+            </Text>
+            <Text variant="bodyXs" tone="secondary">
+              {hold.back}
+            </Text>
+          </View>
           {/* มีนัดค้างอยู่ → ยังเข้าไปเลื่อน/ยกเลิกได้ */}
           {b ? (
             <Pressable accessibilityRole="button" accessibilityLabel={`จัดการนัด ${b.date} ${b.time}`} onPress={onOpen}>
@@ -5057,7 +5154,26 @@ function DraftBento({
               </Text>
             </Pressable>
           ) : null}
-          <TilePill icon="alert-triangle" label="ดูคำแนะนำ" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={hold.again} onPress={onRecheck} style={{ flex: 1 }}>
+              <TilePill icon="refresh-cw" label={hold.again} />
+            </Pressable>
+            {/* ปิดเรื่อง: แตะสองครั้ง (กันเผลอลบ) */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={closing ? 'แตะอีกครั้งเพื่อปิดเรื่องนี้' : 'ปิดเรื่องนี้'}
+              hitSlop={8}
+              onPress={() => {
+                if (closing) return onCloseTopic();
+                setClosing(true);
+                setTimeout(() => setClosing(false), 3000);
+              }}
+            >
+              <Text variant="labelSm" color={closing ? colors.status.danger.fg : colors.text.secondary}>
+                {closing ? 'แตะอีกครั้งเพื่อปิด' : 'ปิดเรื่องนี้'}
+              </Text>
+            </Pressable>
+          </View>
         </Tile>
       ) : b ? (
         // นวดแล้ว (ครั้งที่ 1)
@@ -5108,7 +5224,7 @@ function DraftBento({
         {d.red ? (
           <Tile style={{ width: halfW, gap: space[1] }}>
             <TileTitle title="แนวทาง" />
-            <Text variant="titleSm">ตรวจกับแพทย์ก่อน</Text>
+            <Text variant="titleSm">{d.hold?.kind === 'heal' ? 'รอหายก่อน' : 'ตรวจกับแพทย์ก่อน'}</Text>
           </Tile>
         ) : (
           served ? (

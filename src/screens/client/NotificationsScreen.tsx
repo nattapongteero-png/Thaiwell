@@ -198,7 +198,10 @@ export function NotificationDetailScreen({ route }: { route: { params: { id: str
     ? bill.status === 'paid'
       ? { label: 'ดูใบเสร็จ', icon: 'file-text', go: () => nav.navigate('Bill', { id: bill.id }) }
       : { label: `ชำระ ${bill.total.toLocaleString()} บาท`, icon: 'credit-card', go: () => nav.navigate('Bill', { id: bill.id }) }
-    : n.kind === 'followup'
+    : n.kind === 'followup' && n.draftId
+      ? // เรื่องที่พักไว้ (ข้อห้ามนวด) → ประเมินแบบสั้น
+        { label: 'ประเมินใหม่', icon: 'refresh-cw', go: () => nav.popTo('ClientTabs', { screen: 'Home', params: { recheckDraft: n.draftId } } as never) }
+      : n.kind === 'followup'
       ? { label: 'อัปเดตอาการ', icon: 'activity', go: () => nav.popTo('ClientTabs', { screen: 'Home', params: { assessCase: n.caseId } }) }
       : n.kind === 'waitlist' || n.kind === 'rejected' || n.kind === 'cancelled' || n.kind === 'noshow'
         ? { label: 'จองนัดใหม่', icon: 'calendar', go: () => nav.navigate('Booking') }

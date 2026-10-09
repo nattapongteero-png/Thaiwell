@@ -18,6 +18,7 @@ import { fetchCloudRows, fetchPatientRows } from '../services/clinicBridge';
 import { locate } from '../services/location';
 import { cloudAddendum, cloudAfterPain, cloudReassess, cloudRowOf, cloudStatusOf, clinicMadeRows, missingAppointments, fetchMyCourse, fetchMyHn, type ClinicCourse, type ClinicVisit, loadAppState, saveAppState, seenRows, startAccountSync, startLocalSync, stopAccountSync, type CloudRow } from '../services/cloudBridge';
 import type { IdCard } from '../services/idCard';
+import { todayISOLocal, type Hold } from '../data/hold';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
 import { readAvailability, birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, sendPreVisit, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
@@ -147,6 +148,8 @@ export interface DraftCase {
   guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; region?: string; symptoms?: string[]; condition: string; points: string[] }[] };
   /** บริเวณหลัก (ปวดมากที่สุด) เมื่อปวดหลายบริเวณ */
   primary?: string;
+  /** มีข้อห้ามนวด → พักเรื่องนี้ไว้ (ทำอะไรต่อ · ถามอีกครั้งเมื่อไหร่) · ประเมินใหม่ผ่าน = ล้าง · asked = วันที่แจ้งเตือนถามแล้ว */
+  hold?: Hold & { asked?: string };
   /** ปวดหลายบริเวณแต่ยังไม่ได้เลือกบริเวณหลัก (ออกจากแชทก่อนตอบ) — ไม่เดาให้ */
   primaryPending?: boolean;
   /** ผลประเมินรอบก่อน ๆ (ประเมินซ้ำ = รอบใหม่ ไม่ลบของเดิม) — at = วันเวลาที่ประเมินรอบนั้นถูกแทน */
@@ -1000,6 +1003,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const removeDraft = useCallback((id: string) => setDrafts((all) => all.filter((x) => x.id !== id)), []);
+  // เรื่องที่พักไว้ (ข้อห้ามนวด) ถึงวันถามอีกครั้ง → แจ้งเตือนถามว่าหายแล้วหรือยัง (วันละครั้ง)
+  React.useEffect(() => {
+    const today = todayISOLocal();
+    const due = drafts.filter((d) => d.hold && d.hold.recheck <= today && d.hold.asked !== today);
+    if (!due.length) return;
+    setDrafts((all) => all.map((d) => (due.some((x) => x.id === d.id) ? { ...d, hold: { ...d.hold!, asked: today } } : d)));
+    setApptNotices((all) => [
+      ...due.map((d) => ({ id: `n-hold-${d.id}-${today}`, draftId: d.id, kind: 'followup' as const, text: `เรื่อง${d.title}ที่พักไว้ (${d.hold!.reasons[0]}) หายแล้วหรือยังคะ? แตะเพื่อประเมินใหม่`, at: nowAtLabel() })),
+      ...all,
+    ]);
+  }, [drafts, setApptNotices]);
   const log = useCallback((actor: string, action: string) => {
     const d = new Date();
     const at = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
