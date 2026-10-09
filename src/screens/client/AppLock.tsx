@@ -139,11 +139,10 @@ function LockScreen({ uid, email, mode, setMode, bio }: { uid: string; email: st
           <Text variant="titleLg" align="center">
             {title}
           </Text>
-          {sub ? (
-            <Text variant="bodySm" tone="secondary" align="center">
-              {sub}
-            </Text>
-          ) : null}
+          {/* จองบรรทัดไว้เสมอ (ว่างก็ได้) → เปลี่ยนขั้น ตั้ง PIN ↔ ใส่อีกครั้ง ↔ ปลดล็อก แล้วปุ่มไม่ขยับ */}
+          <Text variant="bodySm" tone="secondary" align="center" numberOfLines={1} style={{ minHeight: 20 }}>
+            {sub ?? ''}
+          </Text>
         </View>
 
         {mode === 'password' ? (
@@ -160,7 +159,7 @@ function LockScreen({ uid, email, mode, setMode, bio }: { uid: string; email: st
               ))}
             </View>
             {/* หัว · จุด PIN · ปุ่มตัวเลข อยู่กลางจอเป็นกลุ่มเดียว (ไม่ดันปุ่มลงชิดล่าง) */}
-            <Text variant="bodySm" align="center" color={colors.status.danger.solid} style={{ marginTop: space[3], marginBottom: space[4], minHeight: 22 }}>
+            <Text variant="bodySm" align="center" numberOfLines={1} color={colors.status.danger.solid} style={{ marginTop: space[3], marginBottom: space[4], minHeight: 22 }}>
               {error ?? ''}
             </Text>
             <Keypad
