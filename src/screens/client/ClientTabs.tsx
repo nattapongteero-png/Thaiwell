@@ -185,14 +185,9 @@ export function ProfileScreen() {
       {/* หัวโปรไฟล์แบบหลังบ้าน: รูป · ชื่อ · HN/อายุ · ป้ายโรคประจำตัว · ธาตุ */}
       <Panel>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3] }}>
-          {/* แตะรูป/ชื่อ = ข้อมูลส่วนตัว (ดู + แก้ไขรูป เบอร์โทร) */}
-          <Pressable accessibilityRole="button" accessibilityLabel="แก้ไขโปรไฟล์" onPress={() => nav.navigate('ProfileInfo')}>
+          {/* แตะรูป/ชื่อ = ข้อมูลส่วนตัว (แก้รูป เบอร์โทร ที่หน้านั้น) */}
+          <Pressable accessibilityRole="button" accessibilityLabel="ดูข้อมูลส่วนตัว" onPress={() => nav.navigate('ProfileInfo')}>
             <ProfileAvatar sex={account?.sex ?? 'ชาย'} size={68} photo={account?.avatar} />
-            {account ? (
-              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brand.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFFFFF' }}>
-                <Icon name="edit-2" size="xxs" color="#FFFFFF" />
-              </View>
-            ) : null}
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="ดูข้อมูลส่วนตัว" onPress={() => nav.navigate('ProfileInfo')} style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
