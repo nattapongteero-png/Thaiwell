@@ -714,17 +714,20 @@ export function HomeScreen() {
     return [...bodyInfo.radiatePins.map((at) => ({ at, tone: 'symptom' as const, color: c })), ...bodyInfo.avoidPins.map((at) => ({ at, tone: 'symptom' as const, color: AVOID_COLOR }))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeExtraKey, selDraft?.pain, selCase, tcase.id]);
+  // จุดจากแชทที่เปิดอยู่ (อาการที่เลือก · ร้าว · จุดกด) — แสดงเฉพาะตอนอยู่ในแชท
+  // หน้าแรกแสดงเฉพาะของแท็บที่เลือก (เดิมจุดจากแชทล่าสุดค้างมาแสดงบนหุ่นของทุกแท็บ)
+  const chatSel = started ? sel : {};
   const pins = React.useMemo(
     () => [
-      ...Object.entries(sel)
+      ...Object.entries(chatSel)
         .filter(([, pts]) => pts === null)
         .flatMap(([c]) => (CHIP_PINS[c] ?? []).map((at) => ({ at, tone: 'symptom' as const, color: symptomColor }))),
       // จุดกดบำบัดขึ้นบนหุ่นหลังประเมินครบแล้วเท่านั้น
       // บริเวณที่ร้าวไป (อาการเดียวกัน แสดงต่อจากจุดที่ปวด)
-      ...radiateAnswers(Object.keys(sel), assess.radiate)
+      ...radiateAnswers(Object.keys(chatSel), assess.radiate)
         .flatMap((a) => radiatePins(a.label, a.symptom))
         .map((at) => ({ at, tone: 'symptom' as const, color: symptomColor })),
-      ...(done ? guidePins.map((at) => ({ at, tone: 'point' as const })) : []),
+      ...(done && started ? guidePins.map((at) => ({ at, tone: 'point' as const })) : []),
       // หน้าเริ่มต้น: บริเวณที่รักษาครั้งล่าสุด
       // สีตามคะแนนปวดที่ผู้ใช้ให้ (ยังไม่ให้ = สีแบรนด์)
       // หน้าเริ่มต้น: ทุกบริเวณของครั้งที่กำลังติดตาม · สีตามคะแนนที่ให้ (ยังไม่ให้ = สีแบรนด์)
@@ -745,7 +748,7 @@ export function HomeScreen() {
     ],
     [sel, assess.radiate, done, guidePins, started, fuScores, tcase, fuSessions, newPatient, selDraft, selCase, symptomColor, caseToday, homeExtraPins],
   );
-  const marks = React.useMemo(() => Object.values(sel).flatMap((pts) => pts ?? []), [sel]);
+  const marks = React.useMemo(() => (started ? Object.values(sel).flatMap((pts) => pts ?? []) : []), [sel, started]);
   // ซ่อมข้อมูลจากบั๊กเดิม: แก้อาการในแชทเดิมแล้วเกิดเรื่องใหม่ซ้ำ (แชทเดียวกัน 2 เรื่อง) → รวมผลล่าสุดเข้าเรื่องที่มีนัด
   React.useEffect(() => {
     const byChat = new Map<string, DraftCase[]>();
