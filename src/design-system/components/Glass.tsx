@@ -263,7 +263,10 @@ export function ChatComposer({
   placeholder = 'พิมพ์หรือพูดกับผู้ช่วย ThaiWell…',
   embedded,
   voice,
+  fill,
 }: {
+  /** ใส่ข้อความลงช่องพิมพ์จากภายนอก (เช่น ตัวเลือกที่แตะในแชท) — n เปลี่ยน = ใส่ใหม่ */
+  fill?: { text: string; n: number };
   onSend: (text: string) => void;
   onVoice?: () => void;
   placeholder?: string;
@@ -275,6 +278,9 @@ export function ChatComposer({
   const t = componentTokens.composerV2;
   const orb = componentTokens.orb.md;
   const [text, setText] = React.useState('');
+  React.useEffect(() => {
+    if (fill) setText(fill.text);
+  }, [fill?.n]);
   const send = () => {
     if (!text.trim()) return;
     onSend(text.trim());

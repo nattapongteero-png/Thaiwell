@@ -2651,6 +2651,21 @@ export function HomeScreen() {
    * คำตอบสั้น ๆ ของข้อที่ค้างอยู่ไม่ต้องคัดแยก (เร็วเหมือนเดิม)
    */
   /** พิมพ์เรื่องอื่นตอบคำทัก (ไม่ใช่คะแนน/ตัวเลือก) → ข้ามคำทักแล้วส่งข้อความนี้ใหม่หลังแชทกลับสู่สิ่งที่ตั้งใจไว้ */
+  /* ตัวเลือกหลายข้อในแชท → ที่เลือกขึ้นในกล่องพิมพ์ · กดส่งในกล่อง (ข้อความไม่ได้แก้) = เหมือนกดถัดไป · พิมพ์เพิ่ม = ส่งเป็นข้อความ (AI อ่านคำตอบ) */
+  const [composerFill, setComposerFill] = React.useState<{ text: string; n: number }>({ text: '', n: 0 });
+  const pickSubmit = React.useRef<{ text: string; submit: () => void } | null>(null);
+  const draftFromPick = (text: string, submit: (() => void) | null) => {
+    const had = pickSubmit.current?.text ?? '';
+    pickSubmit.current = submit && text ? { text, submit } : null;
+    // ไม่ทับสิ่งที่ผู้ใช้พิมพ์เอง: ล้างช่องเฉพาะตอนข้อความเดิมมาจากการเลือก
+    if (text || had) setComposerFill((f) => ({ text, n: f.n + 1 }));
+  };
+  // ขึ้นคำถามใหม่ → ล้างตัวเลือกค้าง
+  React.useEffect(() => {
+    if (!pickSubmit.current) return;
+    pickSubmit.current = null;
+    setComposerFill((f) => ({ text: '', n: f.n + 1 }));
+  }, [lastAskId]);
   const resendAfter = React.useRef<string | null>(null);
   React.useEffect(() => {
     const t = resendAfter.current;
@@ -2660,6 +2675,13 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread.length, assess.step, activeId]);
   const send = (text: string) => {
+    // ส่งตัวเลือกที่แตะไว้จากกล่องแชท (ไม่ได้แก้ข้อความ) = กดถัดไป
+    const ps = pickSubmit.current;
+    if (ps && text.trim() === ps.text.trim()) {
+      pickSubmit.current = null;
+      return ps.submit();
+    }
+    pickSubmit.current = null;
     {
       const lc = thread[thread.length - 1]?.card;
       const score = /\d|ศูนย์|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|หาย|ไม่ปวด|เท่าเดิม/.test(text);
@@ -3068,7 +3090,7 @@ export function HomeScreen() {
         <ReplyChips options={shortcuts} onPick={pickShortcut} />
       </ScrollView>
       ) : null}
-      <VoiceChatDock voice={voice} status={voice.hint ?? VOICE_STATUS[voice.phase]} onSend={send} onVoice={openVoice} />
+      <VoiceChatDock voice={voice} status={voice.hint ?? VOICE_STATUS[voice.phase]} onSend={send} onVoice={openVoice} fill={composerFill} />
     </Animated.View>
     </View>
     ),
@@ -3643,6 +3665,7 @@ export function HomeScreen() {
                       onChips={onChipsChange}
                       onPain={(v) => setAssess((a) => ({ ...a, pain: v }))}
                       onNext={answerStep}
+                      onDraft={draftFromPick}
                       topics={topicOptions}
                       radiate={radiateNow(Object.keys(assess.sel), assess.radiate)?.options}
                       onPickBody={openPicker}
@@ -3882,7 +3905,7 @@ export function HomeScreen() {
                 </Animated.View>
               </View>
             ) : !started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map(draftLabel)} extras={looseBookings.map((b) => (b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} order={tabOrder} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map(draftLabel)} extras={looseBookings.map((b) => (b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} order={tabOrder} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} onHistory={historyRows.length ? () => setHistoryOpen(true) : undefined} />
             ) : null}
           </View>
           </View>
@@ -4622,7 +4645,7 @@ function IntentChips({ options, onPick }: { options: string[]; onPick: (o: strin
  * แท็บเดียว ชื่อบอกประเภทเอง: "รักษา…" = ใบการรักษา (นวดแล้ว · ชื่อโรค) · "ประเมิน…" = ใบร่าง (ยังไม่รักษา · ชื่ออาการ)
  * value = index รวม (ใบการรักษาก่อน แล้วต่อด้วยใบร่าง) · อาการใหม่ → ปุ่มม่วงด้านล่าง
  */
-function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange: rawChange, onNew }: { cases: string[]; drafts: string[]; extras?: string[]; /** ลำดับที่แสดง (index ภายใน เรียงตามความสำคัญ) */ order?: number[]; value: number; onChange: (i: number) => void; onNew?: () => void }) {
+function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange: rawChange, onNew, onHistory }: { cases: string[]; drafts: string[]; extras?: string[]; /** ลำดับที่แสดง (index ภายใน เรียงตามความสำคัญ) */ order?: number[]; value: number; onChange: (i: number) => void; onNew?: () => void; /** ประวัติแชท (ตรึงขวา) — เปิดแชทเรื่องอื่นได้จากหน้าแรกเลย */ onHistory?: () => void }) {
   const { colors } = useTheme();
   const natural = [...cases.map((c) => `รักษา${c}`), ...drafts.map((d) => `ประเมิน${d}`), ...extras];
   // แสดงตามลำดับความสำคัญ · ค่าที่ส่งออกยังเป็น index ภายในเดิม
@@ -4649,7 +4672,7 @@ function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange
   // ปุ่มประเมินใหม่ตรึงไว้ทางซ้าย (ไม่เลื่อน) · เลื่อนเฉพาะแท็บ และจางที่ขอบตอนเลื่อนผ่าน
   // ระยะปุ่ม→แท็บแรก = ระยะระหว่างแท็บ (space[2]) — JellyRadio มี margin ติดลบเผื่อแอนิเมชันพองตัว จึงชดเชยใน padding
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: BENTO_CASE_H, marginRight: -space[5] }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: BENTO_CASE_H, marginRight: onHistory ? 0 : -space[5] }}>
         {onNew ? (
           // ThaiWell AI: คุยเรื่องของแท็บที่เลือก หรือเริ่มประเมินเรื่องใหม่ (ตรึงซ้าย ไม่เลื่อนตามแท็บ)
           <AIButton label={`ThaiWell AI${items[value] ? ` เรื่อง${items[value]}` : ''}`} onPress={onNew} />
@@ -4673,6 +4696,19 @@ function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange
             <JellyRadio items={items} value={value} onChange={onChange} size="md" gap={space[2]} swell={0.06} barge={2} shrink={0.02} accessibilityLabel="เลือกเรื่องที่ดูแล" />
           </ScrollView>
         </EdgeFade>
+      ) : (
+        <View style={{ flex: 1 }} />
+      )}
+      {onHistory ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ประวัติแชท"
+          onPress={onHistory}
+          hitSlop={4}
+          style={({ pressed }) => ({ width: 44, height: 44, marginLeft: space[1], borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
+        >
+          <Icon name="clock" size="sm" color={colors.text.primary} />
+        </Pressable>
       ) : null}
     </View>
   );

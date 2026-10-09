@@ -7,7 +7,7 @@ import type { VoiceChat } from '../../../services/useVoiceChat';
  * ช่องแชท + คุยด้วยเสียงในช่องเดียวกัน (ไม่สลับเป็นอีกแถบ ให้ลูกแก้ว/กรอบเดิมเปลี่ยนสภาพต่อเนื่อง)
  * ระดับไมค์อ่านตรงจาก recorder ทุก ~50ms (ไม่ผ่าน state) → ref ให้เส้นแสง + Animated ให้แสงรอบช่องแชท → ไม่ render ใหม่ ไม่กระตุก
  */
-export function VoiceChatDock({ voice, status, onSend, onVoice }: { voice: VoiceChat; status: string; onSend: (text: string) => void; onVoice: () => void }) {
+export function VoiceChatDock({ voice, status, onSend, onVoice, fill }: { voice: VoiceChat; status: string; onSend: (text: string) => void; onVoice: () => void; fill?: { text: string; n: number } }) {
   const level = React.useRef(0);
   const glow = React.useRef(new Animated.Value(0)).current;
   const live = React.useRef(voice);
@@ -48,6 +48,7 @@ export function VoiceChatDock({ voice, status, onSend, onVoice }: { voice: Voice
   }, [on, glow]);
   return (
     <ChatComposer
+      fill={fill}
       onSend={onSend}
       onVoice={onVoice}
       voice={

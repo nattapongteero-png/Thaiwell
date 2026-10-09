@@ -22,8 +22,12 @@ function ChoiceSection({ title, options, value, onChange }: { title?: string; op
   );
 }
 /** เลือกได้หลายข้อ แล้วกดถัดไป · ไม่เลือกเลย = ปุ่ม "ไม่มี" (ใช้กับโรคประจำตัว / ยาที่ใช้ประจำ) */
-function MultiPick({ options, onDone }: { options: string[]; onDone: (picked: string[]) => void }) {
+function MultiPick({ options, onDone, onDraft }: { options: string[]; onDone: (picked: string[]) => void; /** ที่เลือกไว้ → ขึ้นในกล่องแชท ส่งจากกล่องได้ */ onDraft?: (picked: string[]) => void }) {
   const [v, setV] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    onDraft?.(v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.join('|')]);
   return (
     <View style={{ gap: space[3] }}>
       <ChoiceSection options={options} value={v} onChange={setV} />
@@ -57,6 +61,7 @@ export function AssessWidget({
   onPickBody,
   relatedGroups,
   dangerSigns,
+  onDraft,
 }: {
   /** อาการร่วมแบ่งตามบริเวณที่เลือก (ไม่ระบุ = รายการ related เดิม) */
   relatedGroups?: { title: string; options: string[] }[];
@@ -79,9 +84,30 @@ export function AssessWidget({
   onPain: (v: number) => void;
   /** ยืนยันคำตอบของหัวข้อนี้ (answer = ข้อความที่แสดงเป็นคำตอบของผู้ใช้) */
   onNext: (answer: string, patch?: Partial<Assessment>, userExtra?: { pain?: number }) => void;
+  /**
+   * ข้อที่เลือกได้หลายข้อ: ที่เลือกไว้ขึ้นในกล่องแชท (text) · กดส่งในกล่องแชท = เหมือนกดถัดไป (submit)
+   * ไม่ได้เลือก = text ว่าง
+   */
+  onDraft?: (text: string, submit: (() => void) | null) => void;
 }) {
   const { colors } = useTheme();
   const [more, setMore] = React.useState(false);
+  // ตำแหน่งที่ปวด / อาการร่วม: ที่เลือกอยู่ (state อยู่ที่แชท) → กล่องแชท
+  const multiAll =
+    step === 'symptoms'
+      ? [...new Set([...symptoms, ...SYMPTOM_GROUPS.flatMap((g) => g.items.map(([l]) => l))])]
+      : step === 'related'
+        ? [...(relatedGroups ?? [{ title: '', options: related }]).flatMap((g) => g.options), ...(dangerSigns ?? [])]
+        : null;
+  const multiPicked = multiAll ? selectedIn(multiAll) : [];
+  React.useEffect(() => {
+    if (!multiAll) return;
+    onDraft?.(multiPicked.join(', '), multiPicked.length ? () => onNext(multiPicked.join(' · ')) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, multiPicked.join('|')]);
+  const draftOf = (_empty: string, key: 'health' | 'meds' | 'allergy') => (l: string[]) =>
+    onDraft?.(l.join(', '), l.length ? () => onNext(l.join(', '), { [key]: l.join(' · ') }) : null);
+
   /** แตะ chip = เลือก + ส่งคำตอบทันที (mark บนหุ่นตามไปด้วย) */
   const pickFrom = (opts: string[]) => (next: string[]) => {
     const cur = selectedIn(opts);
@@ -173,12 +199,12 @@ export function AssessWidget({
       return <ReplyChips options={CAUSE_OPTIONS} onPick={(o) => onNext(o, { cause: o })} />;
     case 'health':
       // ตอบแล้วบันทึกลงโปรไฟล์ (ข้อมูลสุขภาพที่เดียว) — ไม่ต้องกรอกฟอร์มแยก
-      return <MultiPick options={HEALTH_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มีโรคประจำตัว', { health: l.length ? l.join(' · ') : 'ไม่มี' })} />;
+      return <MultiPick onDraft={draftOf('ไม่มีโรคประจำตัว', 'health')} options={HEALTH_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มีโรคประจำตัว', { health: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'meds':
-      return <MultiPick options={MED_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มียาที่ใช้ประจำ', { meds: l.length ? l.join(' · ') : 'ไม่มี' })} />;
+      return <MultiPick onDraft={draftOf('ไม่มียาที่ใช้ประจำ', 'meds')} options={MED_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่มียาที่ใช้ประจำ', { meds: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'allergy':
       // ตัวเลือกเบื้องต้น · แพ้อย่างอื่น = พิมพ์บอกในช่องแชท
-      return <MultiPick options={ALLERGY_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่แพ้อะไร', { allergy: l.length ? l.join(' · ') : 'ไม่มี' })} />;
+      return <MultiPick onDraft={draftOf('ไม่แพ้อะไร', 'allergy')} options={ALLERGY_OPTIONS.filter((o) => o !== 'ไม่มี')} onDone={(l) => onNext(l.length ? l.join(', ') : 'ไม่แพ้อะไร', { allergy: l.length ? l.join(' · ') : 'ไม่มี' })} />;
     case 'radiate':
       return <ReplyChips options={radiate} onPick={(o) => onNext(o, { radiate: o })} />;
     case 'risk':
