@@ -139,6 +139,7 @@ import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/ServiceProgress';
 import { serviceMinutesOf } from '../../data/serviceMinutes';
 import { PillButton, SourceTag, ThreadCardView } from './home/ThreadCards';
+import { StretchCard } from './home/StretchCard';
 import { Chip as DetailChip, afterOf, nextVisitGuide, sessionRecord } from './home/TreatmentDetailBody';
 import { EMERGENCY } from '../../data/emergency';
 import { PRE_RED_RISK, preVisitRed, preVisitSummary } from '../../data/preVisit';
@@ -4554,7 +4555,7 @@ function WelcomeBento({
           </Text>
         </Tile>
         <View style={{ width: halfW }}>
-          <SelfCareTile groupId="office" title="ยืดคอ-บ่า" onPress={() => onStretch('office')} />
+          <SelfCareTile width={halfW} groupId="office" title="ยืดคอ-บ่า" onPress={() => onStretch('office')} />
         </View>
       </View>
 
@@ -4618,8 +4619,10 @@ function BentoSkeleton({ width }: { width: number }) {
  * ดูแลตัวเอง — ภาพท่ายืดเคลื่อนไหว (GIF) เต็มความกว้างช่อง + ชื่อท่า + ปุ่มเล่น
  * ท่าที่ไม่มีภาพ (เช่น ฝึกหายใจ) → แถวเดียวแบบเดิม
  */
-function SelfCareTile({ groupId, title, done, onPress }: { groupId?: string; title: string; done?: boolean; onPress: () => void }) {
+function SelfCareTile({ groupId, title, done, onPress, width }: { groupId?: string; title: string; done?: boolean; onPress: () => void; width: number }) {
   const { colors } = useTheme();
+  // ท่าที่แนะนำ = การ์ดเดียวกับหน้ารวมท่ายืด
+  if (groupId && SYMPTOM_GROUPS.some((g) => g.id === groupId)) return <StretchCard groupId={groupId} width={width} sub={done ? 'ทำแล้ววันนี้' : undefined} onPress={onPress} />;
   const group = SYMPTOM_GROUPS.find((g) => g.id === groupId);
   const motion = group ? STRETCH_MOTION[group.stretch.name] : undefined;
   const gif = stretchGif(motion);
@@ -4787,7 +4790,7 @@ function DraftBento({
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile width={halfW} groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           <View style={{ width: halfW, gap: BENTO_GAP }}>
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
@@ -4931,7 +4934,7 @@ function DraftBento({
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile width={halfW} groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
@@ -5190,7 +5193,7 @@ function HomeBento({
       {/* 5) ดูแลตัวเอง | บิล/ใบเสร็จ (โทรหาคลินิก = ปุ่มไอคอนในการ์ดนัดทุกสถานะ) */}
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: BENTO_GAP }}>
         <View style={{ width: halfW }}>
-          <SelfCareTile groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare(tc.selfCare.groupId)} />
+          <SelfCareTile width={halfW} groupId={tc.selfCare.groupId} title={tc.selfCare.title} done={tc.selfCare.doneToday} onPress={() => onSelfCare(tc.selfCare.groupId)} />
         </View>
         <View style={{ width: halfW, gap: BENTO_GAP }}>
           {bill ? (

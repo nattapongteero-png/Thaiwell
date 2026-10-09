@@ -47,6 +47,7 @@ import { useNav } from '../../navigation/types';
 import { NotFoundScreen } from './NotFound';
 import { sessionRecord } from './home/TreatmentDetailBody';
 import { PainPicker } from './home/PainPicker';
+import { StretchCard } from './home/StretchCard';
 import type { TreatmentCase } from '../../data/homeFeed';
 
 /* ============================================================ 15 POST-SERVICE ASSESSMENT */
@@ -449,37 +450,9 @@ export function StretchListScreen({ tab }: { tab?: boolean } = {}) {
         })}
       </ScrollView>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
-        {list.map((g) => {
-          const m = STRETCH_MOTION[g.stretch.name];
-          const gif = stretchGif(m);
-          return (
-            <Pressable
-              key={g.id}
-              accessibilityRole="button"
-              accessibilityLabel={`${g.stretch.name} ${g.short}`}
-              onPress={() => nav.push('SelfCare', { groupId: g.id })}
-              style={({ pressed }) => ({ width: colW, borderRadius: 20, overflow: 'hidden', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.85 : 1 })}
-            >
-              <View style={{ height: colW * 0.9, backgroundColor: colors.surface.sunken }}>
-                {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={colW * 0.55} style={{ width: '100%', height: '100%' }} /> : null}
-                {m ? (
-                  <View style={{ position: 'absolute', left: space[2], top: space[2], flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: 'rgba(255,255,255,0.9)' }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
-                    <Text style={{ fontFamily: fontFamily.semibold, fontSize: 11, lineHeight: 17 }}>{m.primary.label}</Text>
-                  </View>
-                ) : null}
-              </View>
-              <View style={{ padding: space[3], gap: 2 }}>
-                <Text variant="labelLg" numberOfLines={1}>
-                  {g.stretch.name.replace(' 7 ท่า', '')}
-                </Text>
-                <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                  {g.short}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {list.map((g) => (
+          <StretchCard key={g.id} groupId={g.id} width={colW} onPress={() => nav.push('SelfCare', { groupId: g.id })} />
+        ))}
       </View>
       </>
       )}

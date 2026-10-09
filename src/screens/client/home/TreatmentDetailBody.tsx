@@ -583,10 +583,8 @@ function VisitDetail({ tc, index }: { tc: TreatmentCase; index: number }) {
 
       <Section icon="check-circle" tint="#C2782B" title="คำแนะนำหลังนวด">
         {r.advice.map((a) => (
-          <View key={a} style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-            <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: '#C2782B' }} />
-            <Text variant="bodySm">{a}</Text>
-          </View>
+          // หลังบ้านส่งมามีจุดนำหน้าอยู่แล้ว → ตัดออกแล้วใส่จุดเดียว (ไม่มีจุดสีซ้อน)
+          <Text key={a} variant="bodySm">{`• ${a.replace(/^[•·\-*\s]+/, '')}`}</Text>
         ))}
       </Section>
     </View>
