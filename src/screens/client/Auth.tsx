@@ -189,6 +189,18 @@ export function AuthScreen() {
   );
 }
 
+/** ตัวเลขวันเกิด → วว/ดด/ปปปป (ลบได้ตามปกติ) */
+const formatBirth = (v: string) => {
+  const d = v.replace(/\D/g, '').slice(0, 8);
+  return [d.slice(0, 2), d.slice(2, 4), d.slice(4)].filter(Boolean).join('/');
+};
+/** เบอร์มือถือ 0xx-xxx-xxxx · เบอร์บ้าน 0x-xxx-xxxx */
+const formatPhone = (v: string) => {
+  const d = v.replace(/\D/g, '').slice(0, 10);
+  const head = /^0[689]/.test(d) ? 3 : 2;
+  return [d.slice(0, head), d.slice(head, head + 3), d.slice(head + 3)].filter(Boolean).join('-');
+};
+
 /* ============================================================ ยืนยันตัวตนด้วยบัตรประชาชน
  * ถ่ายรูป/เลือกรูปบัตร → อ่านข้อความบนเครื่อง (Apple Vision · รูปไม่ถูกส่งออกไป) → เติมช่องให้ → ผู้ใช้ตรวจ/แก้ แล้วยืนยัน
  * หรือกรอกเองทั้งหมด · เลขบัตรตรวจหลักตรวจสอบ · เบอร์โทรใช้ติดต่อเรื่องนัด
@@ -207,7 +219,8 @@ export function IdentityScreen() {
 
   const read = async (fromCamera: boolean) => {
     setNote(null);
-    const perm = fromCamera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    // เว็บ: เบราว์เซอร์ถามสิทธิ์เองตอนเปิดกล้อง/เลือกไฟล์
+    const perm = Platform.OS === 'web' ? { granted: true } : fromCamera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       setNote(fromCamera ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — เปิดได้ที่ การตั้งค่า › ThaiWell AI' : 'ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ');
       return;
@@ -260,7 +273,7 @@ export function IdentityScreen() {
         {reading ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
             <ActivityIndicator color={colors.brand.primary} />
-            <Text variant="bodySm">กำลังอ่านข้อมูลจากบัตร…</Text>
+            <Text variant="bodySm">{Platform.OS === 'web' ? 'กำลังอ่านข้อมูลจากบัตร… ครั้งแรกอาจใช้เวลาสักครู่' : 'กำลังอ่านข้อมูลจากบัตร…'}</Text>
           </View>
         ) : null}
         {ocrAvailable ? (
@@ -274,7 +287,7 @@ export function IdentityScreen() {
           </View>
         ) : (
           <Text variant="bodySm" tone="secondary">
-            อ่านรูปบัตรได้ในแอปบน iPhone · ที่นี่กรอกข้อมูลด้านล่างได้เลย
+            อ่านรูปบัตรในเครื่องนี้ไม่ได้ กรอกข้อมูลด้านล่างได้เลย
           </Text>
         )}
         <Text variant="caption" tone="tertiary">
@@ -300,8 +313,8 @@ export function IdentityScreen() {
             onChange={(t) => setCard((c) => ({ ...c, title: t, sex: sexOfTitle(t) || c.sex }))}
           />
         </View>
-        <TextField label="ชื่อ" value={card.firstName} onChangeText={set('firstName')} placeholder="ชื่อจริงตามบัตร" />
-        <TextField label="นามสกุล" value={card.lastName} onChangeText={set('lastName')} placeholder="นามสกุลตามบัตร" />
+        <TextField label="ชื่อ" value={card.firstName} onChangeText={set('firstName')} placeholder="ชื่อจริงตามบัตร" textContentType="givenName" autoComplete="given-name" />
+        <TextField label="นามสกุล" value={card.lastName} onChangeText={set('lastName')} placeholder="นามสกุลตามบัตร" textContentType="familyName" autoComplete="family-name" />
         <View style={{ gap: space[1] }}>
           <Text variant="labelMd">เพศ</Text>
           <SegmentedControl options={['ชาย', 'หญิง']} value={card.sex} onChange={(v) => set('sex')(v)} />
@@ -309,16 +322,17 @@ export function IdentityScreen() {
         <TextField
           label="วันเดือนปีเกิด (พ.ศ.)"
           value={card.birthDate}
-          onChangeText={set('birthDate')}
+          // พิมพ์แค่ตัวเลข ใส่ / ให้เอง (12032528 → 12/03/2528)
+          onChangeText={(v) => set('birthDate')(formatBirth(v))}
           placeholder="วว/ดด/ปปปป เช่น 12/03/2528"
-          keyboardType="numbers-and-punctuation"
+          keyboardType="number-pad"
           error={card.birthDate.length >= 10 && age === null ? 'วันเกิดไม่ถูกต้อง' : undefined}
         />
-        <TextField label="ที่อยู่ตามบัตรประชาชน" value={card.address} onChangeText={set('address')} placeholder="บ้านเลขที่ หมู่ ถนน ตำบล อำเภอ จังหวัด" multiline />
+        <TextField label="ที่อยู่ตามบัตรประชาชน" value={card.address} onChangeText={set('address')} placeholder="บ้านเลขที่ หมู่ ถนน ตำบล อำเภอ จังหวัด" multiline textContentType="fullStreetAddress" autoComplete="street-address" />
         <TextField
           label="เบอร์โทรศัพท์"
           value={card.phone}
-          onChangeText={(v) => set('phone')(v.replace(/[^\d-]/g, '').slice(0, 12))}
+          onChangeText={(v) => set('phone')(formatPhone(v))}
           placeholder="08x-xxx-xxxx"
           keyboardType="phone-pad"
           textContentType="telephoneNumber"

@@ -50,6 +50,7 @@
     "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "^0.21.0",
     "react-native-webview": "13.15.0",
+    "tesseract.js": "^5.1.1",
     "three": "^0.170.0",
     "three-mesh-bvh": "^0.8.3"
   },

@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { EdgeFade } from './Glass';
 import { Icon } from './Icon';
 import { Text } from './Text';
+import { useKeepFocusedVisible, useKeyboardHeight } from '../layout/keyboard';
 
 /**
  * BottomSheet — พื้นหลังจางขึ้นอยู่กับที่ · เฉพาะ sheet เลื่อนขึ้น · สูงคงที่ (เนื้อหาเลื่อนข้างใน)
@@ -65,7 +66,11 @@ export function BottomSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const sheetH = Math.round(winH * heightRatio);
+  /* คีย์บอร์ดขึ้น (ช่องพิมพ์ใน sheet) → sheet ลอยเหนือคีย์บอร์ด ไม่สูงเกินจอ · ช่องที่พิมพ์เลื่อนมาให้เห็น */
+  const keyboard = useKeyboardHeight();
+  const scrollRef = React.useRef<React.ElementRef<typeof ScrollView> | null>(null);
+  const onScroll = useKeepFocusedVisible(scrollRef as React.RefObject<never>, keyboard);
+  const sheetH = Math.min(Math.round(winH * heightRatio), keyboard ? winH - keyboard - insets.top - space[4] : Infinity);
   const onDrag = React.useMemo(() => Animated.event([{ nativeEvent: { translationY: drag } }], { useNativeDriver: true }), [drag]);
   // ปล่อยนิ้ว: เกิน 1/4 ของความสูง (อย่างน้อย 100) หรือปัดเร็ว = ปิด · ไม่ถึง = เด้งกลับ
   const onDragState = (e: { nativeEvent: { state: number; translationY: number; velocityY: number } }) => {
@@ -93,12 +98,12 @@ export function BottomSheet({
           position: 'absolute',
           left: 0,
           right: 0,
-          bottom: 0,
+          bottom: keyboard,
           height: sheetH,
           backgroundColor: colors.surface.canvas,
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
-          paddingBottom: insets.bottom + space[2],
+          paddingBottom: (keyboard ? 0 : insets.bottom) + space[2],
           shadowColor: '#0F172A',
           shadowOpacity: 0.18,
           shadowRadius: 30,
@@ -140,6 +145,10 @@ export function BottomSheet({
         {/* เนื้อหา: เลื่อนรายการอย่างเดียว ไม่ลากปิด (ลากปิดที่หัว sheet) */}
         <EdgeFade>
           <ScrollView
+            ref={scrollRef}
+            keyboardShouldPersistTaps="handled"
+            onScroll={onScroll}
+            scrollEventThrottle={32}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[3] }}>
             {children}

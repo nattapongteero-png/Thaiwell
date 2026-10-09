@@ -6,6 +6,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useGrid } from './useGrid';
 import { useDockHeight } from '../components/TabBar';
 import { EdgeFade } from '../components/Glass';
+import { useKeepFocusedVisible, useKeyboardHeight } from './keyboard';
 
 type SpaceKey = keyof typeof space;
 
@@ -84,12 +85,18 @@ interface ScreenProps {
  * - จำกัด max content width (อ่านง่ายบน tablet/kiosk)
  * - footer ติดล่าง + safe area (CTA อยู่ในระยะนิ้วโป้ง: Fitts's Law)
  */
-export function Screen({ children, scroll = true, footer, header, padded = true, background = 'canvas', contentStyle, scrollRef }: ScreenProps) {
+export function Screen({ children, scroll = true, footer, header, padded = true, background = 'canvas', contentStyle, scrollRef: outerRef }: ScreenProps) {
   const { colors } = useTheme();
   const g = useGrid();
   const insets = useSafeAreaInsets();
   // หน้าในแท็บ: dock (tab menu) ลอยทับด้านล่าง ต้องเว้นที่ให้เนื้อหาและ footer
   const dockH = useDockHeight();
+  /* คีย์บอร์ดขึ้น: ดันทั้งหน้าขึ้นเหนือคีย์บอร์ด (ปุ่มด้านล่างอยู่เหนือคีย์บอร์ด) + เลื่อนช่องที่พิมพ์ให้เห็นเสมอ */
+  const innerRef = React.useRef<ScrollView | null>(null);
+  const scrollRef = outerRef ?? innerRef;
+  const keyboard = useKeyboardHeight();
+  const onScroll = useKeepFocusedVisible(scrollRef, keyboard);
+  const lift = keyboard ? Math.max(0, keyboard - insets.bottom - dockH) : 0;
   const inner = (
     <View
       style={[
@@ -109,12 +116,12 @@ export function Screen({ children, scroll = true, footer, header, padded = true,
     </View>
   );
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface[background] }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface[background], paddingBottom: lift }}>
       {header}
       {scroll ? (
         // เนื้อหาจางที่ขอบบน (ใต้ header) / ขอบล่าง (เหนือปุ่ม) ตอนเลื่อนผ่าน — แบบเดียวกับหน้าแรก
         <EdgeFade top={header ? 20 : 0} bottom={footer ? 28 : 0}>
-          <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+          <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={{ flexGrow: 1 }}>
             {inner}
           </ScrollView>
         </EdgeFade>
