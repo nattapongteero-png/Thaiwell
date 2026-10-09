@@ -169,6 +169,12 @@ const MERGE_OLD = 'รวมกับเรื่องเดิม';
 const ADD_NOTE_INTENT = 'แจ้งอาการเพิ่ม';
 /** ยังไม่ได้ประเมินหลังนวดครั้งล่าสุด → ตัวเลือกในแชท (เปิดแบบประเมินหลังนวด) */
 const POST_INTENT = 'ประเมินหลังนวด';
+/** AI ทักแบบรู้จักกัน (เปิดแชทใหม่) — ตัวเลือกของคำทัก */
+const GREET_LATER = 'ไว้ทีหลัง';
+const GREET_BETTER = 'ดีขึ้นแล้ว';
+const GREET_STILL = 'ยังปวดอยู่';
+const GREET_PRE = 'เล่าอาการก่อนนัด';
+const GREET_KEY = 'thaiwell.greet.v1';
 /** แท็บนัดที่ยังไม่ประเมิน: ประเมินสำหรับนัดนี้ (ผูกกับนัด) — อีกทางคือประเมินเรื่องใหม่ (แท็บใหม่ ไม่ผูก) */
 const LOOSE_ASSESS_INTENT = 'ประเมินอาการสำหรับนัดนี้';
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
@@ -378,7 +384,7 @@ export function HomeScreen() {
   // ยังไม่มีใบร่าง/ใบการรักษา
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote } = useJourney();
+  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote, setVisitSelfPain } = useJourney();
   // จบคอร์สแล้ว (ครบครั้งและไม่มีนัดค้าง) → ไม่อยู่บนแท็บหน้าแรก (ดูได้ที่ประวัติการรักษา "รักษาจบแล้ว")
   const cases = React.useMemo(() => allCases.filter((c) => !c.finished), [allCases]);
   // เรื่องที่จบคอร์สแล้วไม่นับ (ไม่มีเรื่องที่ดูแลอยู่ = หน้าต้อนรับ เริ่มประเมินเรื่องใหม่)
@@ -507,7 +513,8 @@ export function HomeScreen() {
     if (!fresh && intent === INTENTS[0] && unfinished) return openChat(unfinished.id);
     pendingIntent.current = intent ?? null;
     const unused = sessions.find((c) => c.id.startsWith('w') && c.items.length === 1);
-    const w = unused ?? welcomeSession();
+    // แตะหัวข้อมาแล้ว (ตั้งใจทำเรื่องนั้น) → ไม่ทักเรื่องอื่นคั่น
+    const w = unused ?? (intent ? welcomeSession() : withGreeting(welcomeSession()));
     if (!unused) setSessions((all) => [w, ...all]);
     setActiveId(w.id);
     setStarted(true);
@@ -1376,12 +1383,117 @@ export function HomeScreen() {
    * ปุ่ม "ถาม AI" (แถวแท็บเรื่อง) — AI ทักตามแท็บที่เลือก แล้วให้เลือกว่าจะทำอะไร · ประเมินเรื่องใหม่มีทุกครั้ง
    * เรื่องที่รักษา: ประเมินก่อนนวด (มีนัด) · ดูผลการรักษา · นัดครั้งถัดไป · ใบร่าง: ประเมินอีกครั้ง · ไม่มีเรื่อง/นัดเรื่องใหม่: เริ่มประเมิน
    */
+  /* ---------- AI ทักแบบรู้จักกัน ----------
+   * เปิดแชทใหม่ → ทักเรื่องที่สำคัญที่สุดของผู้ใช้ก่อน 1 เรื่อง (จากประวัติการรักษาทุกเรื่อง ไม่ใช่แค่แชทนี้)
+   * 1) นวดแล้วยังไม่ได้บอกผลหลังนวด → ถามคะแนนปวดในแชทนี้เลย (บันทึกลงเรื่องนั้น + ส่งคลินิก)
+   * 2) มีนัดที่ประเมินก่อนนวดได้แล้วแต่ยังไม่ประเมิน → ชวนเล่าอาการก่อนนัด
+   * 3) หลังนวดครั้งก่อนยังไม่ดีขึ้น → ถามว่าตอนนี้ดีขึ้นไหม
+   * ข้ามได้ (ไว้ทีหลัง) · เรื่องเดียวกันทักไม่เกิน 2 ครั้ง และไม่ทักซ้ำในวันเดียวกัน · ตอบ/ข้ามแล้วทำต่อตามที่แชทใหม่ตั้งใจไว้ */
+  const greetAsked = React.useRef<Record<string, { n: number; day: string }> | null>(null);
+  if (!greetAsked.current) {
+    try {
+      greetAsked.current = JSON.parse(getItem(GREET_KEY) ?? '{}');
+    } catch {
+      greetAsked.current = {};
+    }
+  }
+  const greetFor = React.useRef<Record<string, { caseId: string; rest: ThreadItem[]; assess: Assessment }>>({});
+  const canGreet = (key: string) => {
+    const g = greetAsked.current![key];
+    return !g || (g.n < 2 && g.day !== new Date().toDateString());
+  };
+  const markGreet = (key: string) => {
+    const g = greetAsked.current![key];
+    greetAsked.current![key] = { n: (g?.n ?? 0) + 1, day: new Date().toDateString() };
+    try {
+      setItem(GREET_KEY, JSON.stringify(greetAsked.current));
+    } catch {
+      /* ignore */
+    }
+  };
+  const greetItem = (): { caseId: string; key: string; item: ThreadItem } | null => {
+    for (const c of cases) {
+      const lv = c.visits[c.visits.length - 1];
+      const key = `post:${c.id}:${c.visits.length}`;
+      if (!lv || lv.selfPain !== undefined || !canGreet(key)) continue;
+      return {
+        caseId: c.id,
+        key,
+        item: aiText(`สวัสดีค่ะ หลังนวด${c.short}ครั้งที่ ${c.visits.length} (${lv.date}) ตอนนี้อาการอยู่ที่เท่าไหร่คะ (0–10)? ก่อนนวด ${lv.painBefore}/10`, { type: 'fuAsk', sessionId: `post-${c.id}`, pin: '', label: `หลังนวด${c.short}`, before: lv.painBefore }),
+      };
+    }
+    for (const c of cases) {
+      const key = `pre:${c.id}:${c.visits.length}`;
+      if (c.appointment.date === '-' || caseToday[c.id] || assessLock(caseAppts[c.id] ?? c.appointment) || preVisitOpensOn(c.appointment.date) || !canGreet(key)) continue;
+      const when = c.appointment.today ? 'วันนี้' : `${c.appointment.date} `;
+      return { caseId: c.id, key, item: aiText(`สวัสดีค่ะ ${when}มีนัดนวด${c.short}ครั้งที่ ${c.visits.length + 1} ช่วงนี้อาการเป็นยังไงบ้างคะ? เล่าไว้ก่อน ผู้ให้บริการจะเห็นก่อนถึงคิว`, { type: 'intents', options: [GREET_PRE, GREET_LATER] }) };
+    }
+    for (const c of cases) {
+      const lv = c.visits[c.visits.length - 1];
+      const after = lv?.selfPain ?? lv?.painAfter;
+      const key = `still:${c.id}:${c.visits.length}`;
+      if (!lv || !Number.isFinite(after) || after! < lv.painBefore || !canGreet(key)) continue;
+      return { caseId: c.id, key, item: aiText(`สวัสดีค่ะ หลังนวด${c.short}ครั้งก่อนยังปวด ${after}/10 อยู่ ตอนนี้ดีขึ้นบ้างไหมคะ?`, { type: 'intents', options: [GREET_BETTER, GREET_STILL, GREET_LATER] }) };
+    }
+    return null;
+  };
+  /** แชทใหม่ → ใส่คำทักไว้ก่อน (เก็บสิ่งที่แชทตั้งใจจะถามไว้ ทำต่อหลังตอบ/ข้าม) */
+  const withGreeting = (ss: ChatSession): ChatSession => {
+    const g = greetItem();
+    if (!g) return ss;
+    markGreet(g.key);
+    greetFor.current[ss.id] = { caseId: g.caseId, rest: ss.items, assess: ss.assess };
+    return { ...ss, items: [g.item], assess: { ...blankAssessment(), step: 'idle' } };
+  };
+  /** ตอบ/ข้ามคำทักแล้ว → กลับไปทำสิ่งที่แชทใหม่ตั้งใจไว้ (เช่น ถามอาการเรื่องใหม่) */
+  const afterGreet = (sid: string): ThreadItem[] => {
+    const gf = greetFor.current[sid];
+    if (!gf) return [];
+    delete greetFor.current[sid];
+    setAssess(() => gf.assess, sid);
+    return gf.rest.map((m, i) => ({ ...m, id: `${m.id}-g${Date.now()}${i}`, time: nowTimeText(), text: m.text?.replace(/^สวัสดีค่ะ\s*/, '') }));
+  };
+  /** เปิดแชทของเรื่องนั้น (สลับแท็บหน้าแรก) แล้วให้ AI ถามต่อในแชทของเรื่อง · แชททักที่ไม่มีอะไรอื่นลบทิ้ง */
+  const greetToCase = (sid: string) => {
+    const gf = greetFor.current[sid];
+    delete greetFor.current[sid];
+    const i = gf ? cases.findIndex((c) => c.id === gf.caseId) : -1;
+    if (i < 0) return;
+    setSessions((all) => all.filter((c) => c.id !== sid));
+    if (caseIdx === i) followCaseChat();
+    else {
+      openTabChat.current = { tab: i, follow: true };
+      setCaseIdx(i);
+    }
+  };
+  /** ผลหลังนวดที่ตอบในแชทไหนก็ได้ → ลงที่เรื่องนั้น + ส่งคลินิก */
+  const postGreetItems = (card: Extract<ThreadCard, { type: 'fuAsk' }>, v: number): ThreadItem[] => {
+    const caseId = card.sessionId.slice(5);
+    const c = cases.find((x) => x.id === caseId);
+    setVisitSelfPain(caseId, v);
+    const before = card.before;
+    const pct = before ? Math.round(((before - v) / before) * 100) : 0;
+    if (v > before) {
+      notifyClinic('ผู้ป่วยแจ้งปวดเพิ่มหลังนวด', `${c?.short ?? ''} · ก่อนนวด ${before} → ตอนนี้ ${v}/10`);
+      log('ระบบ → ผู้ให้บริการ', `หลังนวด${c?.short ?? ''} ปวดเพิ่ม ${before} → ${v}`);
+    }
+    const text =
+      v < before
+        ? `ลดลงจาก ${before} เหลือ ${v} ดีขึ้น ${pct}% ค่ะ บันทึกในเรื่อง${c?.short ?? ''}และส่งให้ผู้ให้บริการแล้ว`
+        : v === before
+          ? `ยังเท่าเดิมค่ะ บันทึกและส่งให้ผู้ให้บริการแล้ว ครั้งถัดไปจะปรับแผนให้`
+          : `ปวดมากขึ้นกว่าก่อนนวด แจ้งผู้ให้บริการแล้วค่ะ ถ้าปวดรุนแรง ชา หรืออ่อนแรง ควรพบแพทย์`;
+    return [aiText(text), ...afterGreet(activeId)];
+  };
+
   /* ประวัติแชท: 1 แท็บ = 1 แชท (ชื่อเดียวกับแท็บ) · แชทที่ยังไม่เป็นเรื่อง (ประเมินไม่จบ / ถามทั่วไป) แยกกลุ่ม · แชทว่างไม่แสดง */
-  const openTabChat = React.useRef<number | null>(null);
+  const openTabChat = React.useRef<{ tab: number; follow?: boolean } | null>(null);
   React.useEffect(() => {
-    if (openTabChat.current === null || openTabChat.current !== caseIdx) return;
+    const o = openTabChat.current;
+    if (!o || o.tab !== caseIdx) return;
     openTabChat.current = null;
-    openAI();
+    if (o.follow) followCaseChat();
+    else openAI();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseIdx]);
   const historyRows = React.useMemo((): HistoryRow[] => {
@@ -1531,6 +1643,7 @@ export function HomeScreen() {
     // คะแนนโดยรวม → ใช้สีกับ mark ทุกบริเวณของครั้งนั้นบนหุ่นด้วย
     const ss = fuSessions.find((x) => x.id === card.sessionId);
     lastFuScore.current = v;
+    if (card.sessionId.startsWith('post-')) return postGreetItems(card, v);
     // ประเมินก่อนนวด (ไม่ใช่รอบติดตามผลของครั้งไหน) → ถามอาการผิดปกติต่อเลย
     if (card.sessionId.startsWith('pre-'))
       return [{ id: `fu-adv-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text: 'หลังนวดครั้งก่อนมีอาการผิดปกติไหมคะ?', card: { type: 'fuAdverse' } }];
@@ -1700,7 +1813,7 @@ export function HomeScreen() {
     const blank = active.title === 'แชทใหม่' && !active.items.some((m) => m.from === 'user') && (active.assess.step === 'topic') === askTopic;
     let sid = active.id;
     if (!blank) {
-      const next = newChatSession(askTopic, currentTopic);
+      const next = withGreeting(newChatSession(askTopic, currentTopic));
       setSessions((all) => [next, ...all]);
       setActiveId(next.id);
       sid = next.id;
@@ -1773,6 +1886,10 @@ export function HomeScreen() {
     aiReply(activeId, userText, () => [{ id: `a${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text, card: action }]);
   /** คำถามแนะนำ → แต่ละข้อพาไปคนละเส้น */
   const pickIntent = (label: string) => {
+    // คำทักตอนเปิดแชทใหม่
+    if (label === GREET_LATER) return aiReply(activeId, label, () => [aiText('ได้เลยค่ะ ไว้ค่อยบอกทีหลังนะคะ'), ...afterGreet(activeId)]);
+    if (label === GREET_BETTER) return aiReply(activeId, label, () => [aiText('ดีใจด้วยค่ะ ถ้ากลับมาปวดอีก บอกได้ตลอดนะคะ'), ...afterGreet(activeId)]);
+    if (label === GREET_STILL || label === GREET_PRE) return greetToCase(activeId);
     const born = account ? birthElement(account.birthDate) : null;
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
     if (label === NEW_TOPIC_INTENT) return newChat(true);
@@ -3364,7 +3481,13 @@ export function HomeScreen() {
                     />
                   ) : m.card?.type === 'fuAsk' ? (
                     // ตอบได้เฉพาะคำถามล่าสุด
-                    i === thread.length - 1 ? <ReplyChips options={PAIN_CHIPS} onPick={once((o: string) => answerFuScore(m.card as Extract<ThreadCard, { type: 'fuAsk' }>, Number(o)))} /> : null
+                    i === thread.length - 1 ? (
+                      <ReplyChips
+                        // คำทักถามผลหลังนวด → ข้ามได้
+                        options={m.card.sessionId.startsWith('post-') ? [...PAIN_CHIPS, GREET_LATER] : PAIN_CHIPS}
+                        onPick={once((o: string) => (o === GREET_LATER ? pickIntent(GREET_LATER) : answerFuScore(m.card as Extract<ThreadCard, { type: 'fuAsk' }>, Number(o))))}
+                      />
+                    ) : null
                   ) : m.card?.type === 'placePick' ? (
                     <PlacePickCard
                       options={m.card.options}
@@ -3656,7 +3779,7 @@ export function HomeScreen() {
           // แชทของแท็บ → หน้าแรกสลับไปแท็บนั้นด้วย · แท็บที่ยังไม่มีแชท → เปิดแชทของแท็บ (เหมือนกดปุ่ม AI ที่แท็บนั้น)
           if (r.tab !== undefined) setCaseIdx(r.tab);
           if (r.chatId) openChat(r.chatId);
-          else if (r.tab !== undefined) openTabChat.current = r.tab;
+          else if (r.tab !== undefined) openTabChat.current = { tab: r.tab };
         }}
         onNew={() => {
           setHistoryOpen(false);
