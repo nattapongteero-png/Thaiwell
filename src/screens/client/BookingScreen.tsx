@@ -415,7 +415,7 @@ export function BookingScreen({ route }: { route?: { params?: BookingParams } })
     <Screen
       scrollRef={pageRef}
       header={<AppBar onBack={() => nav.goBack()} title={title} />}
-      footer={<Button label={red ? 'ควรพบแพทย์ก่อนนวด' : clash ? `เวลานี้มีนัด${clash.topic}แล้ว` : ready ? `ยืนยัน ${pick!.day} ${pick!.time}` : 'เลือกผู้ให้บริการและเวลา'} disabled={!ready} onPress={confirm} />}
+      footer={<Button label={red ? 'ควรพบแพทย์ก่อนนวด' : clash ? `เวลานี้มีนัด${clash.topic.replace(/^นัด/, '')}แล้ว` : ready ? `ยืนยัน ${pick!.day} ${pick!.time}` : 'เลือกผู้ให้บริการและเวลา'} disabled={!ready} onPress={confirm} />}
     >
       {/* สถานที่ที่จอง */}
       <Panel flush>
