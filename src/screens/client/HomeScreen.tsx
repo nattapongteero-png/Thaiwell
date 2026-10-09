@@ -336,7 +336,10 @@ export function HomeScreen() {
   const savedChats = React.useMemo(() => {
     try {
       const raw = getItem(CHATS_KEY);
-      return raw ? (JSON.parse(raw) as { sessions?: ChatSession[]; caseChats?: Record<string, string> }) : null;
+      const saved = raw ? (JSON.parse(raw) as { sessions?: ChatSession[]; caseChats?: Record<string, string> }) : null;
+      // ปิดแอประหว่าง AI กำลังคิด → ตัว "กำลังคิด" ถูกบันทึกค้างไว้ (ไม่มีคำตอบมาแทนแล้ว) → ตัดออก
+      if (saved?.sessions) saved.sessions = saved.sessions.map((c) => (c.items.some((m) => m.thinking === 'working') ? { ...c, items: c.items.filter((m) => m.thinking !== 'working') } : c));
+      return saved;
     } catch {
       return null;
     }
