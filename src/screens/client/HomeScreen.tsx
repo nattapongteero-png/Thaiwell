@@ -700,7 +700,7 @@ export function HomeScreen() {
         .filter((x) => x && !/^ไม่นวด/.test(x) && !(period && x === 'งดนวดท้อง'))
         .map((x) => ({ key: `c-${x}`, icon: 'alert-triangle' as const, label: x, tone: 'warn' as const, pin: undefined as BodyPin | undefined })),
       // อาการร่วม = ป้ายเดียวรวมทุกข้อ มีหัว "อาการร่วม" กำกับ (ไม่ให้ดูเหมือนจุดที่ปวดอีกจุด)
-      ...(related.length ? [{ key: 'related', icon: 'zap' as const, label: related.map((x) => x.replace(/ร่วมด้วย$/, '')).join(', '), tag: 'อาการร่วม', tone: (related.some((x) => x === NUMB || x === WEAK) ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') }] : []),
+      ...(related.length ? [{ key: 'related', icon: 'plus-circle' as const, label: related.map((x) => x.replace(/ร่วมด้วย$/, '')).join(', '), tag: 'อาการร่วม', tone: (related.some((x) => x === NUMB || x === WEAK) ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') }] : []),
       ...(avoid ? [{ key: 'avoid', icon: 'slash' as const, label: `ไม่นวด${avoid}`, tone: 'avoid' as const, pin: AVOID_PINS[avoid]?.[0] }] : []),
       ...(period && avoid !== 'ท้อง' ? [{ key: 'period', icon: 'slash' as const, label: 'งดนวดท้อง', tone: 'avoid' as const, pin: 'belly' as BodyPin }] : []),
       ...(adverse ? [{ key: 'adv', icon: 'alert-triangle' as const, label: `${adverse}หลังนวด`.replace(/^(.*)หลังนวดหลังนวด$/, '$1หลังนวด'), tone: 'warn' as const, pin: tcase.areas[0]?.pin }] : []),
@@ -3836,7 +3836,8 @@ export function HomeScreen() {
                 </Text>
               </View>
             ) : null}
-            {bodyInfo?.extras.map((x) => (
+            {/* ข้อควรระวัง (c-) อยู่ฝั่งขวาใต้ธาตุ — ไม่กระจุกฝั่งซ้าย */}
+            {bodyInfo?.extras.filter((x) => !x.key.startsWith('c-')).map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tag={x.tag} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
             {/* ข้อมูลบนหุ่นเก่าแล้ว (ไม่ใช่วันนี้) → บอกว่าเป็นข้อมูลเมื่อไหร่ + ปุ่มเล่าอาการวันนี้ · วันนี้ = ไม่ต้องแสดง */}
@@ -3855,6 +3856,9 @@ export function HomeScreen() {
           <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
             {/* ธาตุ */}
             {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+            {bodyInfo?.extras.filter((x) => x.key.startsWith('c-')).map((x) => (
+              <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
+            ))}
           </View>
           </View>
         </Animated.View>
@@ -6688,10 +6692,61 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
 }
 
 /** ป้ายบนหุ่นหน้าแรก: จุด (สีตามระดับปวด) หรือไอคอน + คำสั้น · warn = ส้ม · avoid = เทา */
+/**
+ * ป้ายมีหัวกำกับ (อาการร่วม) — ปกติหุบเหลือหัว (ไม่บังหุ่น) · แตะ = กางรายละเอียดออกนุ่ม ๆ แล้วหุบเองเมื่ออ่านทัน
+ * เวลาที่กางค้าง = เวลาสังเกต 1.5 วิ + เวลาอ่าน (~15 ตัวอักษร/วิ ≈ 200 คำ/นาที) · อย่างน้อย 3 วิ ไม่เกิน 10 วิ (ช่วง 4–10 วิ ของ snackbar ใน Material)
+ */
+const readMs = (text: string) => Math.min(10000, Math.max(3000, 1500 + (text.replace(/\s/g, '').length / 15) * 1000));
+function TagPill({ tag, icon, label, warn, onPress }: { tag: string; icon?: IconName; label: string; warn?: boolean; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = React.useState(false);
+  const [w, setW] = React.useState(0);
+  const t = React.useRef(new Animated.Value(0)).current;
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggle = (next: boolean) => {
+    setOpen(next);
+    Animated.spring(t, { toValue: next ? 1 : 0, stiffness: 260, damping: 26, mass: 0.8, useNativeDriver: false }).start();
+    if (timer.current) clearTimeout(timer.current);
+    if (next) timer.current = setTimeout(() => toggle(false), readMs(label));
+  };
+  React.useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${tag} ${label}`}
+      accessibilityState={{ expanded: open }}
+      onPress={() => {
+        toggle(!open);
+        if (!open) onPress?.();
+      }}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: 5, borderRadius: radius.full, backgroundColor: colors.surface.default, opacity: pressed ? 0.8 : 1, ...elevation[1] })}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 20, paddingHorizontal: 7, borderRadius: radius.full, backgroundColor: warn ? colors.status.warning.fg : colors.text.primary }}>
+        {icon ? <Icon name={icon} size="xxs" color={colors.text.inverse} /> : null}
+        <Text style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 14 }} color={colors.text.inverse}>
+          {tag}
+        </Text>
+      </View>
+      {/* รายละเอียด: กางจากกว้าง 0 → กว้างจริง (วัดจากข้อความที่ซ่อนไว้) พร้อมจางเข้า */}
+      <Animated.View style={{ overflow: 'hidden', maxWidth: t.interpolate({ inputRange: [0, 1], outputRange: [0, w ? Math.min(w, 180) + space[1] + 4 : 0] }), opacity: t }}>
+        <Text variant="labelSm" numberOfLines={1} color={warn ? colors.status.warning.fg : colors.text.primary} style={{ marginLeft: space[1], marginRight: 4, maxWidth: 180 }}>
+          {label}
+        </Text>
+      </Animated.View>
+      <Text variant="labelSm" numberOfLines={1} onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ position: 'absolute', opacity: 0, left: -9999 }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function BodyTagPill({ dot, body, icon, label, tag, tone, onPress }: { /** หัวกำกับในป้าย (เช่น อาการร่วม) — แยกจากจุดที่ปวด */ tag?: string; dot?: string; /** มีจุดบนหุ่น → ไอคอนหุ่นจิ๋วระบายบริเวณนั้น (สี dot) แทนจุดสี */ body?: BodyPin; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
   const { colors } = useTheme();
   const fg = tone === 'warn' ? colors.status.warning.fg : tone === 'avoid' ? colors.text.secondary : colors.text.primary;
   const bg = tone === 'warn' ? colors.status.warning.bg : colors.surface.default;
+  if (tag) return <TagPill tag={tag} icon={icon} label={label} warn={tone === 'warn'} onPress={onPress} />;
   return (
     <Pressable
       accessibilityRole="button"
