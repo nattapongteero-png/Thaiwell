@@ -88,7 +88,6 @@ import {
   PRESSURE_OPTIONS,
   RISK_OPTIONS,
   AVOID_OPTIONS,
-  CHAT_HISTORY,
   CURRENT_CHAT,
   TREATMENT_CASES,
   type TreatmentCase,
@@ -339,13 +338,15 @@ export function HomeScreen() {
       const raw = getItem(CHATS_KEY);
       const saved = raw ? (JSON.parse(raw) as { sessions?: ChatSession[]; caseChats?: Record<string, string> }) : null;
       // ปิดแอประหว่าง AI กำลังคิด → ตัว "กำลังคิด" ถูกบันทึกค้างไว้ (ไม่มีคำตอบมาแทนแล้ว) → ตัดออก
+      // แชทตัวอย่างเดิม (ไม่ผูกกับเรื่องไหน) → ไม่เก็บต่อ
+      if (saved?.sessions) saved.sessions = saved.sessions.filter((c) => c.id !== 'h1' && c.id !== 'h2');
       if (saved?.sessions) saved.sessions = saved.sessions.map((c) => (c.items.some((m) => m.thinking === 'working') ? { ...c, items: c.items.filter((m) => m.thinking !== 'working') } : c));
       return saved;
     } catch {
       return null;
     }
   }, []);
-  const [sessions, setSessions] = React.useState<ChatSession[]>(() => (savedChats?.sessions?.length ? savedChats.sessions : [CURRENT_CHAT, ...CHAT_HISTORY]));
+  const [sessions, setSessions] = React.useState<ChatSession[]>(() => (savedChats?.sessions?.length ? savedChats.sessions : [CURRENT_CHAT]));
   /** แชทของแต่ละเรื่อง: ใบการรักษา → key = case id · ใบร่าง → draft.chatId */
   const [caseChats, setCaseChats] = React.useState<Record<string, string>>(() => savedChats?.caseChats ?? {});
   React.useEffect(() => {
@@ -1375,6 +1376,32 @@ export function HomeScreen() {
    * ปุ่ม "ถาม AI" (แถวแท็บเรื่อง) — AI ทักตามแท็บที่เลือก แล้วให้เลือกว่าจะทำอะไร · ประเมินเรื่องใหม่มีทุกครั้ง
    * เรื่องที่รักษา: ประเมินก่อนนวด (มีนัด) · ดูผลการรักษา · นัดครั้งถัดไป · ใบร่าง: ประเมินอีกครั้ง · ไม่มีเรื่อง/นัดเรื่องใหม่: เริ่มประเมิน
    */
+  /* ประวัติแชท: 1 แท็บ = 1 แชท (ชื่อเดียวกับแท็บ) · แชทที่ยังไม่เป็นเรื่อง (ประเมินไม่จบ / ถามทั่วไป) แยกกลุ่ม · แชทว่างไม่แสดง */
+  const openTabChat = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (openTabChat.current === null || openTabChat.current !== caseIdx) return;
+    openTabChat.current = null;
+    openAI();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseIdx]);
+  const historyRows = React.useMemo((): HistoryRow[] => {
+    const live = (id?: string | null) => (id && sessions.some((c) => c.id === id) ? id : undefined);
+    const tabs: HistoryRow[] = [
+      ...cases.map((c, i) => ({ key: c.id, title: `รักษา${c.short}`, chatId: live(caseChats[c.id] ?? c.chatId), tab: i })),
+      ...drafts.map((d, i) => ({ key: d.id, title: `ประเมิน${draftLabel(d)}`, chatId: live(d.chatId), tab: caseCount + i })),
+      ...looseBookings.map((b, i) => ({ key: b.id, title: b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0], chatId: live(caseChats[`loose:${b.id}`]), tab: caseCount + drafts.length + i })),
+    ];
+    const tied = new Set(tabs.map((t) => t.chatId).filter(Boolean));
+    const others: HistoryRow[] = sessions
+      .filter((c) => !tied.has(c.id) && c.id !== CURRENT_CHAT.id && c.items.some((m) => m.from === 'user'))
+      .map((c) => ({ key: c.id, title: c.title, chatId: c.id, other: c.assess.step !== 'idle' && c.assess.step !== 'done' ? 'กำลังประเมิน' : 'คำถามทั่วไป' }));
+    const last = (id?: string) => {
+      const c = id ? sessions.find((x) => x.id === id) : undefined;
+      return c ? [...c.items].reverse().find((m) => m.text && m.thinking !== 'working')?.text ?? '' : '';
+    };
+    return [...tabs, ...others].map((r) => ({ ...r, preview: r.chatId ? last(r.chatId) : 'ยังไม่ได้คุยเรื่องนี้' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, caseChats, cases, drafts, looseBookings, clinicVisits.length, caseCount]);
   const menuItem = (text: string, options: string[]): ThreadItem => ({ id: `menu-${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text, card: { type: 'intents', options } });
   const openAI = () => {
     if (selCase) {
@@ -3621,13 +3648,20 @@ export function HomeScreen() {
 
       <ChatHistorySheet
         open={historyOpen}
-        sessions={sessions}
+        rows={historyRows}
         activeId={activeId}
         onClose={() => setHistoryOpen(false)}
-        onPick={openChat}
+        onPick={(r) => {
+          setHistoryOpen(false);
+          // แชทของแท็บ → หน้าแรกสลับไปแท็บนั้นด้วย · แท็บที่ยังไม่มีแชท → เปิดแชทของแท็บ (เหมือนกดปุ่ม AI ที่แท็บนั้น)
+          if (r.tab !== undefined) setCaseIdx(r.tab);
+          if (r.chatId) openChat(r.chatId);
+          else if (r.tab !== undefined) openTabChat.current = r.tab;
+        }}
         onNew={() => {
           setHistoryOpen(false);
-          newChat();
+          // แชทใหม่ = เริ่มเรื่องใหม่เสมอ (ประเมินที่ค้างไว้ยังอยู่ในประวัติ)
+          newChat(true);
         }}
       />
       <TreatmentSheet tc={cases.find((c) => c.id === sheetCaseId) ?? null} visible={!!sheetCaseId} initialVisit={sheetVisit} onClose={() => setSheetCaseId(null)} />
@@ -6134,26 +6168,53 @@ function HeaderAction({ icon, label, onPress, badge }: { icon: React.ComponentPr
 }
 
 
-/** แผ่นประวัติแชท — เลื่อนขึ้นจากล่าง อยู่บนหน้าแรกเดิม (ไม่เปลี่ยนหน้า) */
-function ChatHistorySheet({
-  open,
-  sessions,
-  activeId,
-  onClose,
-  onPick,
-  onNew,
-}: {
-  open: boolean;
-  sessions: ChatSession[];
-  activeId: string;
-  onClose: () => void;
-  onPick: (id: string) => void;
-  onNew: () => void;
-}) {
+type HistoryRow = { key: string; title: string; chatId?: string; tab?: number; other?: string; preview?: string };
+/** ประวัติแชท — เรื่องของคุณ (แถวละแท็บ) · แชทอื่น (ยังไม่เป็นเรื่อง) · แชทใหม่ = เริ่มเรื่องใหม่ */
+function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { open: boolean; rows: HistoryRow[]; activeId: string; onClose: () => void; onPick: (r: HistoryRow) => void; onNew: () => void }) {
   const { colors } = useTheme();
-  const preview = (c: ChatSession) => [...c.items].reverse().find((m) => m.text && m.thinking !== 'working')?.text ?? '';
+  const tabs = rows.filter((r) => r.tab !== undefined);
+  const others = rows.filter((r) => r.tab === undefined);
+  const row = (r: HistoryRow) => {
+    const on = !!r.chatId && r.chatId === activeId;
+    return (
+      <Pressable
+        key={r.key}
+        accessibilityRole="button"
+        accessibilityState={{ selected: on }}
+        onPress={() => onPick(r)}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[3], padding: space[3], borderRadius: radius.lg, backgroundColor: on ? colors.brand.subtle : pressed ? colors.surface.sunken : 'transparent' })}
+      >
+        <View style={{ width: 36, height: 36, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.brand.primary : colors.surface.sunken }}>
+          <Icon name="message-circle" size="sm" color={on ? colors.text.inverse : colors.text.secondary} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            <Text variant="labelMd" numberOfLines={1} style={{ flex: 1 }}>
+              {r.title}
+            </Text>
+            {on ? (
+              <Text variant="caption" tone="tertiary">
+                กำลังคุย
+              </Text>
+            ) : r.other ? (
+              <Text variant="caption" tone="tertiary">
+                {r.other}
+              </Text>
+            ) : null}
+          </View>
+          <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
+            {r.preview}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
+  const head = (t: string) => (
+    <Text variant="labelSm" tone="tertiary" style={{ paddingHorizontal: space[3], paddingTop: space[2] }}>
+      {t}
+    </Text>
+  );
   return (
-    // bottom sheet แบบเดียวกับที่อื่น: เลื่อนขึ้น/ลง · ปัดลงปิด · ปุ่มแชทใหม่ข้างหัวข้อ
     <BottomSheet
       visible={open}
       onClose={onClose}
@@ -6163,16 +6224,7 @@ function ChatHistorySheet({
         <Pressable
           accessibilityRole="button"
           onPress={onNew}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: space[1],
-            minHeight: 36,
-            paddingHorizontal: space[3],
-            borderRadius: radius.full,
-            backgroundColor: colors.brand.primary,
-            opacity: pressed ? 0.85 : 1,
-          })}
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], minHeight: 36, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: colors.brand.primary, opacity: pressed ? 0.85 : 1 })}
         >
           <Icon name="edit" size="xs" color={colors.text.inverse} />
           <Text variant="labelSm" color={colors.text.inverse}>
@@ -6182,51 +6234,15 @@ function ChatHistorySheet({
       }
     >
       <View style={{ marginHorizontal: -space[2], marginTop: -space[3] }}>
-          {sessions.map((c) => {
-            const on = c.id === activeId;
-            return (
-              <Pressable
-                key={c.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                onPress={() => onPick(c.id)}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: space[3],
-                  padding: space[3],
-                  borderRadius: radius.lg,
-                  backgroundColor: on ? colors.brand.subtle : pressed ? colors.surface.sunken : 'transparent',
-                })}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: radius.full,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: on ? colors.brand.primary : colors.surface.sunken,
-                  }}
-                >
-                  <Icon name="message-circle" size="sm" color={on ? colors.text.inverse : colors.text.secondary} />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
-                    <Text variant="labelMd" numberOfLines={1} style={{ flex: 1 }}>
-                      {c.title}
-                    </Text>
-                    <Text variant="caption" tone="tertiary">
-                      {on ? 'กำลังคุย' : c.date}
-                    </Text>
-                  </View>
-                  <Text variant="bodyXs" tone="secondary" numberOfLines={1}>
-                    {preview(c)}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+        {tabs.length ? head('เรื่องของคุณ') : null}
+        {tabs.map(row)}
+        {others.length ? head('แชทอื่น') : null}
+        {others.map(row)}
+        {!rows.length ? (
+          <Text variant="bodySm" tone="secondary" style={{ padding: space[3] }}>
+            ยังไม่มีแชท กด แชทใหม่ เพื่อเริ่มเล่าอาการ
+          </Text>
+        ) : null}
       </View>
     </BottomSheet>
   );
