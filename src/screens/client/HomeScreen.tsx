@@ -6697,7 +6697,7 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
  * เวลาที่กางค้าง = เวลาสังเกต 1.5 วิ + เวลาอ่าน (~15 ตัวอักษร/วิ ≈ 200 คำ/นาที) · อย่างน้อย 3 วิ ไม่เกิน 10 วิ (ช่วง 4–10 วิ ของ snackbar ใน Material)
  */
 const readMs = (text: string) => Math.min(10000, Math.max(3000, 1500 + (text.replace(/\s/g, '').length / 15) * 1000));
-function TagPill({ tag, icon, label, warn, onPress }: { tag: string; icon?: IconName; label: string; warn?: boolean; onPress?: () => void }) {
+function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: string; warn?: boolean; onPress?: () => void }) {
   const { colors } = useTheme();
   const [open, setOpen] = React.useState(false);
   const [w, setW] = React.useState(0);
@@ -6717,14 +6717,20 @@ function TagPill({ tag, icon, label, warn, onPress }: { tag: string; icon?: Icon
       accessibilityRole="button"
       accessibilityLabel={`${tag} ${label}`}
       accessibilityState={{ expanded: open }}
-      onPress={() => {
-        toggle(!open);
-        if (!open) onPress?.();
-      }}
+      // กาง/หุบอย่างเดียว ไม่หันหุ่น
+      onPress={() => toggle(!open)}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: 5, borderRadius: radius.full, backgroundColor: colors.surface.default, opacity: pressed ? 0.8 : 1, ...elevation[1] })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 20, paddingHorizontal: 7, borderRadius: radius.full, backgroundColor: warn ? colors.status.warning.fg : colors.text.primary }}>
-        {icon ? <Icon name={icon} size="xxs" color={colors.text.inverse} /> : null}
+        {/* หุบ = + · กาง = − (หมุนพร้อมจางสลับกัน) */}
+        <View style={{ width: 12, height: 12 }}>
+          <Animated.View style={{ position: 'absolute', opacity: t.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
+            <Icon name="plus-circle" size="xxs" color={colors.text.inverse} />
+          </Animated.View>
+          <Animated.View style={{ position: 'absolute', opacity: t, transform: [{ rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['-90deg', '0deg'] }) }] }}>
+            <Icon name="minus-circle" size="xxs" color={colors.text.inverse} />
+          </Animated.View>
+        </View>
         <Text style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 14 }} color={colors.text.inverse}>
           {tag}
         </Text>
