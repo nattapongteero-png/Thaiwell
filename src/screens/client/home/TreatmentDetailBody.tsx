@@ -411,13 +411,13 @@ export function sessionRecord(tc: TreatmentCase, i: number) {
 
 /** ก่อน → หลัง (สองกล่อง) + บรรทัดสรุปการเปลี่ยนแปลง — ใช้ทั้งรายครั้งและครั้งที่ประเมินก่อนนวดแล้ว */
 /** ป้ายเปลี่ยนแปลงของคะแนนปวดเป็น % (ชุดเดียวกับป้ายแนวโน้มบนหุ่นหน้าแรก) */
-function TrendPill({ from, to }: { from: number; to: number }) {
+function TrendPill({ from, to, small }: { from: number; to: number; small?: boolean }) {
   const { colors } = useTheme();
   const pct = from ? Math.round(((from - to) / from) * 100) : 0;
   const tone = pct > 0 ? 'good' : pct < 0 ? 'bad' : undefined;
   return (
-    <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : tone === 'bad' ? colors.status.danger.bg : colors.surface.sunken }}>
-      <Text variant="labelSm" color={tone === 'good' ? colors.brand.primary : tone === 'bad' ? colors.status.danger.fg : colors.text.secondary}>
+    <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', height: small ? 22 : 30, paddingHorizontal: small ? space[2] : space[3], borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : tone === 'bad' ? colors.status.danger.bg : colors.surface.sunken }}>
+      <Text variant={small ? 'labelXs' : 'labelSm'} style={small ? { fontFamily: fontFamily.semibold } : undefined} color={tone === 'good' ? colors.brand.primary : tone === 'bad' ? colors.status.danger.fg : colors.text.secondary}>
         {pct > 0 ? `↘ ดีขึ้น ${pct}%` : pct < 0 ? `↗ ปวดเพิ่ม ${-pct}%` : 'เท่าเดิม'}
       </Text>
     </View>
@@ -427,9 +427,13 @@ function TrendPill({ from, to }: { from: number; to: number }) {
 /** trend = ป้ายเปลี่ยนแปลงเป็น % แบบป้ายบนหุ่นหน้าแรก (↘ ดีขึ้น / ↗ ปวดเพิ่ม / เท่าเดิม) แทนข้อความ note */
 function PainCompare({ from, to, note, trend }: { from: { label: string; v: number }; to: { label: string; v?: number; empty?: string }; note?: { text: string; good?: boolean }; trend?: boolean }) {
   const { colors } = useTheme();
-  const box = (label: string, v: number | undefined, empty?: string) => (
+  const box = (label: string, v: number | undefined, empty?: string, badge?: React.ReactNode) => (
     <View style={{ flex: 1, padding: space[3], borderRadius: 16, backgroundColor: colors.surface.sunken }}>
-      <Text variant="bodyXs" tone="secondary">{label}</Text>
+      {/* ป้ายเปลี่ยนแปลง → มุมขวาบนของกล่องหลังนวด */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: space[1], minHeight: 22 }}>
+        <Text variant="bodyXs" tone="secondary">{label}</Text>
+        {badge}
+      </View>
       {v === undefined ? (
         <Text variant="bodyMd" tone="tertiary" style={{ lineHeight: 36 }}>{empty ?? '–'}</Text>
       ) : (
@@ -442,11 +446,9 @@ function PainCompare({ from, to, note, trend }: { from: { label: string; v: numb
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
         {box(from.label, from.v)}
         <Icon name="arrow-right" size="sm" color={colors.text.tertiary} />
-        {box(to.label, to.v, to.empty)}
+        {box(to.label, to.v, to.empty, trend && to.v !== undefined ? <TrendPill from={from.v} to={to.v} small /> : null)}
       </View>
-      {trend && to.v !== undefined ? (
-        <TrendPill from={from.v} to={to.v} />
-      ) : note ? (
+      {trend && to.v !== undefined ? null : note ? (
         <Text variant="labelSm" color={note.good ? colors.brand.primary : colors.text.secondary}>
           {note.text}
         </Text>
