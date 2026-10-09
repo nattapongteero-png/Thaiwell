@@ -67,7 +67,7 @@ import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLa
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
 import { ASSESS_LOCK_TEXT, assessLock, caseClinic, needsConfirm, preVisitOpensOn, serviceMismatch, useAllAppointments } from '../../state/appointments';
-import { isoToLabel, readAvailability, todayISO } from '../../services/clinicBridge';
+import { isoToLabel, labelToISO, readAvailability, todayISO } from '../../services/clinicBridge';
 import { ANY_THERAPIST, AnyTherapistCard, THERAPIST_CARD_W, TherapistCard, findTherapist } from './places/TherapistCard';
 import { askAI, extractAI, type AIMessage } from '../../services/aiService';
 import { useVoiceChat, type VoicePhase } from '../../services/useVoiceChat';
@@ -393,9 +393,10 @@ export function HomeScreen() {
   // ยังไม่มีใบร่าง/ใบการรักษา
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote, setVisitSelfPain } = useJourney();
+  const { bills, caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote, setVisitSelfPain } = useJourney();
   // จบคอร์สแล้ว (ครบครั้งและไม่มีนัดค้าง) → ไม่อยู่บนแท็บหน้าแรก (ดูได้ที่ประวัติการรักษา "รักษาจบแล้ว")
-  const cases = React.useMemo(() => allCases.filter((c) => !c.finished), [allCases]);
+  // รักษาจบแล้ว (ครบคอร์ส ไม่มีนัดต่อ) → ไม่อยู่ในแท็บหน้าแรก (ดูได้ที่หน้าประวัติการรักษา)
+  const cases = React.useMemo(() => allCases.filter((c) => !c.finished && !(c.course.done >= c.course.total && c.appointment.date === '-')), [allCases]);
   // เรื่องที่จบคอร์สแล้วไม่นับ (ไม่มีเรื่องที่ดูแลอยู่ = หน้าต้อนรับ เริ่มประเมินเรื่องใหม่)
   const noRecords = newPatient && drafts.length === 0 && !promoted.some((p) => !allCases.find((c) => c.id === p.id)?.finished);
   // จองไว้ก่อนประเมิน → หน้าแรกแบบปกติ (หุ่น + แผ่นการ์ด) แสดงเฉพาะข้อมูลนัด · ไม่มีอะไรเลย = หน้าต้อนรับ
@@ -420,6 +421,50 @@ export function HomeScreen() {
   const selCase = caseIdx < caseCount;
   // นัดเรื่องใหม่ที่จองไว้ก่อนประเมิน → แท็บละนัด ต่อท้าย · แสดงเฉพาะข้อมูลนัด
   const selLoose = caseIdx >= caseCount + drafts.length ? looseBookings[caseIdx - caseCount - drafts.length] ?? null : null;
+  /*
+   * ลำดับแท็บ = เรื่องไหนต้องทำก่อนอยู่ซ้ายสุด (index ภายในยังเป็น เรื่องที่รักษา → ใบร่าง → นัดเรื่องใหม่ เหมือนเดิม · แค่ลำดับที่แสดง)
+   * 1 นัดวันนี้ / อยู่ที่คลินิก · 2 มีอะไรค้างให้ทำ (ผลหลังนวด · ประเมินก่อนนวดเปิดแล้ว · บิลรอจ่าย · พักไว้ถึงวันถาม · นวดแล้วรอติดตาม)
+   * 3 มีนัดเร็ว ๆ นี้ (ใกล้สุดก่อน) · 4 ประเมินแล้วยังไม่จอง / รักษาอยู่ยังไม่มีนัด · 5 พักไว้ (ข้อห้ามนวด)
+   * จัดลำดับตอนเปิดหน้าแรก (เรื่องใหม่ที่เพิ่มทีหลังคิดตอนเพิ่ม) → ใช้งานอยู่แท็บไม่สลับที่ใต้นิ้ว
+   */
+  const tabKeys = [...cases.map((c) => `c:${c.id}`), ...drafts.map((d) => `d:${d.id}`), ...looseBookings.map((b) => `l:${b.id}`)];
+  const rankOfTab = (i: number): [number, string] => {
+    const today = todayISOLocal();
+    const when = (label?: string) => (label && label !== '-' ? labelToISO(label) : '9999');
+    if (i < caseCount) {
+      const c = cases[i];
+      const ap = caseAppts[c.id] ?? c.appointment;
+      const has = c.appointment.date !== '-';
+      if (has && (c.appointment.today || ap.stage)) return [1, ''];
+      const lv = c.visits[c.visits.length - 1];
+      const due = (lv && lv.selfPain === undefined) || (has && !caseToday[c.id] && !preVisitOpensOn(c.appointment.date)) || bills.some((b) => b.caseId === c.id && b.status === 'pending');
+      if (due) return [2, when(c.appointment.date)];
+      return has ? [3, when(c.appointment.date)] : [4, ''];
+    }
+    const d = drafts[i - caseCount];
+    if (d) {
+      if (d.booking?.date === 'วันนี้' || d.booking?.stage) return [1, ''];
+      if (d.hold) return d.hold.recheck <= today ? [2, d.hold.recheck] : [5, d.hold.recheck];
+      if (d.stage === 'served') return [2, ''];
+      return d.booking ? [3, when(d.booking.date)] : [4, ''];
+    }
+    const b = looseBookings[i - caseCount - drafts.length];
+    return b?.date === 'วันนี้' ? [1, ''] : [3, when(b?.date)];
+  };
+  const tabRanks = React.useRef<Record<string, [number, string]>>({});
+  for (const [i, k] of tabKeys.entries()) if (!tabRanks.current[k]) tabRanks.current[k] = rankOfTab(i);
+  const tabOrder = tabKeys
+    .map((k, i) => ({ i, r: tabRanks.current[k] }))
+    .sort((a, b) => a.r[0] - b.r[0] || a.r[1].localeCompare(b.r[1]) || a.i - b.i)
+    .map((x) => x.i);
+  // เปิดหน้าแรก (มีข้อมูลแล้ว) → เลือกแท็บที่สำคัญที่สุด ครั้งเดียว
+  const pickedFirst = React.useRef(false);
+  React.useEffect(() => {
+    if (pickedFirst.current || !tabOrder.length) return;
+    pickedFirst.current = true;
+    setCaseIdx(tabOrder[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabOrder.length]);
   // เพิ่งจองนัดเรื่องใหม่เพิ่ม → หน้าแรกเปิดที่แท็บนัดนั้น
   const looseCount = React.useRef(looseBookings.length);
   React.useEffect(() => {
@@ -1436,7 +1481,8 @@ export function HomeScreen() {
       if (!d.hold || d.hold.recheck > todayISOLocal() || !canGreet(key)) continue;
       return { caseId: `draft:${d.id}`, key, item: aiText(`สวัสดีค่ะ เรื่อง${d.title}ที่พักไว้ (${d.hold.reasons[0]}) ตอนนี้เป็นยังไงบ้างคะ?`, { type: 'intents', options: [HOLD_TEXT[d.hold.kind].again, GREET_NOT_YET, GREET_LATER] }) };
     }
-    for (const c of cases) {
+    // รักษาจบแล้ว (ไม่อยู่ในแท็บ) ก็ยังถามผลหลังนวดครั้งสุดท้าย
+    for (const c of allCases) {
       const lv = c.visits[c.visits.length - 1];
       const key = `post:${c.id}:${c.visits.length}`;
       if (!lv || lv.selfPain !== undefined || !canGreet(key)) continue;
@@ -3836,7 +3882,7 @@ export function HomeScreen() {
                 </Animated.View>
               </View>
             ) : !started || leaving ? (
-              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map(draftLabel)} extras={looseBookings.map((b) => (b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
+              <CaseTabs cases={cases.map((c) => c.short)} drafts={drafts.map(draftLabel)} extras={looseBookings.map((b) => (b.course && clinicVisits.length ? `คอร์ส${b.course.name}` : b.service.split(' · ')[0]))} order={tabOrder} value={caseIdx} onChange={setCaseIdx} onNew={chatHome ? undefined : openAI} />
             ) : null}
           </View>
           </View>
@@ -4576,9 +4622,14 @@ function IntentChips({ options, onPick }: { options: string[]; onPick: (o: strin
  * แท็บเดียว ชื่อบอกประเภทเอง: "รักษา…" = ใบการรักษา (นวดแล้ว · ชื่อโรค) · "ประเมิน…" = ใบร่าง (ยังไม่รักษา · ชื่ออาการ)
  * value = index รวม (ใบการรักษาก่อน แล้วต่อด้วยใบร่าง) · อาการใหม่ → ปุ่มม่วงด้านล่าง
  */
-function CaseTabs({ cases, drafts, extras = [], value, onChange, onNew }: { cases: string[]; drafts: string[]; extras?: string[]; value: number; onChange: (i: number) => void; onNew?: () => void }) {
+function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange: rawChange, onNew }: { cases: string[]; drafts: string[]; extras?: string[]; /** ลำดับที่แสดง (index ภายใน เรียงตามความสำคัญ) */ order?: number[]; value: number; onChange: (i: number) => void; onNew?: () => void }) {
   const { colors } = useTheme();
-  const items = [...cases.map((c) => `รักษา${c}`), ...drafts.map((d) => `ประเมิน${d}`), ...extras];
+  const natural = [...cases.map((c) => `รักษา${c}`), ...drafts.map((d) => `ประเมิน${d}`), ...extras];
+  // แสดงตามลำดับความสำคัญ · ค่าที่ส่งออกยังเป็น index ภายในเดิม
+  const ord = order && order.length === natural.length ? order : natural.map((_, i) => i);
+  const items = ord.map((i) => natural[i]);
+  const value = Math.max(0, ord.indexOf(rawValue));
+  const onChange = (di: number) => rawChange(ord[di]);
   // แท็บที่เลือกต้องเห็นเสมอ (เช่น เพิ่งจอง/ประเมินแล้วเปิดแท็บท้ายสุด) → เลื่อนแถบตามตำแหน่งแท็บ
   const scroll = React.useRef<ScrollView>(null);
   const size = React.useRef({ content: 0, view: 0 });
