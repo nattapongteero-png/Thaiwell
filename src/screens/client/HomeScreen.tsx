@@ -395,7 +395,7 @@ export function HomeScreen() {
   // ยังไม่มีใบร่าง/ใบการรักษา
   /** ใบการรักษา = ของคนไข้ตัวอย่าง + ใบที่เพิ่งเกิดจากใบร่าง (นวดครั้งแรกแล้ว) */
   // ใบการรักษาชุดเดียวกับทุกหน้า (รวมนัดที่จอง/เลื่อน/ยกเลิก และครั้งที่นวดเพิ่ม)
-  const { bills, caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote, setVisitSelfPain } = useJourney();
+  const { safety, bills, caseAppts, setCaseAppointment, cancelledAppts, cases: allCases, issueQueue, caseToday, setCaseToday, apptNotices, dismissNotice, requestBooking, bookCase, notifyClinic, addSymptomNote, setVisitSelfPain } = useJourney();
   // จบคอร์สแล้ว (ครบครั้งและไม่มีนัดค้าง) → ไม่อยู่บนแท็บหน้าแรก (ดูได้ที่ประวัติการรักษา "รักษาจบแล้ว")
   // รักษาจบแล้ว (ครบคอร์ส ไม่มีนัดต่อ) → ไม่อยู่ในแท็บหน้าแรก (ดูได้ที่หน้าประวัติการรักษา)
   const cases = React.useMemo(() => allCases.filter((c) => !c.finished && !(c.course.done >= c.course.total && c.appointment.date === '-')), [allCases]);
@@ -695,8 +695,15 @@ export function HomeScreen() {
     const extras: { key: string; icon: IconName; label: string; tag?: string; tone: 'info' | 'warn' | 'avoid'; pin?: BodyPin }[] = [
       ...rad.map((a) => ({ key: `r-${a.label}`, icon: 'corner-down-right' as const, label: a.label, tone: (a.option?.level ? 'warn' : 'info') as 'warn' | 'info', pin: radiatePins(a.label, a.symptom)[0] })),
       // ข้อควรระวังจากผลคัดกรอง (ตั้งครรภ์ · ความดัน …) → ป้ายเตือนบนหุ่น (ไม่แยกเป็นการ์ด) · บริเวณที่ไม่ให้นวด/งดนวดท้อง มีป้ายของตัวเองแล้ว
-      ...(src?.caution ?? '')
-        .split(' · ')
+      ...[
+        ...new Set([
+          ...(src?.caution ?? '').split(' · '),
+          // ผลคัดกรองจากข้อมูลสุขภาพ (ตั้งครรภ์ · ความดัน …) — ใบร่าง
+          ...(selDraft ? safety.hits.filter((h) => h.level !== 'red').map((h) => SHORT_CAUTION[h.ruleId] ?? h.title) : []),
+          // เรื่องที่รักษา: ข้อที่ปรับของครั้งถัดไป (ประเมินก่อนนวดแล้ว)
+          ...(selCase && today ? nextVisitGuide(tcase, today).adjust : []),
+        ]),
+      ]
         .filter((x) => x && !/^ไม่นวด/.test(x) && !(period && x === 'งดนวดท้อง'))
         .map((x) => ({ key: `c-${x}`, icon: 'alert-triangle' as const, label: x, tone: 'warn' as const, pin: undefined as BodyPin | undefined })),
       // อาการร่วม = ป้ายเดียวรวมทุกข้อ มีหัว "อาการร่วม" กำกับ (ไม่ให้ดูเหมือนจุดที่ปวดอีกจุด)
@@ -5143,7 +5150,6 @@ function DraftBento({
   // คลินิกลงนัดตามคอร์สไว้แล้ว (ก่อนนวดครั้งแรก) → ครั้งถัดไปของการรักษานี้
   const planned = plannedVisits[`case-${d.id}`] ?? [];
   // ผลคัดกรอง → ข้อที่ผู้ให้บริการจะปรับวันนัด (ชุดเดียวกับการ์ดผลคัดกรองเดิม)
-  const adjustItems = [...safety.hits.filter((h) => h.level !== 'red').map((h) => SHORT_CAUTION[h.ruleId] ?? h.title), ...(d.risk === 'มีประจำเดือน' ? ['งดนวดท้อง'] : [])];
   // ประเมินไว้นานก่อนนัดครั้งแรก → ถึงช่วงก่อนนัด ยืนยันอาการสั้น ๆ ก่อน (แล้วจึงเช็กอินได้)
   const confirm = !!b && booked && needsConfirm(b.date, d.assessedOn, d.confirmedOn);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -5204,8 +5210,7 @@ function DraftBento({
             // ปวดหลายบริเวณ ยังไม่ได้เลือกบริเวณหลัก → แตะเพื่อเลือกในแชท
             subtitle={d.primaryPending ? 'เลือกจุดที่ปวดที่สุดก่อน' : d.guide?.condition ?? (d.symptoms.join(' ') || 'ตามผลประเมิน')}
             items={d.primaryPending ? [] : d.guide?.methods ?? []}
-            adjust={adjustItems}
-            onAdjust={() => setGuideOpen(true)}
+            // ข้อควรระวัง = ป้ายบนหุ่น (ไม่ซ้ำในการ์ดแนวทาง)
             onPress={d.primaryPending ? onPrimary : d.guide ? () => setPlanOpen(true) : () => setGuideOpen(true)}
           />
           )}
@@ -5657,9 +5662,7 @@ function HomeBento({
           title={`แนวทางครั้งที่ ${nextNo}`}
           subtitle={nextGuide.diagnosis}
           items={nextGuide.items}
-          adjust={nextGuide.adjust}
           danger={nextGuide.red}
-          onAdjust={() => onHistory(tc.visits.length)}
           onPress={() => onHistory(tc.visits.length)}
         />
       ) : (
