@@ -694,6 +694,11 @@ export function HomeScreen() {
     const firstPin = (sym: string) => CHIP_PINS[sym]?.[0];
     const extras: { key: string; icon: IconName; label: string; tag?: string; tone: 'info' | 'warn' | 'avoid'; pin?: BodyPin }[] = [
       ...rad.map((a) => ({ key: `r-${a.label}`, icon: 'corner-down-right' as const, label: a.label, tone: (a.option?.level ? 'warn' : 'info') as 'warn' | 'info', pin: radiatePins(a.label, a.symptom)[0] })),
+      // ข้อควรระวังจากผลคัดกรอง (ตั้งครรภ์ · ความดัน …) → ป้ายเตือนบนหุ่น (ไม่แยกเป็นการ์ด) · บริเวณที่ไม่ให้นวด/งดนวดท้อง มีป้ายของตัวเองแล้ว
+      ...(src?.caution ?? '')
+        .split(' · ')
+        .filter((x) => x && !/^ไม่นวด/.test(x) && !(period && x === 'งดนวดท้อง'))
+        .map((x) => ({ key: `c-${x}`, icon: 'alert-triangle' as const, label: x, tone: 'warn' as const, pin: undefined as BodyPin | undefined })),
       // อาการร่วม = ป้ายเดียวรวมทุกข้อ มีหัว "อาการร่วม" กำกับ (ไม่ให้ดูเหมือนจุดที่ปวดอีกจุด)
       ...(related.length ? [{ key: 'related', icon: 'zap' as const, label: related.map((x) => x.replace(/ร่วมด้วย$/, '')).join(', '), tag: 'อาการร่วม', tone: (related.some((x) => x === NUMB || x === WEAK) ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') }] : []),
       ...(avoid ? [{ key: 'avoid', icon: 'slash' as const, label: `ไม่นวด${avoid}`, tone: 'avoid' as const, pin: AVOID_PINS[avoid]?.[0] }] : []),
@@ -5140,10 +5145,7 @@ function DraftBento({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
-  // caution รวมสองเรื่อง: บริเวณที่ผู้ใช้ไม่ต้องการให้นวด ("ไม่นวด…") กับข้อควรระวังจากผลคัดกรอง (ตั้งครรภ์ · ความดัน …) → แยกการ์ด หัวข้อตรงเนื้อหา
-  const cautionItems = d.caution ? d.caution.split(' · ').filter(Boolean) : [];
-  const avoid = cautionItems.filter((x) => /^ไม่นวด/.test(x));
-  const careItems = cautionItems.filter((x) => !/^ไม่นวด/.test(x));
+
   const listCard = (title: string, icon: 'x-circle' | 'check-circle' | 'alert-triangle', color: string, items: string[]) =>
     items.length ? (
       <Tile key={title} style={{ gap: space[2] }}>
@@ -5182,7 +5184,6 @@ function DraftBento({
             <>
               {/* เลือกบริการเองไม่ตรงผลประเมิน → เตือน (ไม่บังคับ: แตะการ์ด = เปลี่ยนบริการ หรือกดใช้แผนเดิม) */}
               {!d.keepService && serviceMismatch(b.service, d.caution) ? <StepRow warn text="บริการที่จองไม่ตรงผลประเมิน" /> : null}
-              <StepRow text={prep.join(' · ')} />
               {planned.length ? <StepRow done text={`${clinicCourse ? `คอร์ส${clinicCourse.name} · ` : ''}นัดครั้งที่ 2 ${planned[0].date} ${planned[0].time}${planned.length > 1 ? ` · อีก ${planned.length - 1} นัด` : ''}`} /> : null}
             </>
           }
@@ -5213,8 +5214,8 @@ function DraftBento({
             <SelfCareTile width={halfW} groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           <View style={{ width: halfW, gap: BENTO_GAP }}>
-            {listCard('ข้อควรระวัง', 'alert-triangle', colors.status.warning.fg, careItems)}
-            {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
+            {/* ข้อควรระวัง / บริเวณที่ไม่ให้นวด = ป้ายบนหุ่นแล้ว · ตรงนี้ = สิ่งที่ต้องเตรียมก่อนมานวด */}
+            {listCard('ก่อนมานวด', 'check-circle', colors.brand.primary, prep)}
           </View>
         </View>
       </View>
@@ -5408,8 +5409,8 @@ function DraftBento({
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
-            {listCard('ข้อควรระวัง', 'alert-triangle', colors.status.warning.fg, careItems)}
-            {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
+            {/* ข้อควรระวัง / บริเวณที่ไม่ให้นวด = ป้ายบนหุ่นแล้ว · ตรงนี้ = สิ่งที่ต้องเตรียมก่อนมานวด */}
+            {listCard('ก่อนมานวด', 'check-circle', colors.brand.primary, prep)}
           </View>
         </View>
       )}
