@@ -81,6 +81,18 @@ export async function saveIdentity(identity: NonNullable<CloudUser['identity']>)
   return toUser(data.user);
 }
 
+/** แก้เบอร์โทร → ข้อมูลยืนยันตัวตนของบัญชี (คงข้อมูลบัตรเดิม) + แถวผู้ป่วยของคลินิก (คลินิกติดต่อเบอร์ใหม่) */
+export async function savePhone(userId: string, phone: string) {
+  const { data: u, error: ge } = await cloud.auth.getUser();
+  if (ge) throw ge;
+  const identity = (u.user?.user_metadata as { identity?: Record<string, unknown> } | undefined)?.identity;
+  if (identity) {
+    const { error } = await cloud.auth.updateUser({ data: { identity: { ...identity, phone } } });
+    if (error) throw error;
+  }
+  await cloud.from('tw_patients').update({ phone }).eq('user_id', userId);
+}
+
 export async function saveConsents(consents: NonNullable<CloudUser['consents']>) {
   const { error } = await cloud.auth.updateUser({ data: { consents } });
   if (error) throw error;

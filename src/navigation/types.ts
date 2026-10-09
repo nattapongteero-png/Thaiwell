@@ -45,6 +45,7 @@ export type RootStackParamList = {
   SelfCare: { groupId?: string } | undefined;
   Privacy: undefined;
   About: undefined;
+  ProfileInfo: undefined;
   // ผู้ให้บริการ (Provider) — ระหว่างรับบริการ
   ProviderTabs: undefined;
   ClientBrief: undefined;

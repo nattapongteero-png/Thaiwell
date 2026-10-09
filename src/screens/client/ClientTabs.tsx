@@ -197,8 +197,14 @@ export function ProfileScreen() {
               </View>
             ) : null}
           </Pressable>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="titleLg">{client.name}</Text>
+          {/* แตะชื่อ = ข้อมูลส่วนตัว (ตามบัตร · ติดต่อ · HN) · แตะรูป = เปลี่ยนรูป */}
+          <Pressable accessibilityRole="button" accessibilityLabel="ดูข้อมูลส่วนตัว" onPress={() => nav.navigate('ProfileInfo')} style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+              <Text variant="titleLg" style={{ flexShrink: 1 }}>
+                {client.name}
+              </Text>
+              <Icon name="chevron-right" size="sm" color={colors.text.tertiary} />
+            </View>
             <Text variant="bodyXs" tone="secondary">
               {[client.hn, `${client.age} ปี`, client.occupation].filter(Boolean).join(' · ')}
             </Text>
@@ -206,7 +212,7 @@ export function ProfileScreen() {
               {!healthKnownOf(profile, 'conditions') ? null : <Tag text={profile.conditions.length ? profile.conditions.join(', ') : 'ไม่มีโรคประจำตัว'} tone={profile.conditions.length ? 'warn' : undefined} size="md" />}
               {element ? <ElementPill element={element} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
             </View>
-          </View>
+          </Pressable>
         </View>
       </Panel>
 
