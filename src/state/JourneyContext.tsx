@@ -21,6 +21,8 @@ import type { IdCard } from '../services/idCard';
 import { todayISOLocal, type Hold } from '../data/hold';
 import { defaultAvatar } from '../data/staffAvatars';
 import { signOutCloud } from '../services/auth';
+import { clearPin } from '../services/appLock';
+import { SEEN_KEY } from '../services/cloudBridge';
 import { readAvailability, birthToISO, clinicOnline, clinicTherapistId, isCloud, isoToLabel, labelToISO, listenClinic, sendBooking, sendCancel, sendCheckIn, sendNote, sendPayment, sendPreVisit, serviceCodeOf, todayISO, type ClinicEvent, type ClinicPatient, type ClinicRequest } from '../services/clinicBridge';
 
 export interface Assessment {
@@ -54,7 +56,8 @@ export interface Consents {
   research: boolean; // ไม่บังคับ (ข้อมูลไม่ระบุตัวตน)
 }
 
-const baseProfile: HealthProfile = {
+/** ข้อมูลสุขภาพตั้งต้นของบัญชีใหม่ (ไม่มีของคนก่อนหน้าติดมา) */
+export const baseProfile: HealthProfile = {
   age: 34,
   conditions: ['ความดันโลหิตสูง'],
   medications: ['Amlodipine 5 mg'],
@@ -298,6 +301,12 @@ interface JourneyState {
   resumed: boolean;
   /** ถึงหน้าแรกแล้ว → เริ่มจำข้อมูลข้ามการเปิดแอปใหม่ */
   markEntered: () => void;
+  /** อยู่ในแอปแล้ว (ผ่านหน้าเข้าสู่ระบบ/ยินยอมมาถึงหน้าแรก) */
+  entered: boolean;
+  /** หน้าแรกบันทึกแชท → เก็บขึ้นคลาวด์กับบัญชีด้วย (JSON เดียวกับ CHATS_KEY) */
+  syncChats: (json: string) => void;
+  /** ได้แชทของบัญชีคืนจากคลาวด์ (เข้าสู่ระบบใหม่/เปลี่ยนเครื่อง) → หน้าแรกอ่าน CHATS_KEY ใหม่ */
+  chatsRestored: number;
   /** ออกจากระบบ (ล้างข้อมูลในแอป) · localOnly = ล้างในแอปอย่างเดียว ไม่ออกจากบัญชี */
   signOut: (localOnly?: boolean) => void;
   /**
@@ -508,6 +517,8 @@ const Ctx = createContext<JourneyState | null>(null);
 export const APP_STATE_KEY = 'thaiwell.app.v1';
 /** แชทกับ AI (ประวัติการประเมิน/คำตอบ) + แชทของแต่ละเรื่อง — บันทึกที่หน้าแรก */
 export const CHATS_KEY = 'thaiwell.chats.v1';
+/** AI ทักถามเรื่องไหนไปแล้ว (หน้าแรก) */
+export const GREET_KEY = 'thaiwell.greet.v1';
 /** อ่านครั้งแรกตอนสร้าง provider (มือถือโหลดเข้าหน่วยความจำไว้แล้ว — App.tsx) */
 let SAVED: Record<string, unknown> | null | undefined;
 const savedState = () => {
@@ -938,9 +949,14 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     try {
       removeItem(APP_STATE_KEY);
       removeItem(CHATS_KEY);
+      removeItem(GREET_KEY);
+      removeItem(SEEN_KEY);
     } catch {
       /* ignore */
     }
+    void clearPin();
+    chatsRef.current = null;
+    chatsFresh.current = true;
     // ลืมค่าที่โหลดไว้ตอนเปิดแอปด้วย ไม่อย่างนั้นหน้าเข้าสู่ระบบพากลับหน้าแรกทันที
     SAVED = null;
     setEntered(false);
@@ -1564,6 +1580,17 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   clinicHnRef.current = clinicHn;
   const restoredFor = React.useRef<string | null>(null);
   const [restoredTick, setRestoredTick] = useState(0);
+  /* แชทกับ AI: เก็บกับบัญชีด้วย (แถวเดียวกับข้อมูลแอป) — เครื่องนี้ยังไม่มีแชทของบัญชีนี้ (เพิ่งเข้าสู่ระบบ) → ใช้ของคลาวด์ */
+  const chatsRef = React.useRef<string | null>(getItem(CHATS_KEY));
+  const chatsFresh = React.useRef(!getItem(CHATS_KEY));
+  const [chatsRestored, setChatsRestored] = useState(0);
+  const saveStateRef = React.useRef<() => void>(() => undefined);
+  const chatTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncChats = useCallback((json: string) => {
+    chatsRef.current = json;
+    if (chatTimer.current) clearTimeout(chatTimer.current);
+    chatTimer.current = setTimeout(() => saveStateRef.current(), 1500);
+  }, []);
   /* เข้าระบบ/เปิดแอปแล้วดึงข้อมูลบัญชีกลับมา → ตรวจนัดทุกนัดที่แอปผูกไว้กับหลังบ้าน
    * หลังบ้านลบไประหว่างที่ออกจากระบบ/ปิดแอป (ไม่ได้รับเหตุการณ์ลบตอนนั้น) → เอาออกตาม (เรื่อง · นัด · ใบร่างกลับเป็นยังไม่จอง) */
   React.useEffect(() => {
@@ -1638,8 +1665,15 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
         bridgedCase.current = (st.bridgedCase as typeof bridgedCase.current) ?? {};
         caseLinks.current = (st.caseLinks as typeof caseLinks.current) ?? {};
         resetSeen.current = (st.resetSeen as string | undefined) ?? null;
+        if (typeof st.chats === 'string' && chatsFresh.current) {
+          setItem(CHATS_KEY, st.chats);
+          chatsRef.current = st.chats;
+          setChatsRestored((n) => n + 1);
+        }
+        chatsFresh.current = false;
       } else {
         // บัญชีใหม่: ไม่มีบิล/แจ้งเตือน/ประวัติตัวอย่าง
+        chatsFresh.current = false;
         setBills([]);
         setApptNotices([]);
         setAudit([]);
@@ -1660,11 +1694,13 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
+  saveStateRef.current = () => {
+    if (!uid || restoredFor.current !== uid) return;
+    void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, caseLinks: caseLinks.current, resetSeen: resetSeen.current, seen: seenRows(), chats: chatsRef.current ?? undefined }).catch(() => undefined);
+  };
   React.useEffect(() => {
     if (!uid || restoredFor.current !== uid) return;
-    const t = setTimeout(() => {
-      void saveAppState(uid, { ...persisted, bridgeRefs: bridgeRefs.current, bridgedCase: bridgedCase.current, caseLinks: caseLinks.current, resetSeen: resetSeen.current, seen: seenRows() }).catch(() => undefined);
-    }, 800);
+    const t = setTimeout(() => saveStateRef.current(), 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, restoredTick, ...Object.values(persisted)]);
@@ -1676,6 +1712,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const value: JourneyState = {
     resumed: !!savedState()?.entered,
     markEntered,
+    entered,
+    syncChats,
+    chatsRestored,
     client: account
       ? { name: `คุณ${account.name}`, initials: account.name.slice(0, 2), age: profile.age, occupation: '', hn: clinicHn ?? (account.userId ? 'รอคลินิกออก HN' : 'TW-NEW') }
       : { name: 'คุณสมศักดิ์ รักดี', initials: 'สศ', age: profile.age, occupation: 'พนักงานออฟฟิศ', hn: 'TW-000123' },

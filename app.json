@@ -24,6 +24,18 @@
         {
           "microphonePermission": "ใช้ไมค์เมื่อคุณเลือกเล่าอาการด้วยเสียงกับ ThaiWell AI (ถอดเสียงเป็นข้อความ ไม่เก็บไฟล์เสียง)"
         }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "ใช้ Face ID ปลดล็อก ThaiWell AI เพื่อปกป้องข้อมูลสุขภาพของคุณ"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "ใช้ Face ID ปลดล็อก ThaiWell AI เพื่อปกป้องข้อมูลสุขภาพของคุณ"
+        }
       ]
     ]
   }

@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { AppBar, Banner, Button, Panel, Tag, Icon, Screen, SegmentedControl, Text, TextField, VStack, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
-import { useJourney } from '../../state/JourneyContext';
+import { baseProfile, useJourney } from '../../state/JourneyContext';
 import { currentUser, saveIdentity, signIn, signUp, thaiError, type CloudUser } from '../../services/auth';
 import { EMPTY_ID, TITLES, ageFromBirth, formatCitizenId, parseIdCard, sexOfTitle, validCitizenId, validPhone, type IdCard } from '../../services/idCard';
 import { ocrAvailable, recognizeText } from '../../../modules/id-card-ocr';
@@ -26,7 +26,7 @@ const FROST: ViewStyle | null = Platform.OS === 'web' ? ({ backdropFilter: 'blur
 /** บัญชีที่ยืนยันตัวตนแล้ว → ข้อมูลในแอป (ชื่อ เพศ อายุ ความยินยอม) แล้วไปหน้าถัดไป */
 function useEnterApp() {
   const nav = useNav();
-  const { signOut, setAccount, setNewPatient, setProfile, profile, setConsents } = useJourney();
+  const { signOut, setAccount, setNewPatient, setProfile, setConsents } = useJourney();
   return (u: CloudUser) => {
     if (!u.identity) {
       nav.reset({ index: 0, routes: [{ name: 'Identity' }] });
@@ -37,7 +37,8 @@ function useEnterApp() {
     signOut(true);
     setAccount({ provider: 'email', name: `${c.firstName} ${c.lastName}`, birthDate: `${String(dd).padStart(2, '0')}/${String(mm).padStart(2, '0')}/${yyyy > 2400 ? yyyy - 543 : yyyy}`, sex: c.sex || 'ไม่ระบุ', verified: true, userId: u.id, email: u.email, idCard: c, avatar: u.avatar });
     setNewPatient(true);
-    setProfile({ ...profile, age: ageFromBirth(c.birthDate) ?? profile.age, conditions: [], medications: [], allergies: [], healthKnown: false, conditionsKnown: false, medicationsKnown: false, allergiesKnown: false, bp: undefined, temperature: undefined, pulse: undefined });
+    // เริ่มจากข้อมูลตั้งต้น ไม่ใช่ของบัญชีก่อนหน้า (ตั้งครรภ์/ผ่าตัด ฯลฯ ของคนก่อนเคยติดมา)
+    setProfile({ ...baseProfile, age: ageFromBirth(c.birthDate) ?? baseProfile.age, conditions: [], medications: [], allergies: [], healthKnown: false, conditionsKnown: false, medicationsKnown: false, allergiesKnown: false, bp: undefined, temperature: undefined, pulse: undefined });
     if (u.consents) {
       setConsents(u.consents);
       nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });

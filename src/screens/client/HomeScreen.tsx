@@ -61,7 +61,7 @@ import {
   BottomSheet,
   Button,
 } from '../../design-system';
-import { CHATS_KEY, useJourney, type DraftCase } from '../../state/JourneyContext';
+import { CHATS_KEY, GREET_KEY, useJourney, type DraftCase } from '../../state/JourneyContext';
 import { getItem, setItem } from '../../services/persist';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
@@ -170,7 +170,6 @@ const GREET_BETTER = 'ดีขึ้นแล้ว';
 const GREET_STILL = 'ยังปวดอยู่';
 const GREET_PRE = 'เล่าอาการก่อนนัด';
 const GREET_NOT_YET = 'ยังไม่หาย';
-const GREET_KEY = 'thaiwell.greet.v1';
 /** ป้ายข้อควรระวังบนหุ่น: วงกลมสีอำพัน (ตัวหนังสือใช้สีเตือนของธีม) */
 const WARN_TINT = '#E08A00';
 /** ตัวหนังสือในป้ายบนหุ่นทุกแบบ = ขนาดเดียวกับป้ายธาตุ (12 หนา) อ่านเป็นชุดเดียวกัน */
@@ -347,8 +346,9 @@ export function HomeScreen() {
   const [editing, setEditing] = React.useState<Extract<ThreadCard, { type: 'bookConfirm' }> | null>(null);
 
   /* ---------- แชท: เริ่มใหม่ในหน้าเดิม + ประวัติแชท ---------- */
-  // แชทที่บันทึกไว้ (ปิด/เปิดแอปแล้วยังเห็นคำถาม-คำตอบของการประเมินเดิม)
-  const savedChats = React.useMemo(() => {
+  // แชทที่บันทึกไว้ (ปิด/เปิดแอปแล้วยังเห็นคำถาม-คำตอบของการประเมินเดิม) · เก็บกับบัญชีบนคลาวด์ด้วย (เปลี่ยนเครื่อง/เข้าใหม่ยังอยู่)
+  const { syncChats, chatsRestored } = useJourney();
+  const readChats = React.useCallback(() => {
     try {
       const raw = getItem(CHATS_KEY);
       const saved = raw ? (JSON.parse(raw) as { sessions?: ChatSession[]; caseChats?: Record<string, string> }) : null;
@@ -361,13 +361,28 @@ export function HomeScreen() {
       return null;
     }
   }, []);
+  const savedChats = React.useMemo(readChats, [readChats]);
   const [sessions, setSessions] = React.useState<ChatSession[]>(() => (savedChats?.sessions?.length ? savedChats.sessions : [CURRENT_CHAT]));
   /** แชทของแต่ละเรื่อง: ใบการรักษา → key = case id · ใบร่าง → draft.chatId */
   const [caseChats, setCaseChats] = React.useState<Record<string, string>>(() => savedChats?.caseChats ?? {});
+  /* ได้แชทของบัญชีคืนจากคลาวด์ → แทนแชทว่างของเครื่องนี้ · ระหว่างรอ ไม่บันทึกทับ */
+  const restoreSeen = React.useRef(chatsRestored);
+  const restoreNow = React.useRef(chatsRestored);
+  restoreNow.current = chatsRestored;
+  React.useEffect(() => {
+    if (restoreSeen.current === chatsRestored) return;
+    const c = readChats();
+    if (c?.sessions?.length) setSessions(c.sessions);
+    setCaseChats(c?.caseChats ?? {});
+    restoreSeen.current = chatsRestored;
+  }, [chatsRestored, readChats]);
   React.useEffect(() => {
     const t = setTimeout(() => {
+      if (restoreSeen.current !== restoreNow.current) return;
       try {
-        setItem(CHATS_KEY, JSON.stringify({ sessions, caseChats }));
+        const json = JSON.stringify({ sessions, caseChats });
+        setItem(CHATS_KEY, json);
+        syncChats(json);
       } catch {
         /* storage full / unavailable */
       }

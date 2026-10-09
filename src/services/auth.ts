@@ -108,3 +108,17 @@ export async function saveAvatar(userId: string, avatar: string) {
 export async function signOutCloud() {
   await cloud.auth.signOut().catch(() => undefined);
 }
+
+/** ยืนยันรหัสผ่านของบัญชีที่เข้าอยู่ (ลืม PIN) — ผิด = โยน error ภาษาไทยผ่าน thaiError */
+export async function verifyPassword(email: string, password: string): Promise<CloudUser> {
+  return signIn(email, password);
+}
+
+/**
+ * ออกจากระบบทุกเครื่อง (มือถือหาย ฯลฯ): ยกเลิกการเข้าสู่ระบบของบัญชีนี้ทุกเครื่องที่ Supabase Auth
+ * เครื่องอื่นหลุดเมื่อต่ออายุการเข้าสู่ระบบครั้งถัดไป (ไม่เกินอายุ access token) แล้วต้องเข้าสู่ระบบใหม่
+ */
+export async function signOutAllDevices() {
+  const { error } = await cloud.auth.signOut({ scope: 'global' });
+  if (error) throw error;
+}
