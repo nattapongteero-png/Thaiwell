@@ -277,6 +277,14 @@ export const grounded = <T extends Partial<TurnFields>>(f: T, text: string): T =
   if (AVOID_NONE.test(text)) out.avoid = 'ไม่มี';
   // บอกชัดว่าไม่มีชา/อ่อนแรง → ข้ามข้ออาการร่วม
   const o2 = out as Partial<TurnFields> & { related?: string[] | null };
+  // อาการร่วมต้องมีคำนั้นในข้อความจริง (AI เดาเพิ่มเอง เช่น ปวดคอ → ใส่ปวดศีรษะ ทั้งที่ไม่ได้พูด)
+  if (o2.related?.length) {
+    const core = (x: string) => x.replace(/^(ปวด|มี|อาการ)/, '').replace(/(ร่วมด้วย|ด้วย)$/, '').split(/[\s,/·-]+/).filter((w) => w.length >= 2);
+    // คำพูดทั่วไป → คำในตัวเลือก (ปวดหัว = ปวดศีรษะ)
+    const t = text.replace(/\s+/g, '').replace(/หัว/g, 'ศีรษะ');
+    o2.related = o2.related.filter((x) => x === 'ไม่มี' || core(x).some((w) => t.includes(w)));
+    if (!o2.related.length) o2.related = null;
+  }
   if (!o2.related?.length && NO_RELATED.test(text)) o2.related = ['ไม่มี'];
   return out as T;
 };
