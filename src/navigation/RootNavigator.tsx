@@ -14,6 +14,7 @@ import { BillScreen, BillsScreen } from '../screens/client/BillScreen';
 import { CourseScreen } from '../screens/client/CourseScreen';
 import { PlacesScreen } from '../screens/client/PlacesScreen';
 import { ProgressScreen, ProfileScreen, PrivacyScreen, TreatmentHistoryScreen } from '../screens/client/ClientTabs';
+import { AboutScreen } from '../screens/client/AboutScreen';
 import { BookingDoneScreen, BookingScreen } from '../screens/client/BookingScreen';
 import { AppointmentDetailScreen } from '../screens/client/AppointmentDetail';
 import { PlaceDetailScreen } from '../screens/client/places/PlaceDetail';
@@ -109,6 +110,7 @@ export function RootNavigator() {
         <Stack.Screen name="FollowUp" component={FollowUpScreen} />
         <Stack.Screen name="SelfCare" component={SelfCareScreen} />
         <Stack.Screen name="Privacy" component={PrivacyScreen} />
+        <Stack.Screen name="About" component={AboutScreen} />
 
         <Stack.Screen name="ProviderTabs" component={ProviderTabs} />
         <Stack.Screen name="ClientBrief" component={ClientBriefScreen} />

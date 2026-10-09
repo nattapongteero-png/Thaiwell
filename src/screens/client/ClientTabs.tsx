@@ -231,7 +231,8 @@ export function ProfileScreen() {
         <RowLink icon="credit-card" tint={TINT.slate} title="การชำระเงิน" sub={bills.some((b) => b.status === 'pending') ? `รอชำระ ${bills.filter((b) => b.status === 'pending').length} รายการ` : 'ใบเสร็จ'} onPress={() => nav.navigate('Bills')} />
         <RowLink icon="lock" tint={TINT.slate} title="ความเป็นส่วนตัวและความยินยอม" onPress={() => nav.navigate('Privacy')} />
         <RowLink icon="type" tint={TINT.slate} title="ตัวอักษรขนาดใหญ่" sub="สำหรับผู้สูงอายุ" right={<Switch value={textScale > 1} onChange={(v) => setTextScale(v ? 1.2 : 1)} label="ตัวอักษรขนาดใหญ่" />} />
-        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" last={!!account?.userId} />
+        <RowLink icon="globe" tint={TINT.slate} title="ภาษา" sub="ไทย" />
+        <RowLink icon="info" tint={TINT.slate} title="เกี่ยวกับแอป" sub="เวอร์ชัน · เครดิต" onPress={() => nav.navigate('About')} last={!!account?.userId} />
         {account?.userId ? null : <RowLink icon="briefcase" tint={TINT.slate} title="โหมดผู้ให้บริการ" onPress={() => nav.navigate('ProviderTabs')} last />}
       </Panel>
 

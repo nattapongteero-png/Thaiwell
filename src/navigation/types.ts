@@ -44,6 +44,7 @@ export type RootStackParamList = {
   /** ไม่ระบุ groupId = หน้ารวมท่ายืด · ระบุ = รายละเอียดท่าของกลุ่มอาการนั้น */
   SelfCare: { groupId?: string } | undefined;
   Privacy: undefined;
+  About: undefined;
   // ผู้ให้บริการ (Provider) — ระหว่างรับบริการ
   ProviderTabs: undefined;
   ClientBrief: undefined;
