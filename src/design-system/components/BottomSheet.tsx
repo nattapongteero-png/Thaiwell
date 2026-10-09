@@ -1,5 +1,6 @@
 import React from 'react';
-import { Animated, Easing, Modal, PanResponder, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { GestureHandlerRootView, PanGestureHandler, ScrollView, State } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, space } from '../tokens';
 import { useTheme } from '../theme/ThemeProvider';
@@ -10,6 +11,7 @@ import { Text } from './Text';
 /**
  * BottomSheet — พื้นหลังจางขึ้นอยู่กับที่ · เฉพาะ sheet เลื่อนขึ้น · สูงคงที่ (เนื้อหาเลื่อนข้างใน)
  * ปิด: ปัดลง (ที่หัว หรือที่เนื้อหาเมื่อเลื่อนอยู่บนสุด) · แตะพื้นหลัง · ✕ · ปุ่มย้อนกลับของเครื่อง
+ * ลาก: แบบเดียวกับแผ่นการ์ดหน้าแรก — sheet ตามนิ้วบน native thread (gesture-handler + Animated native) · มีขั้นเดียวคือปิด
  */
 export function BottomSheet({
   visible,
@@ -41,15 +43,22 @@ export function BottomSheet({
   const [mounted, setMounted] = React.useState(visible);
   const fade = React.useRef(new Animated.Value(0)).current;
   const slide = React.useRef(new Animated.Value(winH)).current;
-  /** เนื้อหาเลื่อนอยู่บนสุด → ปัดลงที่เนื้อหาก็ปิดได้ (ไม่อย่างนั้นปัดลง = เลื่อนเนื้อหากลับขึ้น) */
-  const atTop = React.useRef(true);
-  /** ตอนเริ่มแตะ เนื้อหาอยู่บนสุดไหม — ตัดสินครั้งเดียวต่อการลาก (เลื่อนรายการกลับขึ้นมาถึงบนสุดระหว่างลาก ≠ ลากปิด) */
-  const topAtStart = React.useRef(true);
+  /** เนื้อหาเลื่อนอยู่บนสุด → ปัดลงที่เนื้อหาลาก sheet ได้ · เลื่อนลงไปแล้ว = ปัดลงคือเลื่อนเนื้อหากลับขึ้น */
+  const [atTop, setAtTop] = React.useState(true);
+  const atTopRef = React.useRef(true);
+  const scrollRef = React.useRef(null);
+  const headPan = React.useRef(null);
+  const bodyPan = React.useRef(null);
+  /** ระยะนิ้วลาก (native) — รวมกับ slide (เปิด/ปิด) · ลากขึ้นไม่เกินตำแหน่งเปิด */
+  const drag = React.useRef(new Animated.Value(0)).current;
+  const dragDown = React.useMemo(() => drag.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolateLeft: 'clamp' }), [drag]);
 
   React.useEffect(() => {
     if (visible) {
       setMounted(true);
-      atTop.current = true;
+      atTopRef.current = true;
+      setAtTop(true);
+      drag.setValue(0);
       slide.setValue(winH);
       Animated.parallel([
         Animated.timing(fade, { toValue: 1, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true }),
@@ -65,39 +74,26 @@ export function BottomSheet({
   }, [visible]);
 
   const sheetH = Math.round(winH * heightRatio);
-  // ปัดลง: sheet ตามนิ้ว + พื้นหลังจางตาม · เกิน 1/4 ของความสูง (อย่างน้อย 100) หรือปัดเร็ว = ปิด · ไม่ถึง = เด้งกลับ
-  const pan = React.useMemo(() => {
-    const grab = (g: { dy: number; dx: number }) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4;
-    return PanResponder.create({
-      // จำสถานะตอนเริ่มแตะ (ไม่จับ) — ใช้ตัดสินทั้งการลากนี้
-      onStartShouldSetPanResponderCapture: () => {
-        topAtStart.current = atTop.current;
-        return false;
-      },
-      onMoveShouldSetPanResponder: (_, g) => grab(g),
-      // จับก่อน ScrollView เฉพาะตอนเริ่มแตะขณะเนื้อหาอยู่บนสุด และนิ้วลากลง
-      onMoveShouldSetPanResponderCapture: (_, g) => topAtStart.current && atTop.current && grab(g),
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, g) => {
-        const dy = Math.max(0, g.dy);
-        slide.setValue(dy);
-        fade.setValue(1 - Math.min(1, dy / sheetH) * 0.8);
-      },
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > Math.max(100, sheetH * 0.25) || g.vy > 0.9) onClose();
-        else
-          Animated.parallel([
-            Animated.spring(slide, { toValue: 0, damping: 24, stiffness: 280, useNativeDriver: true }),
-            Animated.timing(fade, { toValue: 1, duration: 160, useNativeDriver: true }),
-          ]).start();
-      },
-    });
-  }, [slide, fade, onClose, sheetH]);
+  const onDrag = React.useMemo(() => Animated.event([{ nativeEvent: { translationY: drag } }], { useNativeDriver: true }), [drag]);
+  // ปล่อยนิ้ว: เกิน 1/4 ของความสูง (อย่างน้อย 100) หรือปัดเร็ว = ปิด · ไม่ถึง = เด้งกลับ
+  const onDragState = (e: { nativeEvent: { state: number; translationY: number; velocityY: number } }) => {
+    const { state, translationY: ty, velocityY: vy } = e.nativeEvent;
+    if (state !== State.END && state !== State.CANCELLED && state !== State.FAILED) return;
+    const y = Math.max(0, ty);
+    // ย้ายระยะลากไปไว้ที่ slide แล้วค่อยเคลื่อนต่อจากตรงนั้น (ไม่กระโดด)
+    slide.setValue(y);
+    drag.setValue(0);
+    if (state === State.END && (y > Math.max(100, sheetH * 0.25) || vy > 900)) onClose();
+    else Animated.spring(slide, { toValue: 0, damping: 24, stiffness: 280, useNativeDriver: true }).start();
+  };
+  const ty = Animated.add(slide, dragDown);
+  const dim = Animated.multiply(fade, ty.interpolate({ inputRange: [0, sheetH], outputRange: [1, 0.2], extrapolate: 'clamp' }));
 
   if (!mounted) return null;
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.45)', opacity: fade }}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+      <Animated.View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(15,23,42,0.45)', opacity: dim }}>
         <Pressable accessibilityRole="button" accessibilityLabel="ปิด" onPress={onClose} style={{ flex: 1 }} />
       </Animated.View>
       <Animated.View
@@ -116,11 +112,12 @@ export function BottomSheet({
           shadowRadius: 30,
           shadowOffset: { width: 0, height: -8 },
           elevation: 16,
-          transform: [{ translateY: slide }],
+          transform: [{ translateY: ty }],
         }}
-        {...pan.panHandlers}
       >
-        <View>
+        {/* หัว (ขีดจับ · หัวข้อ · ส่วนหัวเพิ่ม) ลากได้เสมอ */}
+        <PanGestureHandler ref={headPan} activeOffsetY={[-8, 8]} failOffsetX={[-14, 14]} onGestureEvent={onDrag} onHandlerStateChange={onDragState}>
+        <Animated.View>
           <View style={{ alignItems: 'center', paddingTop: space[3], paddingBottom: space[1] }}>
             <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: colors.border.strong }} />
           </View>
@@ -145,23 +142,45 @@ export function BottomSheet({
             </Pressable>
           </View>
           {header ? <View style={{ paddingHorizontal: space[5], paddingTop: space[4] }}>{header}</View> : null}
-        </View>
+        </Animated.View>
+        </PanGestureHandler>
         {/* เนื้อหาจางที่ขอบบน/ล่างตอนเลื่อนผ่าน (แทนเส้นคั่น) */}
+        {/* เนื้อหา: อยู่บนสุดแล้วปัดลง = ลาก sheet (เนื้อหาไม่เด้ง) · ปัดขึ้น = เลื่อนเนื้อหา · เลื่อนลงไปแล้ว = เลื่อนเนื้อหาอย่างเดียว */}
+        <PanGestureHandler
+          ref={bodyPan}
+          enabled={atTop}
+          activeOffsetY={10}
+          failOffsetY={-6}
+          failOffsetX={[-14, 14]}
+          simultaneousHandlers={scrollRef}
+          onGestureEvent={onDrag}
+          onHandlerStateChange={onDragState}
+        >
+        <Animated.View style={{ flex: 1 }}>
         <EdgeFade>
           <ScrollView
+            ref={scrollRef}
+            simultaneousHandlers={bodyPan}
             style={{ flex: 1 }}
+            bounces={false}
+            overScrollMode="never"
             scrollEventThrottle={16}
-            onScroll={(e) => (atTop.current = e.nativeEvent.contentOffset.y <= 0)}
-            // เริ่มเลื่อนรายการแล้ว → การลากนี้เป็นของรายการจนปล่อยนิ้ว
-            onScrollBeginDrag={(e) => {
-              if (e.nativeEvent.contentOffset.y > 0) topAtStart.current = false;
+            onScroll={(e) => {
+              const top = e.nativeEvent.contentOffset.y <= 0;
+              if (top !== atTopRef.current) {
+                atTopRef.current = top;
+                setAtTop(top);
+              }
             }}
             contentContainerStyle={{ paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[3] }}>
             {children}
           </ScrollView>
         </EdgeFade>
+        </Animated.View>
+        </PanGestureHandler>
         {footer ? <View style={{ paddingHorizontal: space[5], paddingTop: space[2] }}>{footer}</View> : null}
       </Animated.View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
