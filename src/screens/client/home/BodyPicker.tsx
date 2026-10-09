@@ -8,8 +8,7 @@ import { radius, space } from '../../../design-system/tokens';
 
 /**
  * หน้าเลือกบริเวณที่ปวดจากหุ่น (เปิดจากปุ่ม "ชี้จุดบนหุ่น" ในแชทประเมิน / แตะหุ่นเล็กในการ์ดประเมิน)
- * แตะบนหุ่น = เลือกทั้งโซน (แตะซ้ำ / ✕ ที่ pill = เอาออก) · ลากบนตัวหุ่น = เลือกทุกโซนที่นิ้วผ่าน
- * (เริ่มลากจากโซนที่เลือกแล้ว = ลบ) · ลากที่ว่าง = หมุน
+ * แตะบนหุ่น = เลือกทั้งโซน (แตะซ้ำ / ✕ ที่ pill = เอาออก) · ลาก = หมุน (ท่าเดียวต่อหนึ่งหน้าที่ — ลากเลือกใช้ยาก)
  * เลือกครบทุกโซนของแขน/ขาข้างหนึ่ง = รวมเป็น "ปวดทั้งแขนซ้าย" ป้ายเดียว · แตะโซนในแขนขา → มีปุ่มลัดเลือกทั้งแขน/ขา
  * ข้อมูลที่ส่งออก: ชื่อ → จุดที่แตะ (โซนละ 1 จุด) — หุ่นทุกหน้าระบายทั้งโซนของจุดนั้น
  */
@@ -164,36 +163,7 @@ export function BodyPicker({
     });
   };
 
-  /* ลากเริ่มบนตัวหุ่น = ระบายเลือกโซน (เริ่มจากโซนที่เลือกแล้ว = ลบ) · ลากเริ่มที่ว่าง = หมุน · แตะ = เลือก/เอาออก */
-  const mode = React.useRef<'add' | 'erase' | 'rotate'>('rotate');
-  const beginDrag = (x: number, y: number) => {
-    const hit = regionAt(x, y);
-    mode.current = !hit ? 'rotate' : zonesRef.current[hit.zone] ? 'erase' : 'add';
-    if (mode.current === 'rotate') bodyRef.current?.beginRotate();
-    else {
-      setSuggest(null);
-      paint(x, y);
-    }
-  };
-  const paint = (x: number, y: number) => {
-    const hit = regionAt(x, y);
-    if (!hit) return;
-    const erase = mode.current === 'erase';
-    if (erase ? !zonesRef.current[hit.zone] : zonesRef.current[hit.zone]) return;
-    const out = { ...zonesRef.current };
-    if (erase) delete out[hit.zone];
-    else out[hit.zone] = hit.point;
-    zonesRef.current = out;
-    setZones(out);
-  };
-  const moveDrag = (x: number, y: number, dx: number, dy: number) => {
-    // แบบ ThaiWellAI: ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
-    if (mode.current === 'rotate') bodyRef.current?.rotateTo(dx / 80, dy / 160);
-    else paint(x, y);
-  };
-  const endDrag = () => {
-    if (mode.current === 'rotate') bodyRef.current?.endRotate();
-  };
+  /* ลาก = หมุน · แตะ = เลือก/เอาออก (เว็บ pointer · native gesture handler) */
   const start = React.useRef<{ x: number; y: number } | null>(null);
   const moved = React.useRef(false);
   const web = {
@@ -208,13 +178,14 @@ export function BodyPicker({
       const dy = y - start.current.y;
       if (!moved.current && (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP)) {
         moved.current = true;
-        beginDrag(start.current.x, start.current.y);
+        bodyRef.current?.beginRotate();
       }
-      if (moved.current) moveDrag(x, y, dx, dy);
+      // แบบ ThaiWellAI: ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
+      if (moved.current) bodyRef.current?.rotateTo(dx / 80, dy / 160);
     },
     onPointerUp: (e: PointerEvent) => {
       if (start.current && !moved.current) onTap(e.nativeEvent.clientX, e.nativeEvent.clientY);
-      else if (moved.current) endDrag();
+      else if (moved.current) bodyRef.current?.endRotate();
       start.current = null;
     },
     // ล้อเมาส์ / trackpad = ซูม
@@ -223,8 +194,8 @@ export function BodyPicker({
       bodyRef.current?.zoomTo(Math.exp(-e.nativeEvent.deltaY / 400));
     },
   };
-  const fns = React.useRef({ onTap, beginDrag, moveDrag, endDrag });
-  fns.current = { onTap, beginDrag, moveDrag, endDrag };
+  const onTapRef = React.useRef(onTap);
+  onTapRef.current = onTap;
   const gesture = React.useMemo(
     () =>
       Gesture.Simultaneous(
@@ -237,15 +208,14 @@ export function BodyPicker({
         Gesture.Pan()
           .runOnJS(true)
           .minDistance(DRAG_SLOP)
-          .maxPointers(1)
-          // เริ่มที่ตำแหน่งที่นิ้วแตะลงครั้งแรก (ไม่ใช่ตำแหน่งที่ลากพ้นระยะแล้ว)
-          .onStart((e) => fns.current.beginDrag(e.absoluteX - e.translationX, e.absoluteY - e.translationY))
-          .onUpdate((e) => fns.current.moveDrag(e.absoluteX, e.absoluteY, e.translationX, e.translationY))
-          .onEnd(() => fns.current.endDrag()),
+          .onStart(() => bodyRef.current?.beginRotate())
+          // ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
+          .onUpdate((e) => bodyRef.current?.rotateTo(e.translationX / 80, e.translationY / 160))
+          .onFinalize(() => bodyRef.current?.endRotate()),
         Gesture.Tap()
           .runOnJS(true)
           .maxDistance(DRAG_SLOP)
-          .onEnd((e, ok) => ok && fns.current.onTap(e.absoluteX, e.absoluteY)),
+          .onEnd((e, ok) => ok && onTapRef.current(e.absoluteX, e.absoluteY)),
         ),
       ),
     [],
@@ -273,7 +243,7 @@ export function BodyPicker({
           <View style={{ flex: 1, gap: 2 }}>
             <Text variant="titleLg">{title}</Text>
             <Text variant="bodySm" tone="secondary">
-              แตะหรือลากบนตัวเพื่อเลือก ลากที่ว่างเพื่อหมุน
+              แตะบริเวณที่ปวด ลากเพื่อหมุน
             </Text>
           </View>
           <Pressable
