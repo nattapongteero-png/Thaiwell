@@ -5,7 +5,7 @@ import { AVATAR_KEYS, defaultAvatar } from '../../data/staffAvatars';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
 import { saveAvatar, savePhone as savePhoneCloud } from '../../services/auth';
-import { validPhone } from '../../services/idCard';
+import { cleanAddress, validPhone } from '../../services/idCard';
 
 /** เลขบัตรประชาชน: แสดงแค่ 4 ตัวท้าย (ข้อมูลอ่อนไหว) */
 const maskId = (id: string) => (id.length === 13 ? `x-xxxx-xxxxx-${id.slice(10, 12)}-${id.slice(12)}` : '-');
@@ -16,7 +16,7 @@ const maskId = (id: string) => (id.length === 13 ? `x-xxxx-xxxxx-${id.slice(10, 
  */
 const addressText = (a?: string) =>
   a
-    ? a
+    ? cleanAddress(a)
         .replace(/\s*(หมู่ที่|หมู่|ม\.|ซอย|ซ\.|ถนน|ถ\.|ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต|จังหวัด|จ\.)\s*/g, ' $1')
         .replace(/\s+/g, ' ')
         .trim()

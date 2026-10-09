@@ -13,6 +13,12 @@ export interface IdCard {
   phone: string;
 }
 
+/** ตัดวันที่บนบัตรที่ติดมากับที่อยู่ (เช่น "… กรุงเทพมหานคร 1 ก.ค. 2568") */
+export function cleanAddress(a: string) {
+  const months = TH_MONTHS.map((m) => m.replace(/\./g, '\\.')).join('|');
+  return a.replace(new RegExp(`\\s*(\\d{1,2}\\s*)?(${months})\\s*\\d{4}.*$`), '').trim();
+}
+
 export const EMPTY_ID: IdCard = { citizenId: '', title: '', firstName: '', lastName: '', sex: '', birthDate: '', address: '', phone: '' };
 
 export const TITLES = ['นาย', 'นาง', 'นางสาว', 'เด็กชาย', 'เด็กหญิง'] as const;
@@ -123,11 +129,12 @@ export function parseIdCard(lines: string[]): Partial<IdCard> {
   if (ai >= 0) {
     const parts = [all[ai].replace(/^ที่อยู่\s*/, '')];
     for (let i = ai + 1; i < all.length && i <= ai + 2; i++) {
-      const isDate = TH_MONTHS.some((mo) => new RegExp(`\\d{1,2}\\s*${mo.replace(/\./g, '\\.')}\\s*\\d{4}`).test(all[i]));
+      // วันที่บนบัตร (วันออกบัตร/หมดอายุ) — OCR บางครั้งแยกวันออกไป เหลือแค่ "ก.ค. 2568" → ดูแค่เดือน + ปี
+      const isDate = TH_MONTHS.some((mo) => new RegExp(`${mo.replace(/\./g, '\\.')}\\s*\\d{4}`).test(all[i]));
       if (/วันออกบัตร|วันบัตรหมดอายุ|Date of|ศาสนา/.test(all[i]) || isDate) break;
       parts.push(all[i]);
     }
-    out.address = parts.join(' ').trim();
+    out.address = cleanAddress(parts.join(' '));
   }
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v)) as Partial<IdCard>;
 }
