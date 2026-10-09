@@ -6,6 +6,7 @@ import { useJourney, type Bill } from '../../state/JourneyContext';
 import { CASE_CLINIC_DEFAULT } from '../../state/appointments';
 import { useNav } from '../../navigation/types';
 import { NotFoundScreen } from './NotFound';
+import { ReceiptSlip } from './ReceiptSlip';
 
 /** วิธีชำระ (ชุดเดียวกับหลังบ้าน) → ป้ายในแอป · จ่ายในแอป หรือจ่ายที่เคาน์เตอร์ */
 const METHOD: Record<NonNullable<Bill['method']>, { label: string; where: 'app' | 'counter' }> = {
@@ -80,76 +81,19 @@ export function BillScreen({ route }: { route: { params: { id: string } } }) {
 
   // ชำระแล้ว → ใบเสร็จ (หน้าตาเดียวกับใบเสร็จของหลังบ้าน)
   if (paid) {
-    const meta: [string, string][] = [
-      ['เลขที่', b.receiptNo ?? '-'],
-      ['วันที่ชำระ', b.paidAt ?? '-'],
-      ['ผู้รับบริการ', client.name],
-      ...(b.therapist || tc?.therapist ? ([['ผู้บำบัด', b.therapist || tc!.therapist]] as [string, string][]) : []),
-      ['รับบริการ', b.date],
-    ];
     return (
       <Screen header={<AppBar title="ใบเสร็จ" onBack={() => nav.goBack()} />}>
-        <View style={{ backgroundColor: colors.surface.default, borderRadius: 24, borderWidth: 1, borderColor: colors.border.subtle, padding: space[5], gap: space[4] }}>
-          {/* หัว: คลินิก + ชนิดเอกสาร · ตราชำระแล้ว */}
-          <View style={{ alignItems: 'center', gap: 2 }}>
-            <Text variant="titleSm" align="center">
-              {clinic}
-            </Text>
-            <Text variant="bodyXs" tone="tertiary">
-              ใบเสร็จรับเงิน · RECEIPT
-            </Text>
-          </View>
-          <View style={{ alignItems: 'center', gap: space[1] }}>
-            <Text variant="bodyXs" tone="secondary">
-              ยอดชำระ
-            </Text>
-            <Text style={{ fontFamily: fontFamily.bold, fontSize: 40, lineHeight: 52, color: colors.text.primary }}>
-              {b.total.toLocaleString()}
-              <Text variant="titleSm" tone="secondary">
-                {' '}
-                บาท
-              </Text>
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space[3], paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.brand.subtle }}>
-              <Icon name="check" size="xs" color={colors.brand.primary} />
-              <Text variant="labelSm" color={colors.brand.primary}>
-                ชำระแล้ว · {methodLabel(b)}
-              </Text>
-            </View>
-          </View>
-          <Dash />
-          <View style={{ gap: space[2] }}>
-            {meta.map(([k, v]) => (
-              <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
-                <Text variant="bodySm" tone="secondary">
-                  {k}
-                </Text>
-                <Text variant="bodySm" style={{ flexShrink: 1, textAlign: 'right' }}>
-                  {v}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <Dash />
-          <View style={{ gap: space[2] }}>
-            {b.items.map((it) => (
-              <View key={it.name} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space[3] }}>
-                <Text variant="bodyMd" style={{ flex: 1 }}>
-                  {it.name}
-                </Text>
-                <Text variant="bodyMd">{it.amount.toLocaleString()}</Text>
-              </View>
-            ))}
-          </View>
-          <Dash />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text variant="titleSm">รวมทั้งสิ้น</Text>
-            <Text variant="titleSm">{b.total.toLocaleString()} ฿</Text>
-          </View>
-          <Text variant="bodyXs" tone="tertiary" align="center">
-            ขอบคุณที่ใช้บริการ
-          </Text>
-        </View>
+        <ReceiptSlip
+          clinic={clinic}
+          total={b.total}
+          method={methodLabel(b)}
+          no={b.receiptNo ?? '-'}
+          date={b.paidAt ?? b.date}
+          patient={client.name}
+          hn={client.hn}
+          therapist={b.therapist || tc?.therapist}
+          items={b.items}
+        />
       </Screen>
     );
   }

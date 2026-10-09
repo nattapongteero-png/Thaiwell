@@ -2418,7 +2418,7 @@ export function HomeScreen() {
   sendRef.current = send;
   // ทดสอบอัตโนมัติ (เว็บ + ?e2e เท่านั้น): สคริปต์ป้อนข้อความเข้าแชทแล้วอ่านผล (ข้อมูลที่จดได้ · ข้อความที่ AI ตอบ)
   if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('e2e'))
-    (window as unknown as { __tw: unknown }).__tw = { setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short) };
+    (window as unknown as { __tw: unknown }).__tw = { nav, setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short) };
   // บริบทให้ถอดเสียง/ตรวจคำที่ได้ยิน: ข้อความล่าสุดของผู้ช่วย + ตัวเลือกของข้อที่ถามอยู่ + ที่ผู้ใช้พูดก่อนหน้า
   ctxRef.current = () => {
     const lastAi = [...thread].reverse().find((m) => m.from === 'ai' && m.text);
