@@ -52,8 +52,8 @@ export function holdOf(hits: { id: string; title: string }[]): Hold | undefined 
 }
 
 /** ข้อความของการ์ดพักไว้ */
-export const HOLD_TEXT: Record<HoldKind, { todo: string; back: string; again: string }> = {
-  emergency: { todo: 'ไปโรงพยาบาลหรือโทร 1669 ทันที', back: 'แพทย์ตรวจแล้ว ค่อยประเมินใหม่', again: 'พบแพทย์แล้ว ประเมินใหม่' },
-  doctor: { todo: 'พบแพทย์ก่อน', back: 'พบแพทย์แล้วอาการดีขึ้น ประเมินใหม่ได้', again: 'พบแพทย์แล้ว ประเมินใหม่' },
-  heal: { todo: 'พักให้หายก่อน', back: 'หายแล้วประเมินใหม่ กลับมานวดได้', again: 'หายแล้ว ประเมินใหม่' },
+export const HOLD_TEXT: Record<HoldKind, { title: string; todo: string; back: string; again: string }> = {
+  emergency: { title: 'ไปโรงพยาบาลทันที', todo: 'ไปโรงพยาบาลหรือโทร 1669 ทันที', back: 'แพทย์ตรวจแล้ว ค่อยประเมินใหม่', again: 'พบแพทย์แล้ว ประเมินใหม่' },
+  doctor: { title: 'พบแพทย์ก่อน', todo: 'พบแพทย์ก่อน', back: 'พบแพทย์แล้วอาการดีขึ้น ประเมินใหม่ได้', again: 'พบแพทย์แล้ว ประเมินใหม่' },
+  heal: { title: 'รอหายก่อน', todo: 'พักให้หายก่อน', back: 'หายแล้วประเมินใหม่ กลับมานวดได้', again: 'หายแล้ว ประเมินใหม่' },
 };

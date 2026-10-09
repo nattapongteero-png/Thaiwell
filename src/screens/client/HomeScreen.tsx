@@ -1,7 +1,7 @@
 import React from 'react';
 import { kmText } from '../../services/location';
 import { useIsFocused, useRoute } from '@react-navigation/native';
-import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
+import { Animated, Easing, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type PointerEvent } from 'react-native';
 import { Gesture, GestureDetector, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Polyline, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
@@ -5182,49 +5182,71 @@ function DraftBento({
         }}
       />
 
-      {/* 1) การ์ดหลักเต็มแถว · มีข้อห้ามนวด = พักไว้ (ไม่ใช่ทางตัน): ทำอะไรต่อ · ถามอีกครั้งเมื่อไหร่ · หายแล้วประเมินสั้น ๆ */}
+      {/* 1) การ์ดหลักเต็มแถว · มีข้อห้ามนวด = พักไว้ (ไม่ใช่ทางตัน) — โครงเดียวกับการ์ดนัด: หัว (สถานะตัวใหญ่ | ถามอีกครั้ง) · ขั้น · ปุ่ม */}
       {d.red ? (
-        <Tile style={{ gap: space[3] }} onPress={onRedFlag} accessibilityLabel={`พักเรื่องนี้ไว้ก่อน ${hold.todo}`}>
-          <TileTitle title="พักไว้ก่อน" meta={d.hold ? `ถามอีกครั้ง ${shortDate(d.hold.recheck)}` : undefined} />
-          <View style={{ gap: 2 }}>
-            <Text variant="titleSm" color={colors.status.danger.fg}>
-              {hold.todo}
-            </Text>
-            <Text variant="bodyXs" tone="secondary" numberOfLines={2}>
-              {(d.hold?.reasons ?? ['มีข้อห้ามนวด']).join(' · ')}
-            </Text>
-            <Text variant="bodyXs" tone="secondary">
-              {hold.back}
-            </Text>
-          </View>
-          {/* มีนัดค้างอยู่ → ยังเข้าไปเลื่อน/ยกเลิกได้ */}
-          {b ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={`จัดการนัด ${b.date} ${b.time}`} onPress={onOpen}>
-              <Text variant="labelSm" color={colors.status.danger.fg}>
-                มีนัด {b.date} {b.time} · เลื่อน/ยกเลิก
+        // รอหาย = ไม่ต้องพาไปหน้าพบแพทย์ · ฉุกเฉิน/พบแพทย์ = แตะดูคำแนะนำ
+        <Tile style={{ gap: space[3] }} onPress={d.hold?.kind === 'heal' ? undefined : onRedFlag} accessibilityLabel={`พักเรื่องนี้ไว้ก่อน ${hold.todo}`}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: space[2] }}>
+            <View style={{ flexShrink: 1 }}>
+              <Text variant="bodyXs" tone="secondary">
+                พักเรื่องนี้ไว้ก่อน
               </Text>
-            </Pressable>
-          ) : null}
+              <Text variant="titleXl" numberOfLines={1} color={colors.status.danger.fg}>
+                {hold.title}
+              </Text>
+            </View>
+            {d.hold ? (
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text variant="bodyXs" tone="secondary">
+                  ถามอีกครั้ง
+                </Text>
+                <Text variant="titleXl" numberOfLines={1}>
+                  {shortDate(d.hold.recheck)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={{ gap: space[2] }}>
+            {(d.hold?.reasons ?? ['มีข้อห้ามนวด']).map((r) => (
+              <StepRow key={r} warn text={r} />
+            ))}
+            <StepRow text={hold.back} />
+            {/* มีนัดค้างอยู่ → ยังเข้าไปเลื่อน/ยกเลิกได้ */}
+            {b ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={`จัดการนัด ${b.date} ${b.time}`} onPress={onOpen}>
+                <StepRow text={`มีนัด ${b.date} ${b.time} · แตะเพื่อเลื่อน/ยกเลิก`} />
+              </Pressable>
+            ) : null}
+          </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2] }}>
+            {d.hold?.kind === 'emergency' ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="โทร 1669" onPress={() => void Linking.openURL('tel:1669')} style={{ flex: 1 }}>
+                <TilePill icon="phone" label="โทร 1669" />
+              </Pressable>
+            ) : null}
             <Pressable accessibilityRole="button" accessibilityLabel={hold.again} onPress={onRecheck} style={{ flex: 1 }}>
-              <TilePill icon="refresh-cw" label={hold.again} />
+              <TilePill icon="refresh-cw" label={hold.again} dark={d.hold?.kind !== 'emergency'} />
             </Pressable>
             {/* ปิดเรื่อง: แตะสองครั้ง (กันเผลอลบ) */}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={closing ? 'แตะอีกครั้งเพื่อปิดเรื่องนี้' : 'ปิดเรื่องนี้'}
-              hitSlop={8}
+              hitSlop={4}
               onPress={() => {
                 if (closing) return onCloseTopic();
                 setClosing(true);
                 setTimeout(() => setClosing(false), 3000);
               }}
+              style={({ pressed }) => ({ width: 34, height: 34, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: closing ? colors.status.danger.bg : colors.surface.default, borderWidth: 1, borderColor: closing ? colors.status.danger.fg : colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
             >
-              <Text variant="labelSm" color={closing ? colors.status.danger.fg : colors.text.secondary}>
-                {closing ? 'แตะอีกครั้งเพื่อปิด' : 'ปิดเรื่องนี้'}
-              </Text>
+              <Icon name={closing ? 'trash-2' : 'x'} size="xs" color={closing ? colors.status.danger.fg : colors.text.primary} />
             </Pressable>
           </View>
+          {closing ? (
+            <Text variant="bodyXs" color={colors.status.danger.fg} style={{ textAlign: 'right', marginTop: -space[2] }}>
+              แตะอีกครั้งเพื่อปิดเรื่องนี้
+            </Text>
+          ) : null}
         </Tile>
       ) : b ? (
         // นวดแล้ว (ครั้งที่ 1)
@@ -5294,7 +5316,7 @@ function DraftBento({
       </View>
 
       {/* 3) แถวล่าง */}
-      {d.red && !hospital ? (
+      {d.red && d.hold?.kind === 'heal' ? null : d.red && !hospital ? (
         // ใช้งานจริง: ไม่มีรายชื่อโรงพยาบาลในแอป → ค้นหาโรงพยาบาลใกล้ตัวใน Google Maps
         <Tile style={{ gap: space[3] }} onPress={() => void searchHospitals()} accessibilityLabel="ค้นหาโรงพยาบาลใกล้คุณ">
           <TileTitle title="พบแพทย์ใกล้คุณ" />
