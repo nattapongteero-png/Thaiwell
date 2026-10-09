@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRoute } from '@react-navigation/native';
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,7 +67,10 @@ export function AuthScreen() {
   const [relogin, setRelogin] = React.useState(false);
   const home = () => nav.reset({ index: 0, routes: [{ name: 'ClientTabs' }] });
   // เข้าสู่ระบบค้างไว้ในเครื่อง → เข้าแอปเลย · มีข้อมูลในแอปที่จำไว้ → กลับหน้าแรกพร้อมข้อมูลเดิม (ไม่ล้าง)
+  const out = !!(useRoute().params as { out?: boolean } | undefined)?.out;
   React.useEffect(() => {
+    // เพิ่งกดออกจากระบบ: ข้อมูลกับการเข้าสู่ระบบในเครื่องถูกล้างตามหลังมา → ห้ามพากลับเข้าแอปด้วยบัญชีเดิม
+    if (out) return setChecking(false);
     if (resumed) {
       // บัญชีจริง: ต้องยังเข้าสู่ระบบอยู่ (ไม่งั้นอ่านข้อมูลคลินิก/นัดจากหลังบ้านไม่ได้เลย)
       if (!account?.userId) return home();

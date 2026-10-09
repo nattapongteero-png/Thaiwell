@@ -5,7 +5,8 @@ export type RootStackParamList = {
   // ผู้รับบริการ (Client) — ก่อนรับบริการ
   ClientTabs: { screen?: keyof ClientTabParamList; params?: object } | undefined;
   /** เข้าสู่ระบบ (Health ID / Google / LINE) */
-  Auth: undefined;
+  /** out = มาจากการออกจากระบบ → ไม่เข้าแอปอัตโนมัติด้วยการเข้าสู่ระบบที่ยังค้าง (ล้างตามหลังมา) */
+  Auth: { out?: boolean } | undefined;
   /** หลังเข้าสู่ระบบ: ถามเฉพาะข้อมูลที่ช่องทางนั้นไม่ได้ส่งมา */
   Identity: undefined;
   /** from = signup → ยินยอมแล้วเข้าหน้าแรก (ไม่ใช่เข้าแบบสัมภาษณ์) */

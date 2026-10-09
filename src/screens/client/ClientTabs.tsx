@@ -246,7 +246,7 @@ export function ProfileScreen() {
               const go = () =>
                 void signOutAllDevices()
                   .then(() => {
-                    nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
+                    nav.reset({ index: 0, routes: [{ name: 'Auth', params: { out: true } }] });
                     setTimeout(() => signOut(true), 0);
                   })
                   .catch((e) => (Platform.OS === 'web' ? window.alert(thaiError(e)) : Alert.alert('ทำรายการไม่สำเร็จ', thaiError(e))));
@@ -264,7 +264,7 @@ export function ProfileScreen() {
           last
           onPress={() => {
             // ออกจากหน้าเดิมก่อน แล้วค่อยล้างข้อมูล (หน้าที่กำลังถูกถอดไม่ต้อง render กับข้อมูลที่ถูกล้างกลางทาง)
-            nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
+            nav.reset({ index: 0, routes: [{ name: 'Auth', params: { out: true } }] });
             setTimeout(() => signOut(), 0);
           }}
         />
@@ -483,7 +483,7 @@ export function PrivacyScreen() {
             size="md"
             onPress={() => {
               signOut();
-              nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
+              nav.reset({ index: 0, routes: [{ name: 'Auth', params: { out: true } }] });
             }}
           />
           <Button label="ไม่ลบ" variant="ghost" size="md" onPress={() => setAsked(null)} />
