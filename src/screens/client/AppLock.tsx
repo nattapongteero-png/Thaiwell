@@ -5,7 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 import { Button, Icon, Text, TextField, useTheme } from '../../design-system';
 import { radius, space } from '../../design-system/tokens';
 import { useJourney } from '../../state/JourneyContext';
-import { LOCK_AFTER_MS, PIN_LENGTH, PIN_TRIES, biometricReady, biometricUnlock, checkPin, hasPin, lockSupported, setPin } from '../../services/appLock';
+import { LOCK_AFTER_MS, PIN_LENGTH, PIN_TRIES, biometricReady, biometricUnlock, checkPin, hasPin, lockSupported, setLockShown, setPin } from '../../services/appLock';
 import { thaiError, verifyPassword } from '../../services/auth';
 
 /**
@@ -20,14 +20,21 @@ export function AppLock() {
   const uid = lockSupported && entered ? account?.userId : undefined;
   const [mode, setMode] = React.useState<Mode>('off');
   const [bio, setBio] = React.useState(false);
+  const [pending, setPending] = React.useState(false);
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
 
   // เข้าแอปด้วยบัญชีนี้ (เปิดแอป / เพิ่งเข้าสู่ระบบ) → มี PIN = ล็อก · ไม่มี = ตั้ง PIN
   React.useEffect(() => {
     if (!uid) return setMode('off');
+    // ยังอ่าน PIN อยู่ → บังไว้ก่อน (ไม่ให้เห็นหน้าแรกแวบก่อนล็อก · หน้าแรกยังไม่เริ่มโหลด)
+    setPending(true);
     let alive = true;
-    void hasPin(uid).then((has) => alive && setMode(has ? 'locked' : 'setup'));
+    void hasPin(uid).then((has) => {
+      if (!alive) return;
+      setMode(has ? 'locked' : 'setup');
+      setPending(false);
+    });
     void biometricReady().then((b) => alive && setBio(b));
     return () => {
       alive = false;
@@ -46,8 +53,16 @@ export function AppLock() {
     return () => sub.remove();
   }, [uid]);
 
-  if (!uid || mode === 'off') return null;
+  const shown = !!uid && (pending || mode !== 'off');
+  React.useEffect(() => setLockShown(shown), [shown]);
+  if (!shown) return null;
+  if (mode === 'off') return <Cover />;
   return <LockScreen uid={uid} email={account?.email ?? ''} mode={mode} setMode={setMode} bio={bio} />;
+}
+
+function Cover() {
+  const { colors } = useTheme();
+  return <View style={[StyleSheet.absoluteFill, { zIndex: 1000, backgroundColor: colors.surface.canvas }]} />;
 }
 
 function LockScreen({ uid, email, mode, setMode, bio }: { uid: string; email: string; mode: Exclude<Mode, 'off'>; setMode: (m: Mode) => void; bio: boolean }) {

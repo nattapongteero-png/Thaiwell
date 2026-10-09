@@ -112,18 +112,19 @@ export { useDelayed as useDelayedLoading };
 export const MOCK_LATENCY = 700;
 const loadedKeys = new Set<string>();
 
-export function useScreenData(key: string) {
+/** paused = หน้ายังถูกบังอยู่ (เช่น หน้าล็อกแอป) → ยังไม่เริ่มจับเวลาโหลด แสดง skeleton รอไว้ */
+export function useScreenData(key: string, paused = false) {
   // key เปลี่ยน (เช่น เปลี่ยนแท็บเรื่องบนหน้าแรก) → เรื่องที่ยังไม่เคยโหลดได้ skeleton ด้วย (เดิมคำนวณครั้งเดียวตอนเปิดหน้า)
   const [, setDone] = React.useState(0);
   const loading = !loadedKeys.has(key);
   React.useEffect(() => {
-    if (!loading) return;
+    if (!loading || paused) return;
     const id = setTimeout(() => {
       loadedKeys.add(key);
       setDone((n) => n + 1);
     }, MOCK_LATENCY);
     return () => clearTimeout(id);
-  }, [key, loading]);
+  }, [key, loading, paused]);
   return loading;
 }
 

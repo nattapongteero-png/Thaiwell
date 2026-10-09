@@ -63,6 +63,7 @@ import {
 } from '../../design-system';
 import { CHATS_KEY, GREET_KEY, useJourney, type DraftCase } from '../../state/JourneyContext';
 import { getItem, setItem } from '../../services/persist';
+import { useLockShown } from '../../services/appLock';
 import { PLACES, PlacesSheet, callClinic, clinicPhone, nearestClinic, nextSlotLabels, nearestHospital, openMap, searchHospitals, rankPlaces } from './PlacesScreen';
 import { SERVICES } from './BookingScreen';
 import { anyoneSlots, dayLabel, slotsOf, therapistsAt, urgencyOf, type ServiceId } from '../../data/booking';
@@ -505,7 +506,9 @@ export function HomeScreen() {
   const afterChoice = React.useRef<ThreadItem[]>([]);
   const tcase = cases[Math.min(caseIdx, cases.length - 1)] ?? TREATMENT_CASES[0];
   // โหลดข้อมูลของเรื่องที่เลือก (ครั้งแรก) → skeleton ของการ์ดหน้าแรก
-  const homeLoading = useScreenData(`home-${selDraft?.id ?? tcase.id}`);
+  // หน้าล็อกแอปบังอยู่ → เริ่มโหลดหลังปลดล็อก (เห็นจังหวะ skeleton เหมือนเปิดแอปปกติ)
+  const lockShown = useLockShown();
+  const homeLoading = useScreenData(`home-${selDraft?.id ?? tcase.id}`, lockShown);
   /* ปุ่มม่วงเป็นทางเดียวที่ประเมิน — มีใบอยู่แล้ว AI ถามก่อนว่าเรื่องเดิมหรืออาการใหม่ · ใบที่กำลังดูอยู่ขึ้นเป็นตัวเลือกแรก */
   const currentTopic = selDraft?.title ?? (newPatient ? undefined : tcase.short);
   const topicOptions = [...(currentTopic ? [currentTopic] : []), ...allTopics.filter((t) => t !== currentTopic), NEW_TOPIC];

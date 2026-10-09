@@ -3,6 +3,7 @@
  * PIN เก็บเฉพาะในเครื่อง (Keychain ผ่าน SecureStore) เป็นค่า hash ผูกกับบัญชี — ไม่ส่งขึ้นคลาวด์
  * เว็บ (ต้นแบบ/เดโม) ไม่ล็อก
  */
+import React from 'react';
 import { Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -65,4 +66,22 @@ export async function biometricUnlock(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/* หน้าล็อกกำลังบังแอปอยู่ไหม → หน้าแรกเริ่มจังหวะโหลด (skeleton) หลังปลดล็อก ไม่ใช่ระหว่างที่ถูกบัง */
+let lockShown = false;
+const lockSubs = new Set<() => void>();
+export function setLockShown(v: boolean) {
+  if (lockShown === v) return;
+  lockShown = v;
+  lockSubs.forEach((f) => f());
+}
+export function useLockShown() {
+  return React.useSyncExternalStore(
+    (f) => {
+      lockSubs.add(f);
+      return () => lockSubs.delete(f);
+    },
+    () => lockShown,
+  );
 }
