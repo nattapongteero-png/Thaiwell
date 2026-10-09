@@ -179,6 +179,8 @@ const GREET_NOT_YET = 'ยังไม่หาย';
 const GREET_KEY = 'thaiwell.greet.v1';
 /** ป้ายข้อควรระวังบนหุ่น: วงกลมสีอำพัน (ตัวหนังสือใช้สีเตือนของธีม) */
 const WARN_TINT = '#E08A00';
+/** ตัวหนังสือในป้ายบนหุ่นทุกแบบ = ขนาดเดียวกับป้ายธาตุ (12 หนา) อ่านเป็นชุดเดียวกัน */
+const PILL_TEXT = { fontFamily: fontFamily.semibold, fontSize: 12, lineHeight: 18 } as const;
 /** สัดส่วนกว้าง/สูงที่เห็นหุ่นครบทั้งแขน (กล่องที่แคบกว่านี้ถอยกล้อง) */
 const BODY_FIT_ASPECT = 0.62;
 /** yyyy-mm-dd → "12 ต.ค." */
@@ -3846,7 +3848,7 @@ export function HomeScreen() {
                     <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: tone }}>
                       <Icon name={modelTag.noteTone === 'good' ? 'trending-down' : modelTag.noteTone === 'bad' ? 'trending-up' : 'minus'} size="xxs" color={colors.text.inverse} />
                     </View>
-                    <Text variant="labelSm" style={{ fontFamily: fontFamily.semibold }} color={tone}>
+                    <Text style={PILL_TEXT} color={tone}>
                       {modelTag.note.replace(/^[↘↗]\s*/, '')}
                     </Text>
                   </View>
@@ -6741,7 +6743,7 @@ function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: st
       onPress={() => toggle(!open)}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 30, paddingVertical: 5, paddingHorizontal: 5, borderRadius: 15, backgroundColor: colors.surface.default, opacity: pressed ? 0.8 : 1, ...elevation[1] })}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 20, paddingHorizontal: 7, borderRadius: radius.full, backgroundColor: warn ? colors.status.warning.fg : colors.text.primary }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: 8, borderRadius: radius.full, backgroundColor: warn ? colors.status.warning.fg : colors.text.primary }}>
         {/* หุบ = + · กาง = − (หมุนพร้อมจางสลับกัน) */}
         <View style={{ width: 12, height: 12 }}>
           <Animated.View style={{ position: 'absolute', opacity: t.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
@@ -6751,20 +6753,20 @@ function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: st
             <Icon name="minus-circle" size="xxs" color={colors.text.inverse} />
           </Animated.View>
         </View>
-        <Text style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 14 }} color={colors.text.inverse}>
+        <Text style={PILL_TEXT} color={colors.text.inverse}>
           {tag}
         </Text>
       </View>
       {/* รายละเอียด: กางจากกว้าง 0 → กว้างจริง (วัดจากข้อความที่ซ่อนไว้) พร้อมจางเข้า */}
       {/* ยาวเกิน TAG_MAX → ขึ้นบรรทัดใหม่ (ไม่ตัด …) */}
       <Animated.View style={{ overflow: 'hidden', maxWidth: t.interpolate({ inputRange: [0, 1], outputRange: [0, w ? Math.min(w, TAG_MAX) + space[1] + 4 : 0] }), opacity: t }}>
-        <Text variant="labelSm" color={warn ? colors.status.warning.fg : colors.text.primary} style={{ marginLeft: space[1], marginRight: 4, width: w ? Math.min(w, TAG_MAX) + 1 : undefined }}>
+        <Text color={warn ? colors.status.warning.fg : colors.text.primary} style={[PILL_TEXT, { marginLeft: space[1], marginRight: 4, width: w ? Math.min(w, TAG_MAX) + 1 : undefined }]}>
           {label}
         </Text>
       </Animated.View>
       {/* วัดความกว้างจริงของข้อความ (กล่องกว้างพอ ไม่ถูกบีบตามป้ายที่ยังหุบ) */}
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1000, opacity: 0, alignItems: 'flex-start' }}>
-        <Text variant="labelSm" numberOfLines={1} onLayout={(e) => setW(Math.ceil(e.nativeEvent.layout.width))}>
+        <Text numberOfLines={1} style={PILL_TEXT} onLayout={(e) => setW(Math.ceil(e.nativeEvent.layout.width))}>
           {label}
         </Text>
       </View>
@@ -6789,7 +6791,7 @@ function BodyTagPill({ dot, body, icon, label, tag, tone, onPress }: { /** ห�
         <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: WARN_TINT }}>
           <Icon name="alert-triangle" size="xxs" color="#FFFFFF" />
         </View>
-        <Text variant="labelSm" numberOfLines={1} style={{ flexShrink: 1, fontFamily: fontFamily.semibold }} color={colors.status.warning.fg}>
+        <Text numberOfLines={1} style={[PILL_TEXT, { flexShrink: 1 }]} color={colors.status.warning.fg}>
           {label}
         </Text>
       </Pressable>
@@ -6802,17 +6804,10 @@ function BodyTagPill({ dot, body, icon, label, tag, tone, onPress }: { /** ห�
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: body ? 3 : space[3], paddingRight: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
     >
       {dot && body ? <BodyIcon pins={[body]} color={dot} size={24} /> : dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
-      {tag ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 20, paddingHorizontal: 6, marginLeft: -space[1], borderRadius: radius.full, backgroundColor: tone === 'warn' ? colors.status.warning.fg : colors.text.primary }}>
-          {icon ? <Icon name={icon} size="xxs" color={colors.text.inverse} /> : null}
-          <Text style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 14 }} color={colors.text.inverse}>
-            {tag}
-          </Text>
-        </View>
-      ) : icon ? (
+      {icon ? (
         <Icon name={icon} size="xs" color={fg} />
       ) : null}
-      <Text variant="labelSm" numberOfLines={1} color={fg} style={{ flexShrink: 1 }}>
+      <Text numberOfLines={1} color={fg} style={[PILL_TEXT, { flexShrink: 1 }]}>
         {label}
       </Text>
     </Pressable>
