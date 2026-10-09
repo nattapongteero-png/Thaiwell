@@ -3,21 +3,25 @@ import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions, type
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line } from 'react-native-svg';
-import { Body3D, Button, Icon, Text, componentTokens, useTheme, type Body3DHandle, type BodyPoint, type BodyRegion } from '../../../design-system';
+import { BODY_LIMBS, Body3D, Button, Icon, Text, useTheme, zoneRegion, type Body3DHandle, type BodyPoint, type BodyRegion, type BodyZone } from '../../../design-system';
 import { radius, space } from '../../../design-system/tokens';
 
 /**
- * หน้าเลือกจุดที่ปวดจากหุ่น (เปิดจากปุ่ม "ชี้จุดบนหุ่น" ในแชทประเมิน / แตะหุ่นเล็กในการ์ดประเมิน)
- * แตะบนหุ่น = เพิ่มจุด · แตะจุดเดิม หรือ ✕ ที่ pill = เอาออก · ลากซ้าย-ขวา = หมุน
- * จุดที่เห็นอยู่มี pill + เส้นชี้ไปที่จุด · รายการทั้งหมดอยู่เหนือปุ่มยืนยัน (รวมจุดที่หมุนไปอยู่ด้านหลัง)
+ * หน้าเลือกบริเวณที่ปวดจากหุ่น (เปิดจากปุ่ม "ชี้จุดบนหุ่น" ในแชทประเมิน / แตะหุ่นเล็กในการ์ดประเมิน)
+ * แตะบนหุ่น = เลือกทั้งโซน (แตะซ้ำ / ✕ ที่ pill = เอาออก) · ลากบนตัวหุ่น = เลือกทุกโซนที่นิ้วผ่าน
+ * (เริ่มลากจากโซนที่เลือกแล้ว = ลบ) · ลากที่ว่าง = หมุน
+ * เลือกครบทุกโซนของแขน/ขาข้างหนึ่ง = รวมเป็น "ปวดทั้งแขนซ้าย" ป้ายเดียว · แตะโซนในแขนขา → มีปุ่มลัดเลือกทั้งแขน/ขา
+ * ข้อมูลที่ส่งออก: ชื่อ → จุดที่แตะ (โซนละ 1 จุด) — หุ่นทุกหน้าระบายทั้งโซนของจุดนั้น
  */
 export type BodySelection = Record<string, BodyPoint[]>;
+type Zones = Partial<Record<BodyZone, BodyPoint>>;
+const limbLabel = (l: (typeof BODY_LIMBS)[number]) => `ปวดทั้ง${l.label}`;
+const limbOf = (z: BodyZone) => BODY_LIMBS.find((l) => (l.zones as readonly BodyZone[]).includes(z));
 
 const DRAG_SLOP = 6;
 /** สัดส่วน canvas หุ่น (เท่าหน้าแรก — หุ่นกางแขน) */
 const ASPECT = 0.53;
 const PILL_H = 32;
-const near = (a: BodyPoint, b: BodyPoint) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < componentTokens.body3d.pinRadius * 3;
 
 export function BodyPicker({
   visible,
@@ -39,11 +43,48 @@ export function BodyPicker({
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   const bodyRef = React.useRef<Body3DHandle>(null);
-  const [sel, setSel] = React.useState<BodySelection>(initial);
+  const [zones, setZones] = React.useState<Zones>({});
+  const zonesRef = React.useRef(zones);
+  zonesRef.current = zones;
+  /** แตะโซนในแขน/ขา → ปุ่มลัดเลือกทั้งแขน/ขาข้างนั้น */
+  const [suggest, setSuggest] = React.useState<(typeof BODY_LIMBS)[number] | null>(null);
+  // เปิดใหม่: จุดเดิม → โซน (รอหุ่นโหลดก่อน — ต้องใช้หุ่นแปลงพิกัด)
   React.useEffect(() => {
-    if (visible) setSel(initial);
+    if (!visible) return;
+    setZones({});
+    setSuggest(null);
+    const pts = Object.values(initial).flat();
+    if (!pts.length) return;
+    const id = setInterval(() => {
+      const b = bodyRef.current;
+      if (!b || !b.regionOf(pts[0])) return;
+      clearInterval(id);
+      const out: Zones = {};
+      for (const p of pts) {
+        const r = b.regionOf(p);
+        if (r && !out[r.key]) out[r.key] = p;
+      }
+      setZones(out);
+    }, 100);
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+  /** โซน → ชื่ออาการ: แขน/ขาที่เลือกครบรวมเป็นชื่อเดียว */
+  const sel = React.useMemo<BodySelection>(() => {
+    const out: BodySelection = {};
+    const used = new Set<BodyZone>();
+    for (const l of BODY_LIMBS) {
+      if (!l.zones.every((z) => zones[z])) continue;
+      out[limbLabel(l)] = l.zones.map((z) => zones[z]!);
+      l.zones.forEach((z) => used.add(z));
+    }
+    for (const [z, p] of Object.entries(zones) as [BodyZone, BodyPoint][]) {
+      if (used.has(z)) continue;
+      const label = labelOf(zoneRegion(z));
+      out[label] = [...(out[label] ?? []), p];
+    }
+    return out;
+  }, [zones, labelOf]);
   const [stageH, setStageH] = React.useState(0);
   const bodyH = stageH;
   const bodyW = Math.min(winW, Math.round(bodyH * ASPECT));
@@ -81,52 +122,100 @@ export function BodyPicker({
     return out;
   }, [labels, pos, winW]);
 
-  const remove = (label: string) =>
-    setSel((cur) => {
+  /** ป้าย ✕: เอาทุกโซนของชื่อนั้นออก */
+  const remove = (label: string) => {
+    const limb = BODY_LIMBS.find((l) => limbLabel(l) === label);
+    setZones((cur) => {
       const out = { ...cur };
-      delete out[label];
+      for (const z of Object.keys(cur) as BodyZone[]) if (limb ? (limb.zones as readonly BodyZone[]).includes(z) : labelOf(zoneRegion(z)) === label) delete out[z];
       return out;
     });
-  const onTap = (pageX: number, pageY: number) => {
+    setSuggest(null);
+  };
+  const regionAt = (pageX: number, pageY: number) => {
     const res = bodyRef.current?.pickAt(pageX, pageY);
-    if (!res) return;
-    const hitLabel = labels.find((k) => sel[k].some((pt) => near(pt, res.point)));
-    if (hitLabel) {
-      setSel((cur) => {
-        const rest = cur[hitLabel].filter((pt) => !near(pt, res.point));
-        const out = { ...cur };
-        if (rest.length) out[hitLabel] = rest;
-        else delete out[hitLabel];
-        return out;
-      });
-      return;
-    }
-    if (!res.region) return;
-    const label = labelOf(res.region);
-    setSel((cur) => ({ ...cur, [label]: [...(cur[label] ?? []), res.point] }));
+    return res?.region ? { zone: res.region.key, point: res.point } : null;
+  };
+  const onTap = (pageX: number, pageY: number) => {
+    const hit = regionAt(pageX, pageY);
+    if (!hit) return;
+    const on = !!zonesRef.current[hit.zone];
+    setZones((cur) => {
+      const out = { ...cur };
+      if (on) delete out[hit.zone];
+      else out[hit.zone] = hit.point;
+      return out;
+    });
+    const limb = limbOf(hit.zone);
+    setSuggest(!on && limb && !limb.zones.every((z) => z === hit.zone || zonesRef.current[z]) ? limb : null);
+  };
+  const pickLimb = (l: (typeof BODY_LIMBS)[number]) => {
+    setSuggest(null);
+    // โซนที่ยังไม่ได้แตะ: ใช้จุดของโซนที่แตะไว้ในแขน/ขาเดียวกันแทนไม่ได้ (หุ่นระบายตามโซนของจุด) → หาจุดกลางของโซนจากหุ่น
+    const b = bodyRef.current;
+    if (!b) return;
+    setZones((cur) => {
+      const out = { ...cur };
+      for (const z of l.zones) if (!out[z]) {
+        const p = b.zoneCenter(z);
+        if (p) out[z] = p;
+      }
+      return out;
+    });
   };
 
-  /* ลาก = หมุน · แตะ = เลือก (เว็บ pointer · native gesture handler) */
+  /* ลากเริ่มบนตัวหุ่น = ระบายเลือกโซน (เริ่มจากโซนที่เลือกแล้ว = ลบ) · ลากเริ่มที่ว่าง = หมุน · แตะ = เลือก/เอาออก */
+  const mode = React.useRef<'add' | 'erase' | 'rotate'>('rotate');
+  const beginDrag = (x: number, y: number) => {
+    const hit = regionAt(x, y);
+    mode.current = !hit ? 'rotate' : zonesRef.current[hit.zone] ? 'erase' : 'add';
+    if (mode.current === 'rotate') bodyRef.current?.beginRotate();
+    else {
+      setSuggest(null);
+      paint(x, y);
+    }
+  };
+  const paint = (x: number, y: number) => {
+    const hit = regionAt(x, y);
+    if (!hit) return;
+    const erase = mode.current === 'erase';
+    if (erase ? !zonesRef.current[hit.zone] : zonesRef.current[hit.zone]) return;
+    const out = { ...zonesRef.current };
+    if (erase) delete out[hit.zone];
+    else out[hit.zone] = hit.point;
+    zonesRef.current = out;
+    setZones(out);
+  };
+  const moveDrag = (x: number, y: number, dx: number, dy: number) => {
+    // แบบ ThaiWellAI: ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
+    if (mode.current === 'rotate') bodyRef.current?.rotateTo(dx / 80, dy / 160);
+    else paint(x, y);
+  };
+  const endDrag = () => {
+    if (mode.current === 'rotate') bodyRef.current?.endRotate();
+  };
   const start = React.useRef<{ x: number; y: number } | null>(null);
   const moved = React.useRef(false);
   const web = {
     onPointerDown: (e: PointerEvent) => {
       start.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
       moved.current = false;
-      bodyRef.current?.beginRotate();
     },
     onPointerMove: (e: PointerEvent) => {
       if (!start.current) return;
-      const dx = e.nativeEvent.clientX - start.current.x;
-      const dy = e.nativeEvent.clientY - start.current.y;
-      if (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP) moved.current = true;
-      // แบบ ThaiWellAI: ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
-      if (moved.current) bodyRef.current?.rotateTo(dx / 80, dy / 160);
+      const { clientX: x, clientY: y } = e.nativeEvent;
+      const dx = x - start.current.x;
+      const dy = y - start.current.y;
+      if (!moved.current && (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP)) {
+        moved.current = true;
+        beginDrag(start.current.x, start.current.y);
+      }
+      if (moved.current) moveDrag(x, y, dx, dy);
     },
     onPointerUp: (e: PointerEvent) => {
       if (start.current && !moved.current) onTap(e.nativeEvent.clientX, e.nativeEvent.clientY);
+      else if (moved.current) endDrag();
       start.current = null;
-      bodyRef.current?.endRotate();
     },
     // ล้อเมาส์ / trackpad = ซูม
     onWheel: (e: { nativeEvent: { deltaY: number }; preventDefault?: () => void }) => {
@@ -134,8 +223,8 @@ export function BodyPicker({
       bodyRef.current?.zoomTo(Math.exp(-e.nativeEvent.deltaY / 400));
     },
   };
-  const onTapRef = React.useRef(onTap);
-  onTapRef.current = onTap;
+  const fns = React.useRef({ onTap, beginDrag, moveDrag, endDrag });
+  fns.current = { onTap, beginDrag, moveDrag, endDrag };
   const gesture = React.useMemo(
     () =>
       Gesture.Simultaneous(
@@ -148,14 +237,15 @@ export function BodyPicker({
         Gesture.Pan()
           .runOnJS(true)
           .minDistance(DRAG_SLOP)
-          .onStart(() => bodyRef.current?.beginRotate())
-          // ลากซ้าย-ขวา = หมุนรอบตัว · ขึ้น-ลง = ก้ม/เงย
-          .onUpdate((e) => bodyRef.current?.rotateTo(e.translationX / 80, e.translationY / 160))
-          .onFinalize(() => bodyRef.current?.endRotate()),
+          .maxPointers(1)
+          // เริ่มที่ตำแหน่งที่นิ้วแตะลงครั้งแรก (ไม่ใช่ตำแหน่งที่ลากพ้นระยะแล้ว)
+          .onStart((e) => fns.current.beginDrag(e.absoluteX - e.translationX, e.absoluteY - e.translationY))
+          .onUpdate((e) => fns.current.moveDrag(e.absoluteX, e.absoluteY, e.translationX, e.translationY))
+          .onEnd(() => fns.current.endDrag()),
         Gesture.Tap()
           .runOnJS(true)
           .maxDistance(DRAG_SLOP)
-          .onEnd((e, ok) => ok && onTapRef.current(e.absoluteX, e.absoluteY)),
+          .onEnd((e, ok) => ok && fns.current.onTap(e.absoluteX, e.absoluteY)),
         ),
       ),
     [],
@@ -183,7 +273,7 @@ export function BodyPicker({
           <View style={{ flex: 1, gap: 2 }}>
             <Text variant="titleLg">{title}</Text>
             <Text variant="bodySm" tone="secondary">
-              เลือกได้หลายจุด ลากเพื่อหมุน ถ่างสองนิ้วเพื่อซูม
+              แตะหรือลากบนตัวเพื่อเลือก ลากที่ว่างเพื่อหมุน
             </Text>
           </View>
           <Pressable
@@ -274,12 +364,21 @@ export function BodyPicker({
         {/* ยืนยัน */}
         <View style={{ paddingHorizontal: space[5], paddingTop: space[3], paddingBottom: insets.bottom + space[4], gap: space[3], backgroundColor: colors.surface.canvas }}>
           {/* ชื่อจุดอยู่ที่ pill ที่ชี้ออกจากหุ่นแล้ว · ยังไม่เลือก = คำแนะนำ */}
-          {count ? null : (
+          {suggest ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => pickLimb(suggest)}
+              style={({ pressed }) => ({ alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: space[1], height: 36, paddingHorizontal: space[4], borderRadius: radius.full, backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
+            >
+              <Icon name="plus" size="xs" />
+              <Text variant="labelSm">เลือกทั้ง{suggest.label}</Text>
+            </Pressable>
+          ) : count ? null : (
             <Text variant="bodySm" tone="secondary" align="center">
               แตะบนหุ่นตรงที่ปวด
             </Text>
           )}
-          <Button label={count ? `ยืนยัน ${count} จุด` : 'ยืนยัน'} disabled={!count} onPress={() => onConfirm(sel)} />
+          <Button label={count ? `ยืนยัน ${count} บริเวณ` : 'ยืนยัน'} disabled={!count} onPress={() => onConfirm(sel)} />
         </View>
       </GestureHandlerRootView>
     </Modal>

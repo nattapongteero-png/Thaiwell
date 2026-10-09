@@ -153,14 +153,8 @@ const BODY_FILL = 0.94;
 /** ระยะเว้นเหนือกรอบหุ่น ให้ศีรษะไม่ชิดปุ่มประวัติ/แจ้งเตือนมุมขวาบน */
 const BODY_TOP_CLEAR = space[8];
 /** ส่วนของร่างกายที่แตะ → chip อาการที่มีอยู่แล้ว (ที่เหลือสร้าง chip ใหม่ "ปวด<ส่วน>") */
-const REGION_CHIP: Record<string, string> = {
-  neck: 'ปวดคอ-บ่า',
-  shoulderL: 'ปวดไหล่',
-  shoulderR: 'ปวดไหล่',
-  back: 'ปวดหลัง',
-  lowerBack: 'ปวดเอว',
-  head: 'ปวดศีรษะ',
-};
+/** ชื่อโซนบนหุ่นตรงกับรายการอาการ (ปวด + ชื่อโซน) → เป็น chip เดียวกัน */
+const labelOfRegion = (r: BodyRegion) => `ปวด${r.label}`;
 /** Figma: คอลัมน์ข้อมูลด้านซ้ายกว้าง 179 */
 const LEFT_COLUMN = 179;
 /* bento หน้าแรก: ระยะห่างช่อง + ความสูงแถว (แถวหุ่นยืดเต็มที่เหลือ) */
@@ -759,7 +753,7 @@ export function HomeScreen() {
             // คะแนนติดตามผลล่าสุด · ยังไม่ให้ = คะแนนหลังนวดครั้งล่าสุด
             // ประเมินก่อนนวดครั้งถัดไปแล้ว → ใช้คะแนนวันนี้ (ล่าสุดที่สุด)
             const v = caseToday[tcase.id]?.pain ?? fuSessions.map((ss) => fuScores[`${ss.id}:${a.pin}`]).find((x) => x !== undefined) ?? tcase.visits[tcase.visits.length - 1]?.painAfter;
-            return { at: a.pin, tone: 'point' as const, color: v === undefined ? undefined : painColorOf(v) };
+            return { at: a.pin, tone: 'point' as const, zone: true, color: v === undefined ? undefined : painColorOf(v) };
           })
         : []),
       // หน้าแรก: แนวที่ร้าวไป (สีเดียวกับจุดที่ปวด) · บริเวณงดนวด (สีเทา)
@@ -1073,7 +1067,6 @@ export function HomeScreen() {
   };
 
   /* ---------- เลือกจุดจากหุ่น (BodyPicker) ---------- */
-  const labelOfRegion = (r: BodyRegion) => REGION_CHIP[r.key] ?? `ปวด${r.label}`;
   /** จุดที่เคยแตะเลือกไว้ (มีพิกัด) → เปิดหน้าเลือกพร้อมจุดเดิม */
   const pickedPoints = (): BodySelection => Object.fromEntries(Object.entries(sel).filter((e): e is [string, BodyPoint[]] => Array.isArray(e[1]) && e[1].length > 0));
   const canPick = assess.step === 'symptoms' || assess.step === 'related';

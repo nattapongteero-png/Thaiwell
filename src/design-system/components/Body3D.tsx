@@ -199,6 +199,8 @@ export const isBackPin = (pin: BodyPin) => PIN_ANCHOR[pin].dir[2] < 0 && Math.ab
 export interface Body3DPin {
   at: BodyPin;
   tone: 'symptom' | 'point';
+  /** ระบายทั้งโซนของหมุดนี้ · ไม่ใส่ = อาการ (symptom) เป็นโซน · จุดกด (point) เป็นจุด */
+  zone?: boolean;
   /** สีเฉพาะ (เช่น ตามระดับความปวด) — แทนสีตาม tone */
   color?: string;
 }
@@ -210,59 +212,218 @@ export interface BodyPoint {
   z: number;
 }
 
-/** ส่วนของร่างกายที่แยกได้จากการแตะ — ตัดสินจาก "ท่อน" ระหว่างจุดอ้างอิงที่ใกล้จุดแตะที่สุด */
+/** ส่วนของร่างกายที่แยกได้จากการแตะ (โซน) */
 export interface BodyRegion {
-  key: string;
-  /** ชื่อไทย เช่น "ไหล่ขวา", "หลังส่วนล่าง" */
+  key: BodyZone;
+  /** ชื่อไทย เช่น "ไหล่ขวา", "เอว" — "ปวด" + ชื่อ = ชื่ออาการเดียวกับรายการอาการ */
   label: string;
 }
 
-type Segment = { from: Landmark; to: Landmark; front: BodyRegion; back?: BodyRegion };
-const R = (key: string, label: string): BodyRegion => ({ key, label });
-/** ท่อนร่างกาย (L = ซ้ายของผู้ป่วย) → ส่วนของร่างกาย · back = ชื่อเมื่อแตะด้านหลัง */
-const SEGMENTS: Segment[] = [
-  { from: 'head', to: 'headTop', front: R('head', 'ศีรษะ') },
-  { from: 'neck', to: 'head', front: R('neck', 'คอ'), back: R('neck', 'คอ') },
-  { from: 'neck', to: 'shoulderL', front: R('shoulderL', 'ไหล่ซ้าย') },
-  { from: 'neck', to: 'shoulderR', front: R('shoulderR', 'ไหล่ขวา') },
-  { from: 'shoulderL', to: 'elbowL', front: R('armL', 'แขนซ้าย') },
-  { from: 'shoulderR', to: 'elbowR', front: R('armR', 'แขนขวา') },
-  { from: 'elbowL', to: 'wristL', front: R('forearmL', 'แขนซ้าย') },
-  { from: 'elbowR', to: 'wristR', front: R('forearmR', 'แขนขวา') },
-  { from: 'wristL', to: 'handL', front: R('handL', 'มือซ้าย') },
-  { from: 'wristR', to: 'handR', front: R('handR', 'มือขวา') },
-  { from: 'chest', to: 'neck', front: R('chest', 'หน้าอก'), back: R('back', 'หลัง') },
-  { from: 'belly', to: 'chest', front: R('belly', 'ท้อง'), back: R('back', 'หลัง') },
-  { from: 'pelvis', to: 'belly', front: R('belly', 'ท้อง'), back: R('lowerBack', 'เอว') },
-  { from: 'hipL', to: 'kneeL', front: R('thighL', 'ต้นขาซ้าย') },
-  { from: 'hipR', to: 'kneeR', front: R('thighR', 'ต้นขาขวา') },
-  { from: 'kneeL', to: 'ankleL', front: R('shinL', 'ขาซ้าย'), back: R('calfL', 'น่องซ้าย') },
-  { from: 'kneeR', to: 'ankleR', front: R('shinR', 'ขาขวา'), back: R('calfR', 'น่องขวา') },
-  { from: 'ankleL', to: 'toesL', front: R('footL', 'เท้าซ้าย') },
-  { from: 'ankleR', to: 'toesR', front: R('footR', 'เท้าขวา') },
-  { from: 'heelL', to: 'toesL', front: R('footL', 'เท้าซ้าย') },
-  { from: 'heelR', to: 'toesR', front: R('footR', 'เท้าขวา') },
-  { from: 'chest', to: 'scapL', front: R('chest', 'หน้าอก'), back: R('back', 'หลัง') },
-  { from: 'chest', to: 'scapR', front: R('chest', 'หน้าอก'), back: R('back', 'หลัง') },
+/**
+ * โซนบนร่างกาย — แตะ = ทั้งโซน · แบ่งตามบริเวณที่ตำรานวดไทยแยกกลุ่มอาการ
+ * (คอ บ่า ไหล่ สะบัก หลัง เอว สะโพก เข่า ข้อเท้า/เท้า มือ ศีรษะ — ดู SYMPTOM_GROUPS ใน data/homeContent)
+ * L = ซ้ายของผู้ป่วย
+ */
+export const BODY_ZONES = {
+  head: 'ศีรษะ',
+  neck: 'คอ',
+  trapL: 'บ่าซ้าย',
+  trapR: 'บ่าขวา',
+  shoulderL: 'ไหล่ซ้าย',
+  shoulderR: 'ไหล่ขวา',
+  scapL: 'สะบักซ้าย',
+  scapR: 'สะบักขวา',
+  chest: 'หน้าอก',
+  belly: 'ท้อง',
+  back: 'หลังส่วนบน',
+  lowerBack: 'เอว',
+  hipL: 'สะโพกซ้าย',
+  hipR: 'สะโพกขวา',
+  armL: 'แขนซ้าย',
+  armR: 'แขนขวา',
+  handL: 'มือซ้าย',
+  handR: 'มือขวา',
+  thighL: 'ต้นขาซ้าย',
+  thighR: 'ต้นขาขวา',
+  kneeL: 'เข่าซ้าย',
+  kneeR: 'เข่าขวา',
+  shinL: 'ขาซ้าย',
+  shinR: 'ขาขวา',
+  calfL: 'น่องซ้าย',
+  calfR: 'น่องขวา',
+  footL: 'เท้าซ้าย',
+  footR: 'เท้าขวา',
+} as const;
+export type BodyZone = keyof typeof BODY_ZONES;
+const ZONE_KEYS = Object.keys(BODY_ZONES) as BodyZone[];
+export const zoneRegion = (key: BodyZone): BodyRegion => ({ key, label: BODY_ZONES[key] });
+
+/** ทั้งแขน / ทั้งขา — เลือกครบทุกโซนในแขนขาข้างนั้น = รวมเป็นป้ายเดียว */
+export const BODY_LIMBS = [
+  { key: 'armL', label: 'แขนซ้าย', zones: ['shoulderL', 'armL', 'handL'] },
+  { key: 'armR', label: 'แขนขวา', zones: ['shoulderR', 'armR', 'handR'] },
+  { key: 'legL', label: 'ขาซ้าย', zones: ['thighL', 'kneeL', 'shinL', 'calfL', 'footL'] },
+  { key: 'legR', label: 'ขาขวา', zones: ['thighR', 'kneeR', 'shinR', 'calfR', 'footR'] },
+] as const satisfies readonly { key: string; label: string; zones: readonly BodyZone[] }[];
+
+/**
+ * แกนของแต่ละท่อน (ระหว่างจุดอ้างอิง) · r = รัศมีโดยประมาณของท่อนนั้น (เมตร)
+ * ระยะถึงแกนหารด้วย r → ลำตัวที่กว้างไม่ถูกแขนที่อยู่ใกล้กว่าแย่งไป · back = โซนเมื่ออยู่ด้านหลังแกน
+ */
+type ZoneSeg = { from: Landmark; to: Landmark; r: number; front: BodyZone; back?: BodyZone };
+const ZONE_SEGS: ZoneSeg[] = [
+  { from: 'head', to: 'headTop', r: 0.1, front: 'head' },
+  { from: 'neck', to: 'head', r: 0.06, front: 'neck' },
+  { from: 'neck', to: 'shoulderL', r: 0.06, front: 'trapL' },
+  { from: 'neck', to: 'shoulderR', r: 0.06, front: 'trapR' },
+  { from: 'shoulderL', to: 'elbowL', r: 0.05, front: 'armL' },
+  { from: 'shoulderR', to: 'elbowR', r: 0.05, front: 'armR' },
+  { from: 'elbowL', to: 'wristL', r: 0.042, front: 'armL' },
+  { from: 'elbowR', to: 'wristR', r: 0.042, front: 'armR' },
+  { from: 'wristL', to: 'handL', r: 0.04, front: 'handL' },
+  { from: 'wristR', to: 'handR', r: 0.04, front: 'handR' },
+  { from: 'chest', to: 'neck', r: 0.15, front: 'chest', back: 'back' },
+  { from: 'chest', to: 'scapL', r: 0.13, front: 'chest', back: 'back' },
+  { from: 'chest', to: 'scapR', r: 0.13, front: 'chest', back: 'back' },
+  { from: 'belly', to: 'chest', r: 0.15, front: 'belly', back: 'back' },
+  { from: 'pelvis', to: 'belly', r: 0.15, front: 'belly', back: 'lowerBack' },
+  { from: 'hipL', to: 'kneeL', r: 0.085, front: 'thighL' },
+  { from: 'hipR', to: 'kneeR', r: 0.085, front: 'thighR' },
+  { from: 'kneeL', to: 'ankleL', r: 0.055, front: 'shinL', back: 'calfL' },
+  { from: 'kneeR', to: 'ankleR', r: 0.055, front: 'shinR', back: 'calfR' },
+  { from: 'ankleL', to: 'toesL', r: 0.05, front: 'footL' },
+  { from: 'ankleR', to: 'toesR', r: 0.05, front: 'footR' },
+  { from: 'heelL', to: 'toesL', r: 0.05, front: 'footL' },
+  { from: 'heelR', to: 'toesR', r: 0.05, front: 'footR' },
 ];
-/** จุดข้อต่อที่ถือเป็นส่วนเฉพาะ (รัศมีเล็ก, หน่วยเมตร) เช่น เข่า */
-const JOINTS: { at: Landmark; radius: number; region: BodyRegion }[] = [
-  { at: 'kneeL', radius: 0.075, region: R('kneeL', 'เข่าซ้าย') },
-  { at: 'kneeR', radius: 0.075, region: R('kneeR', 'เข่าขวา') },
+/**
+ * โซนทรงรีที่ตัดสินก่อนท่อน (หัวไหล่ · เข่า · สะบัก · สะโพก) — c = จุดกลาง · r = รัศมี (x, y, z เมตร)
+ * maxZ = ใช้เฉพาะผิวที่อยู่หลังระนาบนี้ (สะบัก/สะโพก = ด้านหลังและด้านข้าง ไม่ใช่ด้านหน้า)
+ */
+const ZONE_BLOBS: { c: [number, number, number]; r: [number, number, number]; zone: BodyZone; maxZ?: number }[] = [
+  { c: [0.225, 1.33, 0], r: [0.085, 0.095, 0.1], zone: 'shoulderL' },
+  { c: [-0.225, 1.33, 0], r: [0.085, 0.095, 0.1], zone: 'shoulderR' },
+  { c: [0.13, 0.47, -0.01], r: [0.075, 0.075, 0.075], zone: 'kneeL' },
+  { c: [-0.13, 0.47, -0.01], r: [0.075, 0.075, 0.075], zone: 'kneeR' },
+  { c: [0.1, 1.26, -0.1], r: [0.07, 0.09, 0.07], zone: 'scapL', maxZ: -0.04 },
+  { c: [-0.1, 1.26, -0.1], r: [0.07, 0.09, 0.07], zone: 'scapR', maxZ: -0.04 },
+  { c: [0.11, 0.84, -0.05], r: [0.11, 0.12, 0.12], zone: 'hipL', maxZ: 0.0 },
+  { c: [-0.11, 0.84, -0.05], r: [0.11, 0.12, 0.12], zone: 'hipR', maxZ: 0.0 },
 ];
+const segA = new THREE.Vector3();
+const segB = new THREE.Vector3();
+const segP = new THREE.Vector3();
+const segQ = new THREE.Vector3();
+const segLine = new THREE.Line3();
+/** คอ = ทรงกระบอกระหว่างโคนคอกับคาง (ลำตัวกว้างจะแย่งไปถ้าใช้ระยะถึงแกน) · คางด้านหน้า = ศีรษะ */
+const NECK = { y0: 1.395, y1: 1.5, rx: 0.075, cz: 0.02, rz: 0.075, chinY: 1.47, chinZ: 0.05 };
+/** ต่ำกว่าระดับนี้: ด้านหน้า = ต้นขา (ไม่ใช่ท้อง) · ด้านหลัง = สะโพก (ไม่ใช่เอว) */
+const GROIN_Y = 0.9;
+/** จุดบนผิว (พิกัดต้นฉบับของโมเดล · เมตร) → ดัชนีโซนใน ZONE_KEYS — ต้องตรงกับ ZONE_GLSL (สีบนหุ่น) */
+function zoneIndexAt(x: number, y: number, z: number): number {
+  for (const b of ZONE_BLOBS) {
+    if (b.maxZ !== undefined && z > b.maxZ) continue;
+    if (Math.hypot((x - b.c[0]) / b.r[0], (y - b.c[1]) / b.r[1], (z - b.c[2]) / b.r[2]) <= 1) return ZONE_KEYS.indexOf(b.zone);
+  }
+  if (y > NECK.y0 && y < NECK.y1 && Math.hypot(x / NECK.rx, (z - NECK.cz) / NECK.rz) <= 1 && (y < NECK.chinY || z < NECK.chinZ)) return ZONE_KEYS.indexOf('neck');
+  segP.set(x, y, z);
+  let best = Infinity;
+  let zone: BodyZone = 'chest';
+  for (const s of ZONE_SEGS) {
+    segLine.set(segA.fromArray(LANDMARK[s.from]), segB.fromArray(LANDMARK[s.to]));
+    segLine.closestPointToPoint(segP, true, segQ);
+    const d = segQ.distanceTo(segP) / s.r;
+    if (d < best) {
+      best = d;
+      // ด้านหน้า/หลัง: หุ่นหันหน้าไปทาง +z
+      zone = z < segQ.z && s.back ? s.back : s.front;
+    }
+  }
+  // เหนือโคนคอ (คาง/ท้ายทอย) ไม่ใช่ลำตัว
+  if (y > NECK.y0 + 0.05 && (zone === 'chest' || zone === 'back')) zone = y > NECK.chinY ? 'head' : 'neck';
+  if (y < GROIN_Y && zone === 'belly') zone = x > 0 ? 'thighL' : 'thighR';
+  if (y < GROIN_Y && zone === 'lowerBack') zone = x > 0 ? 'hipL' : 'hipR';
+  return ZONE_KEYS.indexOf(zone);
+}
+/** โซนเดียวกับ zoneIndexAt ในรูป GLSL (สร้างจากข้อมูลชุดเดียวกัน) → สีบนหุ่นตัดขอบตรงกับที่แตะเลือก ไม่หยักตามจุดยอด */
+const ZONE_GLSL = (() => {
+  const f = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+  const v = (a: readonly number[]) => `vec3(${a.map(f).join(', ')})`;
+  const id = (z: BodyZone) => ZONE_KEYS.indexOf(z);
+  const blobs = ZONE_BLOBS.map(
+    (b) => `  if (${b.maxZ !== undefined ? `p.z <= ${f(b.maxZ)} && ` : ''}length((p - ${v(b.c)}) / ${v(b.r)}) <= 1.0) return ${id(b.zone)};`,
+  ).join('\n');
+  const segs = ZONE_SEGS.map(
+    (sg) => `  zSeg(p, ${v(LANDMARK[sg.from])}, ${v(LANDMARK[sg.to])}, ${f(sg.r)}, ${id(sg.front)}, ${id(sg.back ?? sg.front)}, best, zone);`,
+  ).join('\n');
+  return `
+void zSeg(vec3 p, vec3 a, vec3 b, float r, int front, int back, inout float best, inout int zone) {
+  vec3 ab = b - a;
+  vec3 q = a + ab * clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+  float d = length(p - q) / r;
+  if (d < best) { best = d; zone = p.z < q.z ? back : front; }
+}
+int zoneAt(vec3 p) {
+${blobs}
+  if (p.y > ${f(NECK.y0)} && p.y < ${f(NECK.y1)} && length(vec2(p.x / ${f(NECK.rx)}, (p.z - ${f(NECK.cz)}) / ${f(NECK.rz)})) <= 1.0 && (p.y < ${f(NECK.chinY)} || p.z < ${f(NECK.chinZ)})) return ${id('neck')};
+  float best = 1e9;
+  int zone = 0;
+${segs}
+  if (p.y > ${f(NECK.y0 + 0.05)} && (zone == ${id('chest')} || zone == ${id('back')})) zone = p.y > ${f(NECK.chinY)} ? ${id('head')} : ${id('neck')};
+  if (p.y < ${f(GROIN_Y)} && zone == ${id('belly')}) zone = p.x > 0.0 ? ${id('thighL')} : ${id('thighR')};
+  if (p.y < ${f(GROIN_Y)} && zone == ${id('lowerBack')}) zone = p.x > 0.0 ? ${id('hipL')} : ${id('hipR')};
+  return zone;
+}
+`;
+})();
+/** หมุดอาการที่เป็นทั้งบริเวณ → โซน (หมุดเฉพาะจุดเช่น ข้อศอก ขมับ ข้อเท้า ยังเป็นจุดระบายสี) */
+const PIN_ZONE: Partial<Record<BodyPin, BodyZone>> = {
+  head: 'head',
+  neck: 'neck',
+  neckBack: 'neck',
+  trapLeft: 'trapL',
+  trapRight: 'trapR',
+  shoulderLeft: 'shoulderL',
+  shoulderRight: 'shoulderR',
+  scapulaLeft: 'scapL',
+  scapulaRight: 'scapR',
+  chest: 'chest',
+  belly: 'belly',
+  back: 'back',
+  lowerBack: 'lowerBack',
+  hipLeft: 'hipL',
+  hipRight: 'hipR',
+  armLeft: 'armL',
+  armRight: 'armR',
+  handLeft: 'handL',
+  handRight: 'handR',
+  thighLeft: 'thighL',
+  thighRight: 'thighR',
+  thighBackLeft: 'thighL',
+  thighBackRight: 'thighR',
+  kneeLeft: 'kneeL',
+  kneeRight: 'kneeR',
+  kneeBackLeft: 'kneeL',
+  kneeBackRight: 'kneeR',
+  shinLeft: 'shinL',
+  shinRight: 'shinR',
+  calfLeft: 'calfL',
+  calfRight: 'calfR',
+  footLeft: 'footL',
+  footRight: 'footR',
+};
 
 type Picker = (ndcX: number, ndcY: number) => { point: THREE.Vector3; region: BodyRegion | null } | null;
 /** ตำแหน่งบนจอ (NDC −1..1) ของจุดบนร่างกาย ตามท่าหุ่นปัจจุบัน */
 type Projector = (pin: BodyPin) => { x: number; y: number } | null;
 /** จุดใดก็ได้บนผิว (พิกัดเดียวกับ pickAt/marks) → ndc + มองเห็นจากกล้องไหม (ไม่ถูกตัวหุ่นบัง) */
+type ZoneTools = { regionOf: (p: BodyPoint) => BodyRegion; zoneCenter: (z: BodyZone) => BodyPoint | null };
 type PointProjector = (p: BodyPoint) => { x: number; y: number; visible: boolean } | null;
 /** มุมหมุน (rad) ที่ทำให้บริเวณนั้นหันเข้ากล้อง — null ถ้ายังไม่โหลด/บริเวณหันขึ้นบนล้วน */
 type Facer = (pin: BodyPin) => number | null;
 
 /** จำนวนบริเวณที่ระบายสีพร้อมกันได้สูงสุด */
 const MAX_SPOTS = 24;
-/** รัศมีบริเวณที่ระบายสีเมื่อแตะบนหุ่นเอง (เมตร) */
-const TAP_AREA: [number, number, number] = [0.045, 0.045, 0.045];
 
 type Spot = { center: THREE.Vector3; radius: THREE.Vector3; color: THREE.Color };
 
@@ -272,6 +433,7 @@ type Spot = { center: THREE.Vector3; radius: THREE.Vector3; color: THREE.Color }
  */
 function createSkinMaterial(color: string, shorts: string) {
   const uniforms = {
+    uZone: { value: Array.from({ length: ZONE_KEYS.length }, () => new THREE.Vector4()) },
     uSpotCount: { value: 0 },
     uSpotCenter: { value: Array.from({ length: MAX_SPOTS }, () => new THREE.Vector3()) },
     uSpotRadius: { value: Array.from({ length: MAX_SPOTS }, () => new THREE.Vector3(1, 1, 1)) },
@@ -289,6 +451,8 @@ function createSkinMaterial(color: string, shorts: string) {
         '#include <common>',
         `#include <common>
 varying vec3 vSpotPos;
+uniform vec4 uZone[${ZONE_KEYS.length}];
+${ZONE_GLSL}
 uniform int uSpotCount;
 float gShorts;
 uniform vec3 uSpotCenter[${MAX_SPOTS}];
@@ -311,6 +475,11 @@ vec3 fabric = SHORTS_COLOR;
 float band = smoothstep(0.916, 0.92, vSpotPos.y) + (1.0 - smoothstep(hem + 0.014, hem + 0.018, vSpotPos.y));
 fabric *= 1.0 - 0.18 * clamp(band, 0.0, 1.0);
 diffuseColor.rgb = mix(diffuseColor.rgb, fabric, sIn);
+// โซนที่เลือก (a = 1) → ระบายทั้งโซน
+int zi = zoneAt(vSpotPos);
+vec4 zc = vec4(0.0);
+for (int i = 0; i < ${ZONE_KEYS.length}; i++) if (i == zi) zc = uZone[i];
+diffuseColor.rgb = mix(diffuseColor.rgb, zc.rgb, zc.a * 0.88);
 for (int i = 0; i < ${MAX_SPOTS}; i++) {
   if (i >= uSpotCount) break;
   float d = length((vSpotPos - uSpotCenter[i]) / uSpotRadius[i]);
@@ -331,7 +500,14 @@ for (int i = 0; i < ${MAX_SPOTS}; i++) {
       uniforms.uSpotColor.value[i].copy(sp.color);
     });
   };
-  return { mat, setSpots };
+  /** สีของแต่ละโซน (ดัชนีตาม ZONE_KEYS) · ไม่มี = ไม่ระบาย */
+  const setZones = (colors: Map<number, THREE.Color>) => {
+    uniforms.uZone.value.forEach((v, i) => {
+      const c = colors.get(i);
+      v.set(c?.r ?? 0, c?.g ?? 0, c?.b ?? 0, c ? 1 : 0);
+    });
+  };
+  return { mat, setSpots, setZones };
 }
 
 /** หุ่นที่ bake แล้ว: geometry ในพิกัดของหุ่น (เมตร) — ใช้ร่วมกันทุก canvas */
@@ -345,6 +521,17 @@ type BakedModel = {
   scale: number;
 };
 const bakedCache = new WeakMap<object, BakedModel>();
+/** โซนของจุดยอดแต่ละจุดบนผิว (คำนวณครั้งเดียวต่อโมเดล) */
+const vertexZoneCache = new WeakMap<BakedModel, Uint8Array>();
+function vertexZones(b: BakedModel) {
+  const hit = vertexZoneCache.get(b);
+  if (hit) return hit;
+  const P = b.body.attributes.position;
+  const out = new Uint8Array(P.count);
+  for (let i = 0; i < P.count; i++) out[i] = zoneIndexAt(P.getX(i), P.getY(i), P.getZ(i));
+  vertexZoneCache.set(b, out);
+  return out;
+}
 
 /** สีตาตามมุมจากแกนหน้าของลูกตา: ตาขาวนวล · ม่านตาน้ำตาล · รูม่านตาเข้ม (แบบ ThaiWellAI) */
 function paintEye(g: THREE.BufferGeometry) {
@@ -477,6 +664,7 @@ function Figure({
   projectorRef,
   pointProjectorRef,
   facerRef,
+  regionRef,
   onReady,
 }: {
   url: string;
@@ -489,6 +677,7 @@ function Figure({
   projectorRef: React.MutableRefObject<Projector | null>;
   pointProjectorRef: React.MutableRefObject<PointProjector | null>;
   facerRef: React.MutableRefObject<Facer | null>;
+  regionRef: React.MutableRefObject<ZoneTools | null>;
   /** วาดเฟรมแรกเสร็จแล้ว (ใช้สลับ canvas บน iOS แบบไม่กะพริบ) */
   onReady?: () => void;
 }) {
@@ -531,7 +720,7 @@ function Figure({
 
   /* geometry ใช้ร่วมกัน แต่ mesh/ฉากสร้างใหม่ต่อ canvas — วัตถุ three มีแม่ได้คนเดียว
    * ถ้าใช้ตัวเดียวกันตอนสร้าง canvas ใหม่ (iOS) canvas เก่าที่ถูกถอดจะดึงหุ่นออกไปด้วย → หุ่นหาย */
-  const { root, toLocal, skinMeshes } = React.useMemo(() => {
+  const { root, toLocal, toModel, skinMeshes } = React.useMemo(() => {
     const scene = new THREE.Group();
     // ผิว = พื้นผิวที่แตะ/วัดขนาดได้ · ลูกตาแยกวัสดุ (ไม่ระบายสี ไม่รับแตะ)
     const body = new THREE.Mesh(baked.body, skin.mat);
@@ -547,49 +736,46 @@ function Figure({
     scene.updateMatrixWorld(true);
     /** พิกัดของหุ่น (เมตร) → พิกัดของกลุ่มที่หมุน */
     const local = (v: readonly number[]) => new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(k).add(scene.position);
-    return { root: scene, toLocal: local, skinMeshes: [body] };
+    /** พิกัดของกลุ่มที่หมุน → พิกัดต้นฉบับของหุ่น (เมตร) */
+    const toModel = (v: BodyPoint) => new THREE.Vector3(v.x, v.y, v.z).sub(scene.position).divideScalar(k);
+    return { root: scene, toLocal: local, toModel, skinMeshes: [body] };
   }, [baked, skin, eyeMat]);
 
-  // อาการ/จุดรักษา + จุดที่แตะเอง → บริเวณระบายสีบนผิว
+  // อาการเป็นบริเวณ + จุดที่แตะเอง → ระบายทั้งโซน · จุดเฉพาะ (จุดกด ข้อศอก ขมับ …) → บริเวณระบายสีเล็ก
   React.useEffect(() => {
     const symptom = new THREE.Color(colors.status.danger.solid);
     const point = new THREE.Color(colors.brand.primary);
-    const k = root.scale.x;
-    const spots: Spot[] = [
-      ...pins.map((p) => ({
+    const colorOf = (p: Body3DPin) => (p.color ? new THREE.Color(p.color) : p.tone === 'symptom' ? symptom : point);
+    const zoneColor = new Map<number, THREE.Color>();
+    const spotPins: Body3DPin[] = [];
+    for (const p of pins) {
+      const z = (p.zone ?? p.tone === 'symptom') ? PIN_ZONE[p.at] : undefined;
+      if (z) zoneColor.set(ZONE_KEYS.indexOf(z), colorOf(p));
+      else spotPins.push(p);
+    }
+    const mc = markColor ? new THREE.Color(markColor) : symptom;
+    for (const m of marks) {
+      const q = toModel(m);
+      zoneColor.set(zoneIndexAt(q.x, q.y, q.z), mc);
+    }
+    skin.setZones(zoneColor);
+    skin.setSpots(
+      spotPins.map((p) => ({
         center: new THREE.Vector3(...PIN_ANCHOR[p.at].base),
         radius: new THREE.Vector3(...PIN_ANCHOR[p.at].area),
-        color: p.color ? new THREE.Color(p.color) : p.tone === 'symptom' ? symptom : point,
+        color: colorOf(p),
       })),
-      // จุดที่แตะ: พิกัดของหุ่น → พิกัดต้นฉบับ (เมตร)
-      ...marks.map((m) => ({
-        center: new THREE.Vector3(m.x, m.y, m.z).sub(root.position).divideScalar(k),
-        radius: new THREE.Vector3(...TAP_AREA),
-        color: markColor ? new THREE.Color(markColor) : symptom,
-      })),
-    ];
-    skin.setSpots(spots);
+    );
     invalidate();
-  }, [pins, marks, markColor, root, skin, colors, invalidate]);
-
+  }, [pins, marks, markColor, toModel, skin, colors, invalidate]);
 
   // ยิงรังสีจากตำแหน่งที่แตะไปหาผิวหุ่นจริง → จุดในพิกัดของหุ่น + ส่วนของร่างกายที่ใกล้ที่สุด
   React.useEffect(() => {
     const raycaster = new THREE.Raycaster();
     raycaster.firstHitOnly = true;
-    const classify = (p: THREE.Vector3): BodyRegion | null => {
-      const k = root.scale.x;
-      for (const j of JOINTS) if (toLocal(LANDMARK[j.at]).distanceTo(p) < j.radius * k) return j.region;
-      let best: { d: number; seg: Segment; center: THREE.Vector3 } | null = null;
-      for (const seg of SEGMENTS) {
-        const line = new THREE.Line3(toLocal(LANDMARK[seg.from]), toLocal(LANDMARK[seg.to]));
-        const closest = line.closestPointToPoint(p, true, new THREE.Vector3());
-        const d = closest.distanceTo(p);
-        if (!best || d < best.d) best = { d, seg, center: closest };
-      }
-      if (!best) return null;
-      // ด้านหน้า/หลัง: หุ่นหันหน้าไปทาง +z ในพิกัดของหุ่น
-      return p.z < best.center.z && best.seg.back ? best.seg.back : best.seg.front;
+    const classify = (p: THREE.Vector3): BodyRegion => {
+      const q = toModel(p);
+      return zoneRegion(ZONE_KEYS[zoneIndexAt(q.x, q.y, q.z)]);
     };
     /**
      * กึ่งกลางของสีที่ "มองเห็น" จริง: ยิงรังสีจากกล้องเป็นตารางรอบจุดกลาง เก็บเฉพาะจุดที่โดนผิวและอยู่ในทรงรีของสี
@@ -717,7 +903,37 @@ function Figure({
       return { point, region: classify(point) };
     };
     pickerRef.current = picker;
+    /** จุดบนผิวที่อยู่กลางโซน (จุดยอดของโซนที่ใกล้ค่าเฉลี่ยที่สุด) → พิกัดของกลุ่มที่หมุน */
+    const zoneCenter = (zone: BodyZone): BodyPoint | null => {
+      const idx = ZONE_KEYS.indexOf(zone);
+      const zs = vertexZones(baked);
+      const P = baked.body.attributes.position;
+      const avg = new THREE.Vector3();
+      let n = 0;
+      for (let i = 0; i < zs.length; i++) if (zs[i] === idx) {
+        avg.x += P.getX(i);
+        avg.y += P.getY(i);
+        avg.z += P.getZ(i);
+        n++;
+      }
+      if (!n) return null;
+      avg.divideScalar(n);
+      let best = -1;
+      let bd = Infinity;
+      for (let i = 0; i < zs.length; i++) if (zs[i] === idx) {
+        const d = (P.getX(i) - avg.x) ** 2 + (P.getY(i) - avg.y) ** 2 + (P.getZ(i) - avg.z) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      const v = toLocal([P.getX(best), P.getY(best), P.getZ(best)]);
+      return { x: v.x, y: v.y, z: v.z };
+    };
+    const tools: ZoneTools = { regionOf: (p) => classify(new THREE.Vector3(p.x, p.y, p.z)), zoneCenter };
+    regionRef.current = tools;
     return () => {
+      if (regionRef.current === tools) regionRef.current = null;
       // iOS มี canvas ซ้อนกันช่วงสลับ → ล้างเฉพาะของตัวเอง (ไม่ลบของ canvas ใหม่)
       if (pickerRef.current === picker) pickerRef.current = null;
       if (projectorRef.current === projector) projectorRef.current = null;
@@ -725,7 +941,7 @@ function Figure({
       if (facerRef.current === facer) facerRef.current = null;
       visibleCenterRef.current = null;
     };
-  }, [camera, root, toLocal, skinMeshes, pickerRef, projectorRef, pointProjectorRef, facerRef]);
+  }, [camera, baked, root, toLocal, toModel, skinMeshes, regionRef, pickerRef, projectorRef, pointProjectorRef, facerRef]);
 
   // มุมเป้าหมายเปลี่ยน (ลาก/หันหน้า-หลัง) → ปลุก render loop (frameloop demand)
   React.useEffect(() => {
@@ -810,6 +1026,10 @@ export interface Body3DPick {
 export interface Body3DHandle {
   /** แตะที่ตำแหน่งบนจอ (pageX/pageY) → จุดบนผิวหุ่น + ส่วนของร่างกาย (null ถ้าไม่โดนหุ่น) */
   pickAt: (pageX: number, pageY: number) => Body3DPick | null;
+  /** โซนของจุดที่เคยแตะไว้ (พิกัดเดียวกับ pickAt) — null ถ้าหุ่นยังไม่โหลด */
+  regionOf: (p: BodyPoint) => BodyRegion | null;
+  /** จุดบนผิวกลางโซน (พิกัดเดียวกับ pickAt) — null ถ้าหุ่นยังไม่โหลด */
+  zoneCenter: (z: BodyZone) => BodyPoint | null;
   /** ตำแหน่งบนจอ (pageX/pageY) ของบริเวณบนร่างกาย ตามท่าหุ่นตอนนี้ — null ถ้าหุ่นยังไม่โหลด */
   projectPin: (pin: BodyPin) => { x: number; y: number } | null;
   /** ตำแหน่งบนจอของจุดที่แตะเลือก (pickAt) + มองเห็นอยู่ไหม (หมุนไปด้านหลัง = ไม่เห็น) */
@@ -972,6 +1192,7 @@ export const Body3D = React.forwardRef<
   const projectorRef = React.useRef<Projector | null>(null);
   const pointProjectorRef = React.useRef<PointProjector | null>(null);
   const facerRef = React.useRef<Facer | null>(null);
+  const regionRef = React.useRef<ZoneTools | null>(null);
   const boxRef = React.useRef<View>(null);
   const layoutRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const measure = () =>
@@ -995,6 +1216,8 @@ export const Body3D = React.forwardRef<
     ref,
     () => ({
       pickAt,
+      regionOf: (p) => regionRef.current?.regionOf(p) ?? null,
+      zoneCenter: (z) => regionRef.current?.zoneCenter(z) ?? null,
       projectPin: (pin) => {
         const node = boxRef.current as unknown as { getBoundingClientRect?: () => DOMRect } | null;
         const rect = node?.getBoundingClientRect?.() ?? layoutRef.current;
@@ -1151,7 +1374,7 @@ export const Body3D = React.forwardRef<
         {Platform.OS === 'web' ? <RoomEnv /> : null}
         {/* Suspense ต้องอยู่ใน Canvas เพราะ useLoader suspend ภายใน renderer ของ three */}
         <React.Suspense fallback={null}>
-          {url ? <Figure url={url} pins={pins} marks={marks} markColor={markColor} rot={rot} pickerRef={pickerRef} projectorRef={projectorRef} pointProjectorRef={pointProjectorRef} facerRef={facerRef} onReady={() => setReady(true)} /> : null}
+          {url ? <Figure url={url} pins={pins} marks={marks} markColor={markColor} rot={rot} pickerRef={pickerRef} projectorRef={projectorRef} pointProjectorRef={pointProjectorRef} facerRef={facerRef} regionRef={regionRef} onReady={() => setReady(true)} /> : null}
         </React.Suspense>
       </Canvas>
       {/* ระหว่างโหลดหุ่น (เกิน 300ms): เงาโครงร่างคน + แสงวิ่ง → จางหายเมื่อเฟรมแรกขึ้น */}
