@@ -692,9 +692,10 @@ export function HomeScreen() {
     const related = (src?.related ?? []).filter((x) => x !== 'ไม่มี');
     const adverse = today?.adverse && today.adverse !== 'ไม่มี' ? today.adverse : undefined;
     const firstPin = (sym: string) => CHIP_PINS[sym]?.[0];
-    const extras: { key: string; icon: IconName; label: string; tone: 'info' | 'warn' | 'avoid'; pin?: BodyPin }[] = [
+    const extras: { key: string; icon: IconName; label: string; tag?: string; tone: 'info' | 'warn' | 'avoid'; pin?: BodyPin }[] = [
       ...rad.map((a) => ({ key: `r-${a.label}`, icon: 'corner-down-right' as const, label: a.label, tone: (a.option?.level ? 'warn' : 'info') as 'warn' | 'info', pin: radiatePins(a.label, a.symptom)[0] })),
-      ...related.map((x) => ({ key: `n-${x}`, icon: 'zap' as const, label: x, tone: (x === NUMB || x === WEAK ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') })),
+      // อาการร่วม = ป้ายเดียวรวมทุกข้อ มีหัว "อาการร่วม" กำกับ (ไม่ให้ดูเหมือนจุดที่ปวดอีกจุด)
+      ...(related.length ? [{ key: 'related', icon: 'zap' as const, label: related.map((x) => x.replace(/ร่วมด้วย$/, '')).join(', '), tag: 'อาการร่วม', tone: (related.some((x) => x === NUMB || x === WEAK) ? 'warn' : 'info') as 'warn' | 'info', pin: firstPin(symptoms[0] ?? '') }] : []),
       ...(avoid ? [{ key: 'avoid', icon: 'slash' as const, label: `ไม่นวด${avoid}`, tone: 'avoid' as const, pin: AVOID_PINS[avoid]?.[0] }] : []),
       ...(period && avoid !== 'ท้อง' ? [{ key: 'period', icon: 'slash' as const, label: 'งดนวดท้อง', tone: 'avoid' as const, pin: 'belly' as BodyPin }] : []),
       ...(adverse ? [{ key: 'adv', icon: 'alert-triangle' as const, label: `${adverse}หลังนวด`.replace(/^(.*)หลังนวดหลังนวด$/, '$1หลังนวด'), tone: 'warn' as const, pin: tcase.areas[0]?.pin }] : []),
@@ -3831,7 +3832,7 @@ export function HomeScreen() {
               </View>
             ) : null}
             {bodyInfo?.extras.map((x) => (
-              <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
+              <BodyTagPill key={x.key} icon={x.icon} label={x.label} tag={x.tag} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
             {/* ข้อมูลบนหุ่นเก่าแล้ว (ไม่ใช่วันนี้) → บอกว่าเป็นข้อมูลเมื่อไหร่ + ปุ่มเล่าอาการวันนี้ · วันนี้ = ไม่ต้องแสดง */}
             {bodyInfo?.updated && bodyInfo.updated !== 'วันนี้' ? (
@@ -5139,8 +5140,11 @@ function DraftBento({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // การ์ดรายการ (หัวข้อ + ไอคอนหน้าแต่ละข้อ) — ไม่ต้องการ (ที่บอก AI ไว้) · ก่อนมานวด
-  const avoid = d.caution ? d.caution.split(' · ') : [];
-  const listCard = (title: string, icon: 'x-circle' | 'check-circle', color: string, items: string[]) =>
+  // caution รวมสองเรื่อง: บริเวณที่ผู้ใช้ไม่ต้องการให้นวด ("ไม่นวด…") กับข้อควรระวังจากผลคัดกรอง (ตั้งครรภ์ · ความดัน …) → แยกการ์ด หัวข้อตรงเนื้อหา
+  const cautionItems = d.caution ? d.caution.split(' · ').filter(Boolean) : [];
+  const avoid = cautionItems.filter((x) => /^ไม่นวด/.test(x));
+  const careItems = cautionItems.filter((x) => !/^ไม่นวด/.test(x));
+  const listCard = (title: string, icon: 'x-circle' | 'check-circle' | 'alert-triangle', color: string, items: string[]) =>
     items.length ? (
       <Tile key={title} style={{ gap: space[2] }}>
         <TileTitle title={title} />
@@ -5209,6 +5213,7 @@ function DraftBento({
             <SelfCareTile width={halfW} groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           <View style={{ width: halfW, gap: BENTO_GAP }}>
+            {listCard('ข้อควรระวัง', 'alert-triangle', colors.status.warning.fg, careItems)}
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
           </View>
         </View>
@@ -5403,6 +5408,7 @@ function DraftBento({
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>
+            {listCard('ข้อควรระวัง', 'alert-triangle', colors.status.warning.fg, careItems)}
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
           </View>
         </View>
@@ -6681,7 +6687,7 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
 }
 
 /** ป้ายบนหุ่นหน้าแรก: จุด (สีตามระดับปวด) หรือไอคอน + คำสั้น · warn = ส้ม · avoid = เทา */
-function BodyTagPill({ dot, body, icon, label, tone, onPress }: { dot?: string; /** มีจุดบนหุ่น → ไอคอนหุ่นจิ๋วระบายบริเวณนั้น (สี dot) แทนจุดสี */ body?: BodyPin; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
+function BodyTagPill({ dot, body, icon, label, tag, tone, onPress }: { /** หัวกำกับในป้าย (เช่น อาการร่วม) — แยกจากจุดที่ปวด */ tag?: string; dot?: string; /** มีจุดบนหุ่น → ไอคอนหุ่นจิ๋วระบายบริเวณนั้น (สี dot) แทนจุดสี */ body?: BodyPin; icon?: IconName; label: string; tone?: 'info' | 'warn' | 'avoid'; onPress?: () => void }) {
   const { colors } = useTheme();
   const fg = tone === 'warn' ? colors.status.warning.fg : tone === 'avoid' ? colors.text.secondary : colors.text.primary;
   const bg = tone === 'warn' ? colors.status.warning.bg : colors.surface.default;
@@ -6693,8 +6699,17 @@ function BodyTagPill({ dot, body, icon, label, tone, onPress }: { dot?: string; 
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: body ? 3 : space[3], paddingRight: space[3], borderRadius: radius.full, backgroundColor: bg, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
     >
       {dot && body ? <BodyIcon pins={[body]} color={dot} size={24} /> : dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} /> : null}
-      {icon ? <Icon name={icon} size="xs" color={fg} /> : null}
-      <Text variant="labelSm" numberOfLines={1} color={fg}>
+      {tag ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 20, paddingHorizontal: 6, marginLeft: -space[1], borderRadius: radius.full, backgroundColor: tone === 'warn' ? colors.status.warning.fg : colors.text.primary }}>
+          {icon ? <Icon name={icon} size="xxs" color={colors.text.inverse} /> : null}
+          <Text style={{ fontFamily: fontFamily.semibold, fontSize: 10, lineHeight: 14 }} color={colors.text.inverse}>
+            {tag}
+          </Text>
+        </View>
+      ) : icon ? (
+        <Icon name={icon} size="xs" color={fg} />
+      ) : null}
+      <Text variant="labelSm" numberOfLines={1} color={fg} style={{ flexShrink: 1 }}>
         {label}
       </Text>
     </Pressable>
