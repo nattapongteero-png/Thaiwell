@@ -338,6 +338,7 @@ export function ThreadCardView({
               ))}
             </VStack>
           ) : null}
+          {/* วิธีรักษา + ข้อควรระวัง อยู่ในรายการเดียว (อ่านจุดเดียว) — ข้อควรระวังต่อท้ายด้วยไอคอนเตือน */}
           <VStack gap={1}>
             {card.methods.map((m) => (
               <HStack key={m} gap={2} align="flex-start">
@@ -347,6 +348,17 @@ export function ThreadCardView({
                 </Text>
               </HStack>
             ))}
+            {(card.caution ?? '')
+              .split(' · ')
+              .filter(Boolean)
+              .map((c) => (
+                <HStack key={`c-${c}`} gap={2} align="flex-start">
+                  <Icon name="alert-triangle" size="xs" color={colors.status.warning.fg} />
+                  <Text variant="bodyXs" style={{ flex: 1 }} color={colors.status.warning.fg}>
+                    {c}
+                  </Text>
+                </HStack>
+              ))}
           </VStack>
           {card.points.length ? (
             <ChipSection title="จุดกดบำบัด (แสดงบนหุ่น)" options={card.points} value={[]} dot />
@@ -356,14 +368,6 @@ export function ThreadCardView({
               แพทย์แผนไทยเลือกจุดกดให้หน้างาน
             </Text>
           )}
-          {card.caution ? (
-            <HStack gap={2} align="flex-start">
-              <Icon name="alert-triangle" size="xs" color={colors.status.warning.fg} />
-              <Text variant="bodyXs" style={{ flex: 1 }}>
-                {card.caution}
-              </Text>
-            </HStack>
-          ) : null}
           <HStack gap={2} style={{ flexWrap: 'wrap' }}>
             {card.booked ? null : <PillButton label="จองนัดตามแนวทางนี้" icon="calendar" onPress={onBook ?? (() => nav.navigate('Booking'))} />}
             {onPlan ? <PillButton label="ขอแผนการนวด" tone="light" icon="list" onPress={onPlan} /> : null}
