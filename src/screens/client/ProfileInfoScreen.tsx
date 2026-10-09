@@ -11,6 +11,18 @@ import { validPhone } from '../../services/idCard';
 const maskId = (id: string) => (id.length === 13 ? `x-xxxx-xxxxx-${id.slice(10, 12)}-${id.slice(12)}` : '-');
 
 /**
+ * ที่อยู่ตามบัตร (มักติดกันเป็นสายยาว) → เว้นวรรคก่อน หมู่ ซอย ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด
+ * ให้ตัดบรรทัดตรงรอยต่อของที่อยู่ ไม่ตัดกลางชื่อ
+ */
+const addressText = (a?: string) =>
+  a
+    ? a
+        .replace(/\s*(หมู่ที่|หมู่|ม\.|ซอย|ซ\.|ถนน|ถ\.|ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต|จังหวัด|จ\.)\s*/g, ' $1')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : '-';
+
+/**
  * ข้อมูลส่วนตัว
  * รูปโปรไฟล์ = แก้ได้ (เลือก avatar)
  * ตามบัตรประชาชน (ชื่อ เลขบัตร วันเกิด เพศ ที่อยู่) = ดูได้อย่างเดียว — ยืนยันตัวตนแล้วและคลินิกใช้ลงทะเบียนผู้ป่วย แก้ผ่านคลินิก
@@ -62,7 +74,13 @@ export function ProfileInfoScreen() {
           <InfoRow k="เลขบัตรประชาชน" v={c ? maskId(c.citizenId) : '-'} />
           <InfoRow k="วันเกิด" v={`${c?.birthDate ?? account?.birthDate ?? '-'} · ${profile.age} ปี`} />
           <InfoRow k="เพศ" v={c?.sex || account?.sex || '-'} />
-          <InfoRow k="ที่อยู่" v={c?.address || '-'} />
+          {/* ที่อยู่ยาว: หัวข้อบน ข้อความเต็มความกว้างชิดซ้าย (ชิดขวาหลายบรรทัดแล้วตัดบรรทัดแปลก) */}
+          <View style={{ gap: 2 }}>
+            <Text variant="bodySm" tone="secondary">
+              ที่อยู่
+            </Text>
+            <Text variant="labelMd">{addressText(c?.address)}</Text>
+          </View>
         </View>
       </Panel>
       <Panel title="ติดต่อ" flush>
