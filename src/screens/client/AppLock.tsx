@@ -131,7 +131,7 @@ function LockScreen({ uid, email, mode, setMode, bio }: { uid: string; email: st
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 1000, backgroundColor: colors.surface.canvas }]}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, paddingTop: insets.top + space[10], paddingBottom: insets.bottom + space[4], paddingHorizontal: space[5] }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: mode === 'password' ? undefined : 'center', paddingTop: insets.top + (mode === 'password' ? space[10] : space[4]), paddingBottom: insets.bottom + space[4], paddingHorizontal: space[5] }}>
         <View style={{ alignItems: 'center', gap: space[2] }}>
           <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle }}>
             <Icon name="lock" color={colors.text.primary} />
@@ -159,22 +159,26 @@ function LockScreen({ uid, email, mode, setMode, bio }: { uid: string; email: st
                 <View key={i} style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: colors.text.primary, backgroundColor: i < pin.length ? colors.text.primary : 'transparent' }} />
               ))}
             </View>
-            <Text variant="bodySm" align="center" color={colors.status.danger.solid} style={{ marginTop: space[4], minHeight: 22 }}>
+            {/* หัว · จุด PIN · ปุ่มตัวเลข อยู่กลางจอเป็นกลุ่มเดียว (ไม่ดันปุ่มลงชิดล่าง) */}
+            <Text variant="bodySm" align="center" color={colors.status.danger.solid} style={{ marginTop: space[3], marginBottom: space[4], minHeight: 22 }}>
               {error ?? ''}
             </Text>
-            <View style={{ flex: 1 }} />
             <Keypad
               onDigit={press}
               onDelete={() => setPinText((p) => p.slice(0, -1))}
               left={mode === 'locked' && bio ? { label: 'ใช้ Face ID', icon: <FaceIdGlyph color={colors.text.primary} />, onPress: () => void tryBio() } : undefined}
             />
-            {mode === 'locked' ? (
-              <Pressable accessibilityRole="button" onPress={() => { setError(null); setMode('password'); }} style={{ alignSelf: 'center', padding: space[3], marginTop: space[2] }}>
-                <Text variant="labelMd" tone="secondary">
-                  ลืม PIN?
-                </Text>
-              </Pressable>
-            ) : null}
+            {/* เว้นที่ไว้เท่ากันทุกขั้น → ตอนตั้ง PIN กับปลดล็อก ตำแหน่งปุ่มไม่ขยับ */}
+            <Pressable
+              accessibilityRole="button"
+              disabled={mode !== 'locked'}
+              onPress={() => { setError(null); setMode('password'); }}
+              style={{ alignSelf: 'center', padding: space[3], marginTop: space[2], opacity: mode === 'locked' ? 1 : 0 }}
+            >
+              <Text variant="labelMd" tone="secondary">
+                ลืม PIN?
+              </Text>
+            </Pressable>
           </>
         )}
       </KeyboardAvoidingView>
