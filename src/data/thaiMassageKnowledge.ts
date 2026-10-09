@@ -253,20 +253,10 @@ export function elementPercents(answers: (ElementKey | undefined)[]): Record<Ele
   return pct;
 }
 
-/**
- * ธาตุเจ้าเรือนกำเนิด จากวันเกิด (dd/mm/yyyy ค.ศ.) — ได้ทันทีตอนลงทะเบียน ไม่ต้องตอบแบบประเมิน
- * ⚠️ ไม่มีตารางในเอกสารใด (CPG หน้า 41 อ้างคัมภีร์ฉันทศาสตร์/ปฐมจินดา แต่ไม่ให้ตาราง)
- *    เหตุผลที่ใช้ตารางนี้ (อนุมาน): ตำราอ้างอิงฯ หน้า 15 ธาตุเดิม "เป็นมาตั้งแต่ปฏิสนธิ" + ฤดู 4 จันทรคติ (หน้า 25–26, 101)
- *    เตโช ≈ เม.ย.–มิ.ย. · วาโย ≈ ก.ค.–ก.ย. · อาโป ≈ ต.ค.–ธ.ค. · ปถวี ≈ ม.ค.–มี.ค. นับจากเดือนปฏิสนธิ แล้วบวก ~9 เดือนเป็นเดือนเกิด
- *    ต้องให้แพทย์แผนไทยยืนยันสูตรและการนับเดือน (จันทรคติ/สุริยคติ) ก่อนใช้จริง · แก้ที่ BIRTH_MONTH_ELEMENT ที่เดียว
+/*
+ * ธาตุเจ้าเรือนจากวันเดือนปีเกิด: ตำราอ้างคัมภีร์ฉันทศาสตร์/ปฐมจินดา แต่ไม่มีตารางในเอกสารที่ใช้ (CPG หน้า 41)
+ * → แอปไม่เดาจากวันเกิด · รู้ธาตุจากแบบประเมิน 14 ข้อ (CPG_PCU หน้า 163–164) เท่านั้น
  */
-const BIRTH_MONTH_ELEMENT: ElementKey[] = ['ไฟ', 'ไฟ', 'ไฟ', 'ลม', 'ลม', 'ลม', 'น้ำ', 'น้ำ', 'น้ำ', 'ดิน', 'ดิน', 'ดิน'];
-export function birthElement(birthDate: string): ElementKey | null {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(birthDate);
-  const month = m ? Number(m[2]) : NaN;
-  return month >= 1 && month <= 12 ? BIRTH_MONTH_ELEMENT[month - 1] : null;
-}
-
 export function dominantElement(pct: Record<ElementKey, number>): ElementKey {
   return (Object.keys(pct) as ElementKey[]).reduce((a, b) => (pct[b] > pct[a] ? b : a));
 }

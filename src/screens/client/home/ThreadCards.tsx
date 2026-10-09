@@ -130,7 +130,7 @@ export function ThreadCardView({
 }) {
   const { colors } = useTheme();
   const nav = useNav();
-  const { elements, cases, drafts } = useJourney();
+  const { elements, elementsDone, newPatient, cases, drafts } = useJourney();
   const [answer, setAnswer] = React.useState(card.type === 'followup' ? card.answer : undefined);
 
   switch (card.type) {
@@ -226,6 +226,16 @@ export function ThreadCardView({
         </GlassCard>
       );
     case 'element': {
+      // ยังไม่ได้ทำแบบประเมิน → ชวนประเมิน (ไม่แสดงธาตุที่ไม่มีที่มา)
+      if (newPatient && !elementsDone)
+        return (
+          <GlassCard onPress={() => nav.navigate('ElementQuiz')}>
+            <Text variant="titleSm">ธาตุเจ้าเรือน</Text>
+            <Text variant="bodySm" tone="secondary">
+              ตอบ 14 ข้อ เพื่อรู้ธาตุของคุณ
+            </Text>
+          </GlassCard>
+        );
       const top = dominantElement(elements);
       return (
         <GlassCard onPress={() => nav.navigate('ElementQuiz')}>

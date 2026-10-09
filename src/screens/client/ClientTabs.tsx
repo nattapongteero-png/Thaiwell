@@ -25,7 +25,7 @@ import {
   type IconName, BodyIcon, painColor, ScreenSkeleton, useScreenData, Panel, StatTile, Tag, RowLink, TINT, ProfileAvatar, ElementPill, BottomSheet, TextField, ReplyChips, InfoRow,
 } from '../../design-system';
 import { NotFoundScreen } from './NotFound';
-import { birthElement, dominantElement } from '../../data/thaiMassageKnowledge';
+import { dominantElement } from '../../data/thaiMassageKnowledge';
 import { HISTORY, useJourney } from '../../state/JourneyContext';
 import { TREATMENT_CASES, ARCHIVED_CASES, HEALTH_OPTIONS, MED_OPTIONS, ALLERGY_OPTIONS, healthKnownOf, type HealthField, type TreatmentCase } from '../../data/homeFeed';
 import { TreatmentDetailBody, VisitTabs } from './home/TreatmentDetailBody';
@@ -162,7 +162,8 @@ export function ProfileScreen() {
   const { colors, textScale, setTextScale } = useTheme();
   const { client, profile, setProfile, signOut, elements, newPatient, account, setAccount, cases, drafts, looseBookings, log, bills } = useJourney();
   const { elementsDone } = useJourney();
-  const element = newPatient && account && !elementsDone ? birthElement(account.birthDate) : dominantElement(elements);
+  // ธาตุจากแบบประเมินเท่านั้น · คนใหม่ที่ยังไม่ทำ = ป้าย "ประเมินธาตุ"
+  const element = newPatient && !elementsDone ? null : dominantElement(elements);
   const visits = cases.reduce((n, c) => n + c.visits.length, 0);
   // นัดถัดไปจากทุกที่ (ใบการรักษา · ใบร่าง · จองไว้ก่อนประเมิน) · ยกเลิกแล้ว = ไม่นับ · วันนี้มาก่อน
   const appts = [
@@ -201,7 +202,7 @@ export function ProfileScreen() {
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
               {!healthKnownOf(profile, 'conditions') ? null : <Tag text={profile.conditions.length ? profile.conditions.join(', ') : 'ไม่มีโรคประจำตัว'} tone={profile.conditions.length ? 'warn' : undefined} size="md" />}
-              {element ? <ElementPill element={element} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+              <ElementPill element={element} label="ธาตุเจ้าเรือน" onPress={() => nav.navigate('ElementQuiz')} />
             </View>
           </Pressable>
         </View>

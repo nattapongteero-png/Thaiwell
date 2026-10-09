@@ -36,12 +36,15 @@ export function ElementIcon({ element, size = 15, color = '#FFFFFF' }: { element
   );
 }
 
-export function ElementPill({ element, label = 'ธาตุเจ้าเรือน', onPress }: { element: ThaiElement; label?: string; onPress?: () => void }) {
-  const c = ELEMENT_COLOR[element];
+/** ยังไม่รู้ธาตุ (ยังไม่ได้ทำแบบประเมิน) → สีกลาง · ไอคอน + · "ประเมินธาตุ" */
+const ASK_COLOR = '#5B6B60';
+
+export function ElementPill({ element, label = 'ธาตุเจ้าเรือน', onPress }: { element: ThaiElement | null; label?: string; onPress?: () => void }) {
+  const c = element ? ELEMENT_COLOR[element] : ASK_COLOR;
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`${label} ธาตุ${element}`}
+      accessibilityLabel={element ? `${label} ธาตุ${element}` : 'ประเมินธาตุเจ้าเรือน'}
       disabled={!onPress}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -77,10 +80,16 @@ export function ElementPill({ element, label = 'ธาตุเจ้าเร�
           shadowOffset: { width: 0, height: 2 },
         }}
       >
-        <ElementIcon element={element} size={13} />
+        {element ? (
+          <ElementIcon element={element} size={13} />
+        ) : (
+          <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.6} strokeLinecap="round">
+            <Path d="M12 5v14M5 12h14" />
+          </Svg>
+        )}
       </View>
       {/* บรรทัดเดียว (ไม่เด่นกว่าแท็บ) · ไทยมีสระบน/ล่าง → lineHeight ~1.5 เท่า ไม่ให้ถูกตัด · ป้ายเต็มอ่านได้ทาง screen reader */}
-      <Text style={{ fontFamily: fontFamily.semibold, fontSize: 12, lineHeight: 18, color: c }}>ธาตุ{element}</Text>
+      <Text style={{ fontFamily: fontFamily.semibold, fontSize: 12, lineHeight: 18, color: c }}>{element ? `ธาตุ${element}` : 'ประเมินธาตุ'}</Text>
     </Pressable>
   );
 }

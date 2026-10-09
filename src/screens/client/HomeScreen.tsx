@@ -134,7 +134,7 @@ import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
 import { SafetySheet } from './home/SafetySheet';
 import { CourseSheet } from './CourseScreen';
 import { PainPicker } from './home/PainPicker';
-import { ELEMENT_INFO, SYMPTOM_GROUPS, stretchGroupFor, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
+import { ELEMENT_INFO, SYMPTOM_GROUPS, stretchGroupFor, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/ServiceProgress';
 import { serviceMinutesOf } from '../../data/serviceMinutes';
@@ -422,12 +422,9 @@ export function HomeScreen() {
   // แจ้งเตือน: กระดิ่งบนหัวหน้าแรก (จำนวนที่ยังไม่อ่าน) → หน้ารายการแจ้งเตือน
   const unread = apptNotices.filter((n) => !n.read).length;
   const allTopics = [...cases.map((c) => c.short), ...drafts.map((d) => d.title)];
-  /** คนไข้ใหม่: ธาตุกำเนิดจากวันเกิดที่ลงทะเบียน (ยังไม่ได้ทำแบบประเมินธาตุปัจจุบัน) */
-  const bornElement = account ? birthElement(account.birthDate) : null;
-  /** pill ต่อจากชื่อ: ธาตุกำเนิด (คนไข้ใหม่) หรือธาตุจากแบบประเมิน */
-  // คนใหม่: ธาตุเจ้าเรือน (วันเกิด) จนกว่าจะทำแบบประเมินธาตุ → ใช้ผลประเมิน
+  /** ธาตุจากแบบประเมิน 14 ข้อเท่านั้น (ไม่เดาจากวันเกิด) · คนใหม่ที่ยังไม่ทำ = null → ป้าย "ประเมินธาตุ" */
   const { elementsDone } = useJourney();
-  const tagElement = newPatient && !elementsDone ? bornElement : topElement;
+  const tagElement: ElementKey | null = newPatient && !elementsDone ? null : topElement;
   const elementTag = tagElement ? `ธาตุ${tagElement}` : null;
   /* แท็บบนหน้าแรก = ใบการรักษา (คนไข้เดิม) + ใบร่างจากการประเมิน */
   const caseCount = cases.length;
@@ -2076,7 +2073,6 @@ export function HomeScreen() {
         return aiReply(activeId, label, () => [aiText(`พักไว้ก่อนนะคะ ${HOLD_TEXT[gd.hold!.kind].todo} อีก ${HOLD_DAYS[gd.hold!.kind]} วันจะถามอีกครั้งค่ะ`), ...afterGreet(activeId)]);
       }
     }
-    const born = account ? birthElement(account.birthDate) : null;
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
     if (label === NEW_TOPIC_INTENT) return newChat(true);
     // บริเวณหลัก (ปวดมากที่สุด) → แนวทางใหม่: บริเวณนี้เป็นหลัก ที่เหลือเป็นบริเวณรอง
@@ -2159,8 +2155,8 @@ export function HomeScreen() {
       case 2:
         return reply(
           label,
-          born ? `ธาตุกำเนิดของคุณคือ${ELEMENT_INFO[born].label} ${ELEMENT_INFO[born].advice.replace('\n', ' ')}` : 'ทำแบบประเมินสั้น ๆ เพื่อดูธาตุของคุณได้ค่ะ',
-          { type: 'action', label: 'ดูธาตุปัจจุบัน', to: 'ElementQuiz' },
+          tagElement ? `ธาตุเจ้าเรือนของคุณคือ${ELEMENT_INFO[tagElement].label} ${ELEMENT_INFO[tagElement].advice.replace('\n', ' ')}` : 'ตอบแบบประเมิน 14 ข้อ เพื่อรู้ธาตุเจ้าเรือนของคุณได้ค่ะ',
+          { type: 'action', label: tagElement ? 'ดูธาตุของคุณ' : 'ประเมินธาตุ', to: 'ElementQuiz' },
         );
       default:
         return aiReplyAsync(activeId, label, () => knowledgeReply('นวดไทยช่วยบรรเทาอาการอะไรได้บ้าง', { type: 'action', label: 'ประเมินอาการ', to: 'assess' }));
@@ -2592,7 +2588,7 @@ export function HomeScreen() {
         return [askItem('symptoms', 'ได้เลยค่ะ')];
       }
       if (r.intent === 'places') return [aiText('ใกล้คุณมีคลินิกที่ว่างวันนี้ค่ะ', { type: 'action', label: 'ดูสถานที่ทั้งหมด', to: 'Places' })];
-      if (r.intent === 'element') return [aiText(await askAI(text, aiContext())), aiText('', { type: 'action', label: 'ดูธาตุปัจจุบัน', to: 'ElementQuiz' })];
+      if (r.intent === 'element') return [aiText(await askAI(text, aiContext())), aiText('', { type: 'action', label: tagElement ? 'ดูธาตุของคุณ' : 'ประเมินธาตุ', to: 'ElementQuiz' })];
       return freeAnswer(text);
     });
 
@@ -2804,7 +2800,7 @@ export function HomeScreen() {
   sendRef.current = send;
   // ทดสอบอัตโนมัติ (เว็บ + ?e2e เท่านั้น): สคริปต์ป้อนข้อความเข้าแชทแล้วอ่านผล (ข้อมูลที่จดได้ · ข้อความที่ AI ตอบ)
   if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('e2e'))
-    (window as unknown as { __tw: unknown }).__tw = { nav, setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short), fill: composerFill };
+    (window as unknown as { __tw: unknown }).__tw = { nav, setNewPatient, setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short), fill: composerFill };
   // บริบทให้ถอดเสียง/ตรวจคำที่ได้ยิน: ข้อความล่าสุดของผู้ช่วย + ตัวเลือกของข้อที่ถามอยู่ + ที่ผู้ใช้พูดก่อนหน้า
   ctxRef.current = () => {
     const lastAi = [...thread].reverse().find((m) => m.from === 'ai' && m.text);
@@ -3563,7 +3559,7 @@ export function HomeScreen() {
                   // ยังไม่มีข้อมูล: แผ่นการ์ดต้อนรับ (โครงเดียวกับหน้าแรกปกติ — หุ่น · ThaiWell AI · การ์ด)
                   <WelcomeBento
                     width={bentoW}
-                    element={account ? birthElement(account.birthDate) : null}
+                    element={tagElement}
                     onStart={(i) => startWelcome(i)}
                     onPlace={(id) => nav.navigate('PlaceDetail', { id })}
                     onPlaces={() => nav.navigate('ClientTabs', { screen: 'Places' })}
@@ -3886,11 +3882,9 @@ export function HomeScreen() {
           <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
             {/* ธาตุ */}
             {/* ป้ายธาตุจัด alignSelf ชิดซ้ายในตัว → ห่อให้ชิดขวาตามคอลัมน์ */}
-            {tagElement ? (
-              <View style={{ alignSelf: 'flex-end' }}>
-                <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
-              </View>
-            ) : null}
+            <View style={{ alignSelf: 'flex-end' }}>
+              <ElementPill element={tagElement} label="ธาตุเจ้าเรือน" onPress={() => nav.navigate('ElementQuiz')} />
+            </View>
             {bodyInfo?.extras.filter((x) => x.key.startsWith('c-')).map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
@@ -3954,9 +3948,9 @@ export function HomeScreen() {
             </View>
               {/* pill ธาตุแบบ back-office: ไอคอนสีธาตุ + ป้าย + ชื่อธาตุ · ธาตุกำเนิด (คนไข้ใหม่) = ธาตุเจ้าเรือน · จากแบบประเมิน = ธาตุปัจจุบัน */}
               {/* มีป้ายบนหุ่น → ธาตุย้ายไปอยู่บนหุ่น · หน้าแชท = ไม่แสดงธาตุ → ไม่มีแถวนี้เลย (ไม่เหลือช่องว่าง ส่วนที่อยู่ล่างขยับขึ้น) */}
-              {tagElement && !modelTag && !started ? (
+              {!modelTag && !started ? (
                 <View pointerEvents="box-none" style={{ flexDirection: 'row' }}>
-                  <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
+                  <ElementPill element={tagElement} label="ธาตุเจ้าเรือน" onPress={() => nav.navigate('ElementQuiz')} />
                 </View>
               ) : null}
             </View>
@@ -4996,11 +4990,11 @@ function WelcomeBento({
             </>
           ) : (
             <Text variant="bodyXs" tone="secondary">
-              ทำแบบประเมินสั้น ๆ เพื่อดูธาตุของคุณ
+              ตอบ 14 ข้อ เพื่อรู้ธาตุของคุณ
             </Text>
           )}
           <Text variant="labelSm" color={colors.brand.primary} style={{ marginTop: 'auto' }}>
-            ดูธาตุปัจจุบัน
+            {info ? 'ดูธาตุของคุณ' : 'ประเมินธาตุ'}
           </Text>
         </Tile>
         <View style={{ width: halfW }}>
