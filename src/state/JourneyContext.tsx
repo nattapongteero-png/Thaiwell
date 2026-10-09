@@ -398,10 +398,31 @@ export interface ApptNotice {
   /** บิล/ใบเสร็จที่เกี่ยวข้อง */
   billId?: string;
   text: string;
-  /** เวลาที่คลินิกแจ้ง */
+  /** เวลาที่คลินิกแจ้ง (ข้อความเดิม เช่น "วันนี้ 07:00") */
   at: string;
+  /** เวลาที่แจ้งจริง (ms) — ใช้จัดกลุ่ม วันนี้/เมื่อวาน/ก่อนหน้า และแสดงเวลา (ข้อความ at ล้าสมัยเมื่อข้ามวัน) */
+  ts?: number;
   read?: boolean;
 }
+const TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+/** ข้อความเวลาแจ้งเตือน ("วันนี้ 07:00" · "เมื่อวาน 17:40" · "16 ส.ค. 15:10") → ms (นับจากตอนที่อ่านข้อความนั้น) */
+export function noticeTs(at: string, now = new Date()): number {
+  const hm = /(\d{1,2}):(\d{2})/.exec(at);
+  const d = new Date(now);
+  d.setHours(hm ? Number(hm[1]) : 9, hm ? Number(hm[2]) : 0, 0, 0);
+  if (/^เมื่อวาน/.test(at)) d.setDate(d.getDate() - 1);
+  else if (!/^วันนี้/.test(at)) {
+    const m = /(\d{1,2})\s*([ก-๙.]+)/.exec(at);
+    const mi = m ? TH_MON.indexOf(m[2]) : -1;
+    if (m && mi >= 0) {
+      d.setMonth(mi, Number(m[1]));
+      // วันที่ยังไม่ถึงในปีนี้ = ปีก่อน
+      if (d.getTime() > now.getTime()) d.setFullYear(d.getFullYear() - 1);
+    }
+  }
+  return d.getTime();
+}
+const stampNotices = (all: ApptNotice[]) => (all.some((n) => n.ts === undefined) ? all.map((n) => (n.ts === undefined ? { ...n, ts: noticeTs(n.at) } : n)) : all);
 /** ตัวอย่าง: คลินิกเลื่อนนัดรักษาภูมิแพ้ (ข้อมูลจริงมาจากหลังบ้าน ThaiWellAI เมื่อเจ้าหน้าที่ "ยืนยันนัดใหม่" / "ยกเลิกนัด") */
 const SAMPLE_NOTICES: ApptNotice[] = [
   { id: 'n-lung-bill', caseId: 'case-lung', kind: 'bill', billId: 'b-lung-3', text: 'บิลรักษาภูมิแพ้ ครั้งที่ 3 รอชำระ 400 บาท', at: '16 ส.ค. 15:10' },
@@ -579,7 +600,9 @@ export function JourneyProvider({ children }: { children: React.ReactNode }) {
   const casesRef = React.useRef<TreatmentCase[]>([]);
   const issueQueue = useCallback(() => `A${++queueNo.current}`, []);
   const [caseToday, setCaseTodayState] = useState<Record<string, CaseToday>>(() => saved('caseToday', {}));
-  const [apptNotices, setApptNotices] = useState<ApptNotice[]>(() => saved('apptNotices', SAMPLE_NOTICES));
+  const [apptNotices, setNoticesRaw] = useState<ApptNotice[]>(() => stampNotices(saved('apptNotices', SAMPLE_NOTICES)));
+  // แจ้งเตือนใหม่ทุกจุด → ประทับเวลาจริงตอนเพิ่ม
+  const setApptNotices = useCallback((v: ApptNotice[] | ((all: ApptNotice[]) => ApptNotice[])) => setNoticesRaw((all) => stampNotices(typeof v === 'function' ? v(all) : v)), []);
   const dismissNotice = useCallback((id: string) => setApptNotices((all) => all.map((n) => (n.id === id ? { ...n, read: true } : n))), []);
   const markAllNoticesRead = useCallback(() => setApptNotices((all) => all.map((n) => ({ ...n, read: true }))), []);
   const [bills, setBills] = useState<Bill[]>(() => saved('bills', SAMPLE_BILLS));

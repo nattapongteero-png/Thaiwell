@@ -31,6 +31,8 @@ export type RootStackParamList = {
   RedFlag: { reason?: string } | undefined;
   /** การแจ้งเตือน (คลินิกเลื่อน/ยกเลิก/ยืนยันนัด) */
   Notifications: undefined;
+  /** รายละเอียดแจ้งเตือน */
+  NotificationDetail: { id: string };
   /** บิล/ใบเสร็จจากคลินิก */
   Bills: undefined;
   Course: undefined;

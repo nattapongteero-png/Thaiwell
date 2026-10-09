@@ -9,7 +9,7 @@ import type { ClientTabParamList, ProviderTabParamList, RootStackParamList } fro
 import { HomeScreen } from '../screens/client/HomeScreen';
 import { ConsentScreen } from '../screens/client/Onboarding';
 import { AuthScreen, IdentityScreen } from '../screens/client/Auth';
-import { NotificationsScreen } from '../screens/client/NotificationsScreen';
+import { NotificationDetailScreen, NotificationsScreen } from '../screens/client/NotificationsScreen';
 import { BillScreen, BillsScreen } from '../screens/client/BillScreen';
 import { CourseScreen } from '../screens/client/CourseScreen';
 import { PlacesScreen } from '../screens/client/PlacesScreen';
@@ -100,6 +100,7 @@ export function RootNavigator() {
         <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen as never} />
         <Stack.Screen name="TreatmentHistory" component={TreatmentHistoryScreen as never} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen as never} />
         <Stack.Screen name="Bills" component={BillsScreen} />
         <Stack.Screen name="Course" component={CourseScreen} />
         <Stack.Screen name="Bill" component={BillScreen as never} />
