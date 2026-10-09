@@ -6696,6 +6696,8 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
  * ป้ายมีหัวกำกับ (อาการร่วม) — ปกติหุบเหลือหัว (ไม่บังหุ่น) · แตะ = กางรายละเอียดออกนุ่ม ๆ แล้วหุบเองเมื่ออ่านทัน
  * เวลาที่กางค้าง = เวลาสังเกต 1.5 วิ + เวลาอ่าน (~15 ตัวอักษร/วิ ≈ 200 คำ/นาที) · อย่างน้อย 3 วิ ไม่เกิน 10 วิ (ช่วง 4–10 วิ ของ snackbar ใน Material)
  */
+/** ความกว้างสูงสุดของรายละเอียด (เกินนี้ขึ้นบรรทัดใหม่) */
+const TAG_MAX = 150;
 const readMs = (text: string) => Math.min(10000, Math.max(3000, 1500 + (text.replace(/\s/g, '').length / 15) * 1000));
 function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: string; warn?: boolean; onPress?: () => void }) {
   const { colors } = useTheme();
@@ -6719,7 +6721,7 @@ function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: st
       accessibilityState={{ expanded: open }}
       // กาง/หุบอย่างเดียว ไม่หันหุ่น
       onPress={() => toggle(!open)}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', height: 30, paddingHorizontal: 5, borderRadius: radius.full, backgroundColor: colors.surface.default, opacity: pressed ? 0.8 : 1, ...elevation[1] })}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 30, paddingVertical: 5, paddingHorizontal: 5, borderRadius: 15, backgroundColor: colors.surface.default, opacity: pressed ? 0.8 : 1, ...elevation[1] })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 20, paddingHorizontal: 7, borderRadius: radius.full, backgroundColor: warn ? colors.status.warning.fg : colors.text.primary }}>
         {/* หุบ = + · กาง = − (หมุนพร้อมจางสลับกัน) */}
@@ -6736,14 +6738,18 @@ function TagPill({ tag, label, warn }: { tag: string; icon?: IconName; label: st
         </Text>
       </View>
       {/* รายละเอียด: กางจากกว้าง 0 → กว้างจริง (วัดจากข้อความที่ซ่อนไว้) พร้อมจางเข้า */}
-      <Animated.View style={{ overflow: 'hidden', maxWidth: t.interpolate({ inputRange: [0, 1], outputRange: [0, w ? Math.min(w, 180) + space[1] + 4 : 0] }), opacity: t }}>
-        <Text variant="labelSm" numberOfLines={1} color={warn ? colors.status.warning.fg : colors.text.primary} style={{ marginLeft: space[1], marginRight: 4, maxWidth: 180 }}>
+      {/* ยาวเกิน TAG_MAX → ขึ้นบรรทัดใหม่ (ไม่ตัด …) */}
+      <Animated.View style={{ overflow: 'hidden', maxWidth: t.interpolate({ inputRange: [0, 1], outputRange: [0, w ? Math.min(w, TAG_MAX) + space[1] + 4 : 0] }), opacity: t }}>
+        <Text variant="labelSm" color={warn ? colors.status.warning.fg : colors.text.primary} style={{ marginLeft: space[1], marginRight: 4, width: w ? Math.min(w, TAG_MAX) + 1 : undefined }}>
           {label}
         </Text>
       </Animated.View>
-      <Text variant="labelSm" numberOfLines={1} onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ position: 'absolute', opacity: 0, left: -9999 }}>
-        {label}
-      </Text>
+      {/* วัดความกว้างจริงของข้อความ (กล่องกว้างพอ ไม่ถูกบีบตามป้ายที่ยังหุบ) */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 1000, opacity: 0, alignItems: 'flex-start' }}>
+        <Text variant="labelSm" numberOfLines={1} onLayout={(e) => setW(Math.ceil(e.nativeEvent.layout.width))}>
+          {label}
+        </Text>
+      </View>
     </Pressable>
   );
 }
