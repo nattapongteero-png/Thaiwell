@@ -46,6 +46,7 @@ export function BottomSheet({
   /** เนื้อหาเลื่อนอยู่บนสุด → ปัดลงที่เนื้อหาลาก sheet ได้ · เลื่อนลงไปแล้ว = ปัดลงคือเลื่อนเนื้อหากลับขึ้น */
   const [atTop, setAtTop] = React.useState(true);
   const atTopRef = React.useRef(true);
+  const lastY = React.useRef(0);
   const scrollRef = React.useRef(null);
   const headPan = React.useRef(null);
   const bodyPan = React.useRef(null);
@@ -73,6 +74,11 @@ export function BottomSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  const markTop = (top: boolean) => {
+    if (top === atTopRef.current) return;
+    atTopRef.current = top;
+    setAtTop(top);
+  };
   const sheetH = Math.round(winH * heightRatio);
   const onDrag = React.useMemo(() => Animated.event([{ nativeEvent: { translationY: drag } }], { useNativeDriver: true }), [drag]);
   // ปล่อยนิ้ว: เกิน 1/4 ของความสูง (อย่างน้อย 100) หรือปัดเร็ว = ปิด · ไม่ถึง = เด้งกลับ
@@ -165,12 +171,19 @@ export function BottomSheet({
             bounces={false}
             overScrollMode="never"
             scrollEventThrottle={16}
+            // เลื่อนลงจากบนสุด → ปิดการลาก sheet ทันที · กลับมาถึงบนสุด → เปิดเมื่อรายการหยุดนิ่งแล้วเท่านั้น
+            // (ปัดเลื่อนกลับขึ้นรัว ๆ แล้วแรงเฉื่อยพาถึงบนสุด → ปัดครั้งถัดไประหว่างยังไหลอยู่ ไม่กลายเป็นลากปิด)
             onScroll={(e) => {
-              const top = e.nativeEvent.contentOffset.y <= 0;
-              if (top !== atTopRef.current) {
-                atTopRef.current = top;
-                setAtTop(top);
-              }
+              lastY.current = e.nativeEvent.contentOffset.y;
+              if (lastY.current > 0) markTop(false);
+            }}
+            onScrollEndDrag={(e) => {
+              if (e.nativeEvent.contentOffset.y > 0) return;
+              // ปล่อยนิ้วที่บนสุด: ไม่มีแรงเฉื่อยต่อ (ชนขอบ) → รอสั้น ๆ ให้หยุดนิ่งก่อน
+              setTimeout(() => lastY.current <= 0 && markTop(true), 250);
+            }}
+            onMomentumScrollEnd={(e) => {
+              if (e.nativeEvent.contentOffset.y <= 0) markTop(true);
             }}
             contentContainerStyle={{ paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[3] }}>
             {children}
