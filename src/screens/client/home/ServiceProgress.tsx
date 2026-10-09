@@ -61,9 +61,11 @@ export function ServiceProgress({ startedAt, minutes }: { startedAt: string; min
         </View>
         {w ? (
           <View style={{ position: 'absolute', left: headX, width: HEAD, height: HEAD }}>
-            {running ? <HeadGlow color={colors.brand.primary} /> : null}
             <View style={{ width: HEAD, height: HEAD, borderRadius: HEAD / 2, borderWidth: 2, borderColor: colors.surface.default, backgroundColor: colors.surface.default, ...elevation[1] }}>
-              <Image source={HEAD_IMG} style={{ width: HEAD - 4, height: HEAD - 4, borderRadius: (HEAD - 4) / 2 }} />
+              <View style={{ width: HEAD - 4, height: HEAD - 4, borderRadius: (HEAD - 4) / 2, overflow: 'hidden' }}>
+                <Image source={HEAD_IMG} style={{ width: HEAD - 4, height: HEAD - 4 }} />
+                {running ? <HeadShine /> : null}
+              </View>
             </View>
           </View>
         ) : null}
@@ -124,16 +126,17 @@ function ProgressFill({ width, color, running }: { width: number; color: string;
   );
 }
 
-/** วงแสงรอบหัววิ่ง — ขยายแล้วจางหาย จังหวะเดียวกับแสงวิ่ง (แสงวิ่งถึงหัว = วงแสงเต้น) */
-function HeadGlow({ color }: { color: string }) {
+/** แสงวิ้งบนวงกลมหัววิ่ง — แถบแสงเฉียงปาดผ่านภาพ ตอนแสงวิ่งบนเส้นมาถึงหัว (จังหวะเดียวกัน) */
+function HeadShine() {
   const t = React.useRef(new Animated.Value(0)).current;
+  const D = HEAD - 4;
   React.useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(GLINT_MS * 0.8),
-        Animated.timing(t, { toValue: 1, duration: 700, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(t, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(t, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(GLINT_REST + GLINT_MS * 0.2 - 700),
+        Animated.delay(GLINT_REST + GLINT_MS * 0.2 - 600),
       ]),
     );
     loop.start();
@@ -144,13 +147,22 @@ function HeadGlow({ color }: { color: string }) {
       pointerEvents="none"
       style={{
         position: 'absolute',
-        width: HEAD,
-        height: HEAD,
-        borderRadius: HEAD / 2,
-        backgroundColor: color,
-        opacity: t.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
-        transform: [{ scale: t.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] }) }],
+        top: -D * 0.25,
+        width: D * 0.55,
+        height: D * 1.5,
+        transform: [{ translateX: t.interpolate({ inputRange: [0, 1], outputRange: [-D * 0.7, D * 1.1] }) }, { rotate: '20deg' }],
       }}
-    />
+    >
+      <Svg width={D * 0.55} height={D * 1.5}>
+        <Defs>
+          <LinearGradient id="shine" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0} />
+            <Stop offset="0.5" stopColor="#FFFFFF" stopOpacity={0.85} />
+            <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        <Rect width={D * 0.55} height={D * 1.5} fill="url(#shine)" />
+      </Svg>
+    </Animated.View>
   );
 }
