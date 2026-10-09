@@ -270,3 +270,16 @@ export function birthElement(birthDate: string): ElementKey | null {
 export function dominantElement(pct: Record<ElementKey, number>): ElementKey {
   return (Object.keys(pct) as ElementKey[]).reduce((a, b) => (pct[b] > pct[a] ? b : a));
 }
+
+/** กลุ่มอาการ (ยืดเหยียด 7 กลุ่มอาการ) ของท่ายืดที่แนะนำ ตามอาการที่ประเมิน */
+// ไม่ตรงกลุ่มไหน (เช่น เท้า ข้อเท้า ข้อมือ ศอก ท้อง) → ไม่มีท่าเฉพาะในเอกสาร → ไม่แนะนำท่าของบริเวณอื่น (ให้ดูหน้ารวมท่า)
+export const stretchGroupFor = (symptoms: string[]): string | undefined => {
+  const has = (re: RegExp) => symptoms.some((x) => re.test(x));
+  return symptoms.some((x) => /นิ้ว|มือ/.test(x) && !/ข้อมือ/.test(x)) ? 'trigger_finger'
+    : has(/ไหล่ติด/) ? 'frozen_shoulder'
+    : has(/คอ|บ่า|ไหล่|สะบัก|ศีรษะ|ขมับ|ท้ายทอย/) ? 'office'
+    : has(/สะโพก|ก้น/) ? 'piriformis'
+    : has(/หลัง|เอว/) ? 'herniated_disc'
+    : has(/เข่า|ต้นขา|น่อง|^ปวดขา/) ? 'knee'
+    : undefined;
+};

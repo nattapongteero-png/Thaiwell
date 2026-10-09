@@ -134,7 +134,7 @@ import { StretchSheet, TreatmentSheet } from './home/TreatmentSheet';
 import { SafetySheet } from './home/SafetySheet';
 import { CourseSheet } from './CourseScreen';
 import { PainPicker } from './home/PainPicker';
-import { ELEMENT_INFO, SYMPTOM_GROUPS, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
+import { ELEMENT_INFO, SYMPTOM_GROUPS, stretchGroupFor, birthElement, dominantElement, type ElementKey } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { ServiceProgress, elapsedOf, serviceMinutes, useNow } from './home/ServiceProgress';
 import { serviceMinutesOf } from '../../data/serviceMinutes';
@@ -1875,7 +1875,7 @@ export function HomeScreen() {
           : to === 'RedFlag'
           ? openRedFlag()
           : to === 'SelfCare'
-          ? setSheetStretch(chatCase()?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)))
+          ? openStretch(chatCase()?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)))
           : nav.navigate('ElementQuiz');
 
   /* ---------- AI (Gemma) ในแชท ----------
@@ -2655,6 +2655,8 @@ export function HomeScreen() {
   const [sheetCaseId, setSheetCaseId] = React.useState<string | null>(null);
   const [sheetVisit, setSheetVisit] = React.useState<number | null>(null);
   const [sheetStretch, setSheetStretch] = React.useState<string | null>(null);
+  /** ท่าของเรื่องนี้ → sheet · ไม่มีท่าที่ตรงกับบริเวณ → หน้ารวมท่า */
+  const openStretch = (groupId?: string) => (groupId ? setSheetStretch(groupId) : nav.navigate('SelfCare'));
   const dockH = useDockHeight();
   // คุยกับ AI (ไม่ใช่แชทหน้าแรกครั้งแรก) / ให้คะแนนบนหุ่น → ซ่อน tab menu ให้โฟกัส · ออกแล้วกลับมา
   useHideTabs(started || focus);
@@ -2725,7 +2727,7 @@ export function HomeScreen() {
   })();
   const pickShortcut = (o: string) => {
     const cc = chatCase();
-    if (o === SC.stretch) return setSheetStretch(cc?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)));
+    if (o === SC.stretch) return openStretch(cc?.selfCare.groupId ?? stretchGroupFor(Object.keys(assess.sel)));
     if (o === SC.plan) return requestPlan();
     if (o === SC.book) return startBooking();
     if (o === SC.edit) return editAssessment();
@@ -4611,11 +4613,6 @@ function BentoSkeleton({ width }: { width: number }) {
   );
 }
 
-/** กลุ่มอาการ (ยืดเหยียด 7 กลุ่มอาการ) ของท่ายืดที่แนะนำ ตามอาการที่ประเมิน */
-const stretchGroupFor = (symptoms: string[]) => {
-  const has = (re: RegExp) => symptoms.some((x) => re.test(x));
-  return has(/นิ้ว/) ? 'trigger_finger' : has(/ไหล่ติด/) ? 'frozen_shoulder' : has(/คอ|บ่า|ไหล่|สะบัก/) ? 'office' : has(/สะโพก|ก้น/) ? 'piriformis' : has(/หลัง|เอว/) ? 'herniated_disc' : has(/เข่า|ขา/) ? 'knee' : 'office';
-};
 
 /**
  * ดูแลตัวเอง — ภาพท่ายืดเคลื่อนไหว (GIF) เต็มความกว้างช่อง + ชื่อท่า + ปุ่มเล่น
@@ -4645,17 +4642,19 @@ function SelfCareTile({ groupId, title, done, onPress }: { groupId?: string; tit
   );
   return (
     <Tile style={{ padding: 0 }} onPress={onPress} accessibilityLabel={`ดูแลตัวเอง ${name}${motion ? ` ช่วย${motion.primary.label}` : ''}`}>
-      <View style={{ height: 120, overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
-        {/* เห็นหุ่นเต็มตัวทุกจังหวะ (ชูแขนก็ไม่หลุดขอบ) · ขนาดเท่ากับหน้ารวมท่า */}
-        {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={84} style={{ width: '100%', height: '100%' }} /> : null}
-        {motion ? (
-          <View style={{ position: 'absolute', left: space[2], top: space[2], flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: 'rgba(255,255,255,0.9)' }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
-            <Text style={{ fontFamily: fontFamily.semibold, fontSize: 11, lineHeight: 17 }}>{motion.primary.label}</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2], padding: TILE_PAD, paddingTop: space[3] }}>
+      {group ? (
+        <View style={{ height: 120, overflow: 'hidden', backgroundColor: colors.surface.sunken }}>
+          {/* เห็นหุ่นเต็มตัวทุกจังหวะ (ชูแขนก็ไม่หลุดขอบ) · ขนาดเท่ากับหน้ารวมท่า */}
+          {gif ? <LoadingImage source={gif} resizeMode="contain" silhouette={84} style={{ width: '100%', height: '100%' }} /> : null}
+          {motion ? (
+            <View style={{ position: 'absolute', left: space[2], top: space[2], flexDirection: 'row', alignItems: 'center', gap: 4, height: 22, paddingHorizontal: space[2], borderRadius: radius.full, backgroundColor: 'rgba(255,255,255,0.9)' }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D93A2B' }} />
+              <Text style={{ fontFamily: fontFamily.semibold, fontSize: 11, lineHeight: 17 }}>{motion.primary.label}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[2], padding: TILE_PAD, paddingTop: group ? space[3] : TILE_PAD }}>
         {label}
         {play}
       </View>
@@ -4788,7 +4787,7 @@ function DraftBento({
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           <View style={{ width: halfW, gap: BENTO_GAP }}>
             {listCard('ไม่ต้องการ', 'x-circle', colors.status.danger.fg, avoid)}
@@ -4932,7 +4931,7 @@ function DraftBento({
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: BENTO_GAP }}>
           <View style={{ width: halfW }}>
-            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ยืดเหยียด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
+            <SelfCareTile groupId={stretchGroupFor(d.symptoms)} title="ดูท่ายืดทั้งหมด" onPress={() => onSelfCare(stretchGroupFor(d.symptoms))} />
           </View>
           {/* คอลัมน์ขวา: สิ่งที่ไม่ต้องการ (จากที่บอก AI) · ก่อนมานวด (+ หัตถการเสริมที่งด) — แยกการ์ด */}
           <View style={{ width: halfW, gap: BENTO_GAP }}>

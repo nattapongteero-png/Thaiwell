@@ -9,7 +9,7 @@ import { serviceMinutesOf } from '../data/serviceMinutes';
 import { DEMO_LINKS, DEMO_PATIENT_CLOUD_ID, TREATMENT_CASES, type TreatmentCase } from '../data/homeFeed';
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { RegionId } from '../design-system/components/BodyMap';
-import type { ElementKey } from '../data/thaiMassageKnowledge';
+import { SYMPTOM_GROUPS, stretchGroupFor, type ElementKey } from '../data/thaiMassageKnowledge';
 import { evaluateSafety, type HealthProfile, type SafetyResult } from '../services/safetyEngine';
 import { submitFollowUp, type FollowUpPayload, type FollowUpRecord } from '../services/followUpService';
 import { noticeOf, notify, setupNotifications } from '../services/notify';
@@ -190,7 +190,12 @@ function draftToCase(d: DraftCase, painAfter: number, diagnosis?: string): Treat
     prep: d.caution?.includes('ความดัน') || d.caution?.includes('อบ') ? ['วัดความดันก่อนนวด', 'งดอาหารหนัก 30 นาที'] : ['งดอาหารหนัก 30 นาที'],
     course: { done: 1, total: 6 },
     therapist: d.booking?.therapist ?? 'พท.ป. วิภาวดี ศรีสุข',
-    selfCare: { title: d.symptoms.some((x) => /หลัง/.test(x)) ? 'ยืดหลัง' : 'ยืดคอ-บ่า', minutes: 5, doneToday: false },
+    selfCare: (() => {
+      // ท่าตามบริเวณที่ปวด (7 กลุ่มอาการ) · ไม่มีท่าที่ตรง → หน้ารวมท่า
+      const groupId = stretchGroupFor(d.symptoms);
+      const g = SYMPTOM_GROUPS.find((x) => x.id === groupId);
+      return { title: g ? g.stretch.name.replace(' 7 ท่า', '') : 'ดูท่ายืดทั้งหมด', minutes: 5, doneToday: false, groupId };
+    })(),
     chatId: d.chatId,
   };
 }
