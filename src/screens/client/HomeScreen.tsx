@@ -6209,8 +6209,9 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
       </Pressable>
     );
   };
-  const head = (t: string) => (
-    <Text variant="labelSm" tone="tertiary" style={{ paddingHorizontal: space[3], paddingTop: space[2] }}>
+  // หัวกลุ่ม: ห่างจากแถวแรก (กรอบแชทที่เลือกไม่ชิดหัว) · กลุ่มถัดไปเว้นจากกลุ่มก่อนชัดเจน
+  const head = (t: string, first: boolean) => (
+    <Text variant="labelSm" tone="tertiary" style={{ paddingHorizontal: space[3], marginTop: first ? 0 : space[4], marginBottom: space[2] }}>
       {t}
     </Text>
   );
@@ -6233,11 +6234,11 @@ function ChatHistorySheet({ open, rows, activeId, onClose, onPick, onNew }: { op
         </Pressable>
       }
     >
-      <View style={{ marginHorizontal: -space[2], marginTop: -space[3] }}>
-        {tabs.length ? head('เรื่องของคุณ') : null}
-        {tabs.map(row)}
-        {others.length ? head('แชทอื่น') : null}
-        {others.map(row)}
+      <View style={{ marginHorizontal: -space[2], marginTop: -space[2] }}>
+        {tabs.length ? head('เรื่องของคุณ', true) : null}
+        <View style={{ gap: space[1] }}>{tabs.map(row)}</View>
+        {others.length ? head('แชทอื่น', !tabs.length) : null}
+        <View style={{ gap: space[1] }}>{others.map(row)}</View>
         {!rows.length ? (
           <Text variant="bodySm" tone="secondary" style={{ padding: space[3] }}>
             ยังไม่มีแชท กด แชทใหม่ เพื่อเริ่มเล่าอาการ
