@@ -147,6 +147,8 @@ export interface DraftCase {
   guide?: { condition?: string; methods: string[]; points?: string[]; caution?: string; /** หลายบริเวณ (แรก = บริเวณหลัก) */ areas?: { symptom: string; region?: string; symptoms?: string[]; condition: string; points: string[] }[] };
   /** บริเวณหลัก (ปวดมากที่สุด) เมื่อปวดหลายบริเวณ */
   primary?: string;
+  /** ปวดหลายบริเวณแต่ยังไม่ได้เลือกบริเวณหลัก (ออกจากแชทก่อนตอบ) — ไม่เดาให้ */
+  primaryPending?: boolean;
   /** ผลประเมินรอบก่อน ๆ (ประเมินซ้ำ = รอบใหม่ ไม่ลบของเดิม) — at = วันเวลาที่ประเมินรอบนั้นถูกแทน */
   history?: { at: string; pain: number; symptoms: string[]; caution?: string }[];
   /** วันที่ประเมิน (ISO) · วันที่ยืนยันอาการก่อนนัด (ISO) — ประเมินไว้นานก่อนนัด → ยืนยันอีกครั้งก่อนนวด */

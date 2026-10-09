@@ -175,6 +175,8 @@ const GREET_BETTER = 'ดีขึ้นแล้ว';
 const GREET_STILL = 'ยังปวดอยู่';
 const GREET_PRE = 'เล่าอาการก่อนนัด';
 const GREET_KEY = 'thaiwell.greet.v1';
+/** ขอเลือก/เปลี่ยนบริเวณที่ปวดมากที่สุด (บริเวณหลัก) */
+const PRIMARY_ASK = /(ปวด|เจ็บ)\s*(ที่)?\s*(สุด|มากสุด|มากที่สุด|หนักสุด)|บริเวณหลัก|จุดหลัก|ปวดมากกว่า/;
 /** แท็บนัดที่ยังไม่ประเมิน: ประเมินสำหรับนัดนี้ (ผูกกับนัด) — อีกทางคือประเมินเรื่องใหม่ (แท็บใหม่ ไม่ผูก) */
 const LOOSE_ASSESS_INTENT = 'ประเมินอาการสำหรับนัดนี้';
 const KEEP_NEW = 'แยกเป็นเรื่องใหม่';
@@ -1306,6 +1308,12 @@ export function HomeScreen() {
           const g = results.find((r) => r.card?.type === 'guideline')?.card;
           return g?.type === 'guideline' ? { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution, areas: g.areas } : old?.guide;
         })(),
+        // ปวดหลายบริเวณ → รอผู้ใช้เลือกบริเวณหลักเอง (ออกจากแชทก่อนตอบ = ยังไม่เลือก ไม่เดาให้)
+        primary: undefined,
+        primaryPending: (() => {
+          const g = results.find((r) => r.card?.type === 'guideline')?.card;
+          return g?.type === 'guideline' && (g.areas?.length ?? 0) > 1 ? true : undefined;
+        })(),
       });
       setActiveDraftId(id);
       // จองไว้แล้วและประเมินใหม่ก่อนวันนัด → แจ้งคลินิกว่าผลเปลี่ยน (ผู้ให้บริการใช้ผลล่าสุดก่อนเช็กอิน)
@@ -1541,6 +1549,8 @@ export function HomeScreen() {
       const first = !lock ? [DRAFT_REASSESS_INTENT] : lock === 'checked_in' ? [ADD_NOTE_INTENT] : [];
       const item = menuItem(lock ? ASSESS_LOCK_TEXT[lock] : `เรื่อง${selDraft.title} อยากให้ช่วยเรื่องไหนคะ?`, [...first, NEW_TOPIC_INTENT]);
       const id = selDraft.chatId && sessions.some((c) => c.id === selDraft.chatId) ? selDraft.chatId : null;
+      // ยังไม่ได้เลือกบริเวณหลัก → เปิดแชทที่คำถามนั้นค้างอยู่ (ไม่ต่อเมนูทับ)
+      if (id && selDraft.primaryPending) return openChat(id);
       if (id) {
         // แชทเดิม (ประวัติการประเมิน) + ตัวเลือกต่อท้าย · เปิดซ้ำ = ไม่เพิ่มตัวเลือกซ้อน
         setThread((t) => (t[t.length - 1]?.card?.type === 'intents' ? [...t.slice(0, -1), item] : [...t, item]), id);
@@ -1885,6 +1895,27 @@ export function HomeScreen() {
   const reply = (userText: string, text: string, action?: Extract<ThreadCard, { type: 'action' }>) =>
     aiReply(activeId, userText, () => [{ id: `a${Date.now()}`, day: 'today', from: 'ai', source: 'AI Interview', time: nowTimeText(), text, card: action }]);
   /** คำถามแนะนำ → แต่ละข้อพาไปคนละเส้น */
+  /** ข้อมูลถามบริเวณหลักจากใบร่าง (ref หายเมื่อปิดแอป / ขอเปลี่ยนภายหลัง) */
+  const primaryOfDraft = (d?: DraftCase) =>
+    d && (d.guide?.areas?.length ?? 0) > 1 ? { draftId: d.id, symptoms: d.symptoms, radiate: d.radiate, held: undefined, regions: d.guide!.areas!.map((a) => ({ label: a.region ?? a.symptom, symptoms: a.symptoms ?? [a.symptom] })) } : undefined;
+  /** เลือก/เปลี่ยนบริเวณหลัก → แนวทางใหม่: บริเวณนี้เป็นหลัก ที่เหลือเป็นบริเวณรอง */
+  const applyPrimary = (pf: NonNullable<ReturnType<typeof primaryOfDraft>> | (typeof primaryFor.current)[string], label: string, userText: string) => {
+    delete primaryFor.current[activeId];
+    const d = drafts.find((x) => x.id === pf.draftId);
+    // อาการของบริเวณที่เลือกขึ้นก่อน = บริเวณหลัก
+    const region = pf.regions?.find((r) => r.label === label);
+    const lead = region?.symptoms ?? [label];
+    const g = guideFor([...lead, ...pf.symptoms.filter((x) => !lead.includes(x))], pf.radiate);
+    if (d) upsertDraft({ ...d, primary: lead[0], primaryPending: undefined, guide: { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution ?? d.guide?.caution, areas: g.areas } });
+    // แนวทางที่จัดตามบริเวณหลัก แทนแนวทางเดิมที่พักไว้ · สิ่งที่ตามมา (นัด/จอง) แสดงต่อจากนั้น
+    return aiReply(activeId, userText, () =>
+      (pf.held ?? [{ ...aiText('แนวทางการรักษาที่แนะนำค่ะ'), source: 'Knowledge Hub' as const }]).map((m, i) =>
+        m.card?.type === 'guideline' || (i === 0 && !pf.held)
+          ? { ...m, id: `${m.id}-p`, text: g.areas.length >= 3 ? `ใช้${label}เป็นบริเวณหลักค่ะ ปวด ${g.areas.length} บริเวณ ครั้งแรกแพทย์จะเน้น${label}ก่อน บริเวณอื่นวางแผนต่อในครั้งถัดไป` : `ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`, card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: m.card?.type === 'guideline' ? m.card.caution : g.caution, ref: g.ref, areas: g.areas, booked: m.card?.type === 'guideline' ? m.card.booked : !!d?.booking } }
+          : { ...m, id: `${m.id}-p` },
+      ),
+    );
+  };
   const pickIntent = (label: string) => {
     // คำทักตอนเปิดแชทใหม่
     if (label === GREET_LATER) return aiReply(activeId, label, () => [aiText('ได้เลยค่ะ ไว้ค่อยบอกทีหลังนะคะ'), ...afterGreet(activeId)]);
@@ -1894,24 +1925,9 @@ export function HomeScreen() {
     // ปุ่ม "ถาม AI": เริ่มเรื่องใหม่ (แชทใหม่ ถามว่าเรื่องเดิมหรืออาการใหม่) · ใบร่าง → ทบทวนผลประเมินเดิม
     if (label === NEW_TOPIC_INTENT) return newChat(true);
     // บริเวณหลัก (ปวดมากที่สุด) → แนวทางใหม่: บริเวณนี้เป็นหลัก ที่เหลือเป็นบริเวณรอง
-    const pf = primaryFor.current[activeId];
+    const pf = primaryFor.current[activeId] ?? primaryOfDraft(drafts.find((x) => x.chatId === activeId && x.primaryPending));
     const region = pf?.regions?.find((r) => r.label === label);
-    if (pf && (region || pf.symptoms.includes(label))) {
-      delete primaryFor.current[activeId];
-      const d = drafts.find((x) => x.id === pf.draftId);
-      // อาการของบริเวณที่เลือกขึ้นก่อน = บริเวณหลัก
-      const lead = region?.symptoms ?? [label];
-      const g = guideFor([...lead, ...pf.symptoms.filter((x) => !lead.includes(x))], pf.radiate);
-      if (d) upsertDraft({ ...d, primary: lead[0], guide: { condition: g.condition, methods: g.methods, points: g.points, caution: g.caution ?? d.guide?.caution, areas: g.areas } });
-      // แนวทางที่จัดตามบริเวณหลัก แทนแนวทางเดิมที่พักไว้ · สิ่งที่ตามมา (นัด/จอง) แสดงต่อจากนั้น
-      return aiReply(activeId, label, () =>
-        (pf.held ?? [{ ...aiText('แนวทางการรักษาที่แนะนำค่ะ'), source: 'Knowledge Hub' as const }]).map((m, i) =>
-          m.card?.type === 'guideline' || (i === 0 && !pf.held)
-            ? { ...m, id: `${m.id}-p`, text: g.areas.length >= 3 ? `ใช้${label}เป็นบริเวณหลักค่ะ ปวด ${g.areas.length} บริเวณ ครั้งแรกแพทย์จะเน้น${label}ก่อน บริเวณอื่นวางแผนต่อในครั้งถัดไป` : `ใช้${label}เป็นบริเวณหลักค่ะ บริเวณอื่นผู้ให้บริการดูแลร่วมกันในครั้งเดียว`, card: { type: 'guideline', condition: g.condition, methods: g.methods, points: g.points, pins: g.pins, caution: m.card?.type === 'guideline' ? m.card.caution : g.caution, ref: g.ref, areas: g.areas, booked: m.card?.type === 'guideline' ? m.card.booked : !!d?.booking } }
-            : { ...m, id: `${m.id}-p` },
-        ),
-      );
-    }
+    if (pf && (region || pf.symptoms.includes(label))) return applyPrimary(pf, label, label);
     if (label === LOOSE_ASSESS_INTENT) {
       const lid = Object.entries(caseChats).find(([k, v]) => k.startsWith('loose:') && v === activeId)?.[0].slice(6) ?? selLoose?.id;
       return lid ? assessLoose(lid) : newChat();
@@ -2512,7 +2528,27 @@ export function HomeScreen() {
    * ข้อความที่พิมพ์เอง → คัดแยกก่อน (ตอบ / ถามแทรก / แก้คำตอบ / หยุด / เปลี่ยนเรื่อง / ร้องเรียน / ไม่ชัด) แล้วค่อยทำต่อ
    * คำตอบสั้น ๆ ของข้อที่ค้างอยู่ไม่ต้องคัดแยก (เร็วเหมือนเดิม)
    */
+  /** พิมพ์เรื่องอื่นตอบคำทัก (ไม่ใช่คะแนน/ตัวเลือก) → ข้ามคำทักแล้วส่งข้อความนี้ใหม่หลังแชทกลับสู่สิ่งที่ตั้งใจไว้ */
+  const resendAfter = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const t = resendAfter.current;
+    if (!t) return;
+    resendAfter.current = null;
+    send(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread.length, assess.step, activeId]);
   const send = (text: string) => {
+    {
+      const lc = thread[thread.length - 1]?.card;
+      const score = /\d|ศูนย์|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|หาย|ไม่ปวด|เท่าเดิม/.test(text);
+      const answering = lc?.type === 'fuAsk' ? score : lc?.type === 'intents' && cardOptions(lc).includes(text.trim());
+      if (greetFor.current[activeId] && !answering) {
+        const rest = afterGreet(activeId);
+        setThread((t) => [...t, ...rest], activeId);
+        resendAfter.current = text;
+        return;
+      }
+    }
     // อาการฉุกเฉิน → เตือนทันที ไม่รอ AI (กฎตายตัว)
     if (EMERGENCY.test(text)) return reply(text, 'อาการนี้อาจเป็นภาวะฉุกเฉิน โทร 1669 หรือไปโรงพยาบาลทันทีค่ะ ยังไม่ควรนวด', { type: 'action', label: 'ดูคำแนะนำ', to: 'RedFlag' });
     // แจ้งอาการเพิ่มหลังเช็กอิน → ส่งถึงผู้ให้บริการเป็นข้อความเพิ่ม (แยกจากผลประเมิน ไม่แทนของเดิม)
@@ -2542,6 +2578,22 @@ export function HomeScreen() {
     // หน้าทบทวน: พูด/พิมพ์ยืนยัน ("ยืนยันข้อมูล" "ถูกต้องแล้ว" "ไม่ต้องแก้") → เหมือนกดยืนยัน · มีขอแก้ปนมา = แก้ก่อน
     if (assess.step === 'review' && CONFIRM_ASK.test(text) && !EDIT_ASK.test(text.replace(/ไม่(ต้อง|มี(อะไร)?(ที่)?(จะ)?)?\s*แก้(ไข)?/g, ''))) {
       return confirmReview(text);
+    }
+    // ปวดหลายบริเวณ: พิมพ์ตอบ "ตรงไหนปวดมากที่สุด" หรือขอเปลี่ยนบริเวณหลักภายหลัง ("ไหล่ปวดที่สุด" "เปลี่ยนจุดหลักเป็นเข่า")
+    {
+      const own = drafts.find((d) => d.chatId === activeId);
+      const pf = primaryFor.current[activeId] ?? primaryOfDraft(own);
+      if (pf?.regions) {
+        const base = (x: string) => x.replace(/^ปวด/, '').replace(/(ซ้าย|ขวา)$/, '');
+        const hits = pf.regions.filter((r) => text.includes(r.label) || r.symptoms.some((x) => x && text.includes(base(x))));
+        const asking = !!primaryFor.current[activeId] || !!own?.primaryPending;
+        const wants = PRIMARY_ASK.test(text);
+        if (hits.length === 1 && (asking || wants)) return applyPrimary(pf, hits[0].label, text);
+        if (wants) {
+          primaryFor.current[activeId] = pf;
+          return aiReply(activeId, text, () => [aiText(`ปวด ${pf.regions!.length} บริเวณ ตรงไหนปวดมากที่สุดคะ? จะใช้เป็นบริเวณหลักของแนวทาง`, { type: 'intents', options: pf.regions!.map((r) => r.label) })]);
+        }
+      }
     }
     const pend = pendingNow();
     // แชทของเรื่องที่รักษาอยู่: ขอดูผลการรักษา (พิมพ์/พูดเมื่อไหร่ก็ได้ ไม่ต้องมีเมนูค้างอยู่) → การ์ดผลการรักษาเหมือนกดเมนู
@@ -3354,6 +3406,7 @@ export function HomeScreen() {
                     // ท่ายืดของเรื่องนี้ = ดูข้อมูล → sheet (แบบเดียวกับในแชท) · ไม่ระบุเรื่อง = หน้ารวมท่า
                     onSelfCare={(groupId) => (groupId ? setSheetStretch(groupId) : nav.navigate('SelfCare'))}
                     onReassess={() => reassessDraft(selDraft)}
+                    onPrimary={openAI}
                   />
                 ) : caseIdx >= cases.length ? null : (
                 <HomeBento
@@ -4840,9 +4893,12 @@ function DraftBento({
   onPlaces,
   onOpen,
   onReassess,
+  onPrimary,
 }: {
   /** ประเมินเรื่องนี้ใหม่ทั้งชุด (อาการเปลี่ยนบริเวณ) */
   onReassess: () => void;
+  /** ยังไม่ได้เลือกบริเวณหลัก → เปิดแชทที่ถามค้างไว้ */
+  onPrimary: () => void;
   width: number;
   draft: DraftCase;
   tabs: React.ReactNode;
@@ -4934,11 +4990,12 @@ function DraftBento({
           ) : (
           <GuideTile
             width={halfW}
-            subtitle={d.guide?.condition ?? (d.symptoms.join(' ') || 'ตามผลประเมิน')}
-            items={d.guide?.methods ?? []}
+            // ปวดหลายบริเวณ ยังไม่ได้เลือกบริเวณหลัก → แตะเพื่อเลือกในแชท
+            subtitle={d.primaryPending ? 'เลือกจุดที่ปวดที่สุดก่อน' : d.guide?.condition ?? (d.symptoms.join(' ') || 'ตามผลประเมิน')}
+            items={d.primaryPending ? [] : d.guide?.methods ?? []}
             adjust={adjustItems}
             onAdjust={() => setGuideOpen(true)}
-            onPress={d.guide ? () => setPlanOpen(true) : () => setGuideOpen(true)}
+            onPress={d.primaryPending ? onPrimary : d.guide ? () => setPlanOpen(true) : () => setGuideOpen(true)}
           />
           )}
           <View pointerEvents="none">
