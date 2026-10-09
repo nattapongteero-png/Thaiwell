@@ -422,7 +422,32 @@ export function noticeTs(at: string, now = new Date()): number {
   }
   return d.getTime();
 }
-const stampNotices = (all: ApptNotice[]) => (all.some((n) => n.ts === undefined) ? all.map((n) => (n.ts === undefined ? { ...n, ts: noticeTs(n.at) } : n)) : all);
+/**
+ * ประทับเวลา + ตัดซ้ำ — รายการเรียงใหม่ก่อนเสมอ (เพิ่มไว้หน้าสุด)
+ * ข้อความเวลาเก่าไม่รู้วันจริง ("วันนี้ 17:29" ของเมื่อวาน) → เวลาต้องไม่ใหม่กว่ารายการที่อยู่ก่อนหน้า ถอยทีละวันจนเข้าลำดับ
+ * ข้อความเดียวกันซ้ำภายใน 6 ชม. (ซิงก์จากคลินิกหลายรอบ) → เก็บอันใหม่สุดอันเดียว
+ */
+const stampNotices = (all: ApptNotice[]) => {
+  let limit = Date.now();
+  let changed = false;
+  const out: ApptNotice[] = [];
+  for (const n of all) {
+    let ts = n.ts;
+    // ไม่มีเวลา หรือเวลาใหม่กว่ารายการก่อนหน้า (ประทับผิดจากข้อความเก่า) → คิดใหม่จากข้อความ
+    if (ts === undefined || ts > limit) {
+      ts = noticeTs(n.at);
+      while (ts > limit) ts -= 86400000;
+      changed = true;
+    }
+    limit = Math.min(limit, ts);
+    if (out.some((o) => o.kind === n.kind && o.text === n.text && Math.abs((o.ts ?? 0) - ts!) < 6 * 3600000)) {
+      changed = true;
+      continue;
+    }
+    out.push(ts === n.ts ? n : { ...n, ts });
+  }
+  return changed ? out : all;
+};
 /** ตัวอย่าง: คลินิกเลื่อนนัดรักษาภูมิแพ้ (ข้อมูลจริงมาจากหลังบ้าน ThaiWellAI เมื่อเจ้าหน้าที่ "ยืนยันนัดใหม่" / "ยกเลิกนัด") */
 const SAMPLE_NOTICES: ApptNotice[] = [
   { id: 'n-lung-bill', caseId: 'case-lung', kind: 'bill', billId: 'b-lung-3', text: 'บิลรักษาภูมิแพ้ ครั้งที่ 3 รอชำระ 400 บาท', at: '16 ส.ค. 15:10' },

@@ -46,6 +46,16 @@ export function noticeTime(n: ApptNotice) {
   const y = d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear() + 543}` : '';
   return `${d.getDate()} ${TH_MON[d.getMonth()]}${y} ${hm}`;
 }
+/** คำบอกวันในข้อความ (วันนี้ / พรุ่งนี้) เขียนตอนแจ้ง → ผ่านวันนั้นไปแล้วแสดงเป็นวันที่จริง (ไม่ให้ "พรุ่งนี้" ของสัปดาห์ก่อนชวนเข้าใจผิด) */
+export function noticeText(n: ApptNotice) {
+  const t = tsOf(n);
+  if (startOfDay(t) === startOfDay(Date.now())) return n.text;
+  const dayOf = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getDate()} ${TH_MON[d.getMonth()]}`;
+  };
+  return n.text.replace(/วันนี้/g, dayOf(t)).replace(/พรุ่งนี้/g, dayOf(t + DAY));
+}
 const bucketOf = (n: ApptNotice) => {
   const days = Math.round((startOfDay(Date.now()) - startOfDay(tsOf(n))) / DAY);
   return days <= 0 ? 'วันนี้' : days === 1 ? 'เมื่อวาน' : days <= 7 ? '7 วันที่ผ่านมา' : 'ก่อนหน้า';
@@ -69,7 +79,7 @@ export function NotificationsScreen() {
       <Pressable
         key={n.id}
         accessibilityRole="button"
-        accessibilityLabel={`${k.title} ${n.text}${n.read ? '' : ' ยังไม่อ่าน'}`}
+        accessibilityLabel={`${k.title} ${noticeText(n)}${n.read ? '' : ' ยังไม่อ่าน'}`}
         onPress={() => nav.navigate('NotificationDetail', { id: n.id })}
         style={({ pressed }) => ({ backgroundColor: pressed ? colors.surface.sunken : 'transparent' })}
       >
@@ -86,7 +96,7 @@ export function NotificationsScreen() {
               </Text>
             </View>
             <Text variant="bodySm" tone={n.read ? 'secondary' : 'primary'} numberOfLines={2}>
-              {n.text}
+              {noticeText(n)}
             </Text>
           </View>
           {/* ยังไม่อ่าน = จุดสีหลักของแอป */}
@@ -218,7 +228,7 @@ export function NotificationDetailScreen({ route }: { route: { params: { id: str
         </Text>
       </View>
       <Panel>
-        <Text variant="bodyMd">{n.text}</Text>
+        <Text variant="bodyMd">{noticeText(n)}</Text>
       </Panel>
       {/* สถานะล่าสุดของเรื่องนี้ (อาจเปลี่ยนไปหลังแจ้งเตือน) */}
       {bill ? (
