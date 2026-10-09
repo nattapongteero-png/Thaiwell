@@ -4745,7 +4745,7 @@ function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange
             }}
             contentContainerStyle={{ minHeight: BENTO_CASE_H, alignItems: 'center', paddingLeft: onNew ? TAB_GAP + 3 : 0, paddingRight: space[5] }}
           >
-            <JellyRadio items={items} value={value} onChange={onChange} size="md" gap={space[2]} swell={0.06} barge={2} shrink={0.02} accessibilityLabel="เลือกเรื่องที่ดูแล" />
+            <JellyRadio items={items} value={value} onChange={onChange} size="md" gap={space[2]} swell={0.06} barge={2} shrink={0.02} wrap={false} accessibilityLabel="เลือกเรื่องที่ดูแล" />
           </ScrollView>
         </EdgeFade>
       ) : (

@@ -31,6 +31,8 @@ export interface JellyRadioProps {
   /** ms ต่อระยะห่าง 1 ชิป ก่อนชิปข้าง ๆ เริ่มขยับ */
   stagger?: number;
   stiffness?: number;
+  /** false = แถวเดียวไม่ขึ้นบรรทัดใหม่ (ใน ScrollView แนวนอน — iOS ตัดบรรทัดตามความกว้างของ ScrollView) */
+  wrap?: boolean;
   accessibilityLabel?: string;
 }
 
@@ -63,6 +65,7 @@ export function JellyRadio({
   stiffness = 580,
   accessibilityLabel = 'ตัวเลือก',
   dashed,
+  wrap = true,
 }: JellyRadioProps) {
   const { colors } = useTheme();
   const s = SIZES[size];
@@ -141,7 +144,7 @@ export function JellyRadio({
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
-      style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap, paddingVertical: padY, paddingHorizontal: Math.ceil(barge) + 2, marginHorizontal: -(Math.ceil(barge) + 2), marginVertical: -padY }}
+      style={{ flexDirection: 'row', flexWrap: wrap ? 'wrap' : 'nowrap', alignItems: 'center', gap, paddingVertical: padY, paddingHorizontal: Math.ceil(barge) + 2, marginHorizontal: -(Math.ceil(barge) + 2), marginVertical: -padY }}
     >
       {items.map((label, i) => {
         const mv = mvFor(i);
