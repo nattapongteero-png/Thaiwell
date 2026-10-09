@@ -4724,13 +4724,14 @@ function CaseTabs({ cases, drafts, extras = [], order, value: rawValue, onChange
       ) : (
         <View style={{ flex: 1 }} />
       )}
+      {/* ขนาดเดียวกับปุ่มแจ้งเตือนบนหัวหน้าแรก */}
       {onHistory ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ประวัติแชท"
           onPress={onHistory}
           hitSlop={4}
-          style={({ pressed }) => ({ width: 44, height: 44, marginLeft: space[1], borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
+          style={({ pressed }) => ({ width: componentTokens.homeHeader.bell, height: componentTokens.homeHeader.bell, marginLeft: space[1], borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface.default, borderWidth: 1, borderColor: colors.border.subtle, opacity: pressed ? 0.7 : 1 })}
         >
           <Icon name="clock" size="sm" color={colors.text.primary} />
         </Pressable>
