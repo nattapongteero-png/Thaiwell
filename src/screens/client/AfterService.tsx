@@ -40,7 +40,7 @@ import {
   ReplyChips,
   PlayOnceIcon,
 } from '../../design-system';
-import { KH_SOURCES, SYMPTOM_GROUPS } from '../../data/thaiMassageKnowledge';
+import { KH_SOURCES, STRETCH_AREAS, STRETCH_AREA_OF, SYMPTOM_GROUPS } from '../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../data/stretchMotion';
 import { useJourney } from '../../state/JourneyContext';
 import { useNav } from '../../navigation/types';
@@ -420,8 +420,8 @@ export function StretchListScreen({ tab }: { tab?: boolean } = {}) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const [area, setArea] = React.useState('ทั้งหมด');
-  const AREAS = ['ทั้งหมด', 'คอ บ่า ไหล่', 'หลัง สะโพก', 'มือ แขน', 'ขา เข่า', 'ใบหน้า'];
-  const AREA_OF: Record<string, string> = { office: 'คอ บ่า ไหล่', frozen_shoulder: 'คอ บ่า ไหล่', herniated_disc: 'หลัง สะโพก', piriformis: 'หลัง สะโพก', trigger_finger: 'มือ แขน', knee: 'ขา เข่า', paralysis: 'ใบหน้า' };
+  const AREAS = ['ทั้งหมด', ...STRETCH_AREAS];
+  const AREA_OF = STRETCH_AREA_OF;
   const list = SYMPTOM_GROUPS.filter((g) => area === 'ทั้งหมด' || AREA_OF[g.id] === area);
   const colW = (Math.min(width, 480) - space[4] * 2 - space[3]) / 2;
   return (

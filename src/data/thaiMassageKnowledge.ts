@@ -271,15 +271,22 @@ export function dominantElement(pct: Record<ElementKey, number>): ElementKey {
   return (Object.keys(pct) as ElementKey[]).reduce((a, b) => (pct[b] > pct[a] ? b : a));
 }
 
-/** กลุ่มอาการ (ยืดเหยียด 7 กลุ่มอาการ) ของท่ายืดที่แนะนำ ตามอาการที่ประเมิน */
-// ไม่ตรงกลุ่มไหน (เช่น เท้า ข้อเท้า ข้อมือ ศอก ท้อง) → ไม่มีท่าเฉพาะในเอกสาร → ไม่แนะนำท่าของบริเวณอื่น (ให้ดูหน้ารวมท่า)
+/** บริเวณของหน้ารวมท่ายืด (ตัวกรอง) → กลุ่มอาการในบริเวณนั้น */
+export const STRETCH_AREAS = ['คอ บ่า ไหล่', 'หลัง สะโพก', 'มือ แขน', 'ขา เข่า', 'ใบหน้า'] as const;
+export const STRETCH_AREA_OF: Record<string, (typeof STRETCH_AREAS)[number]> = { office: 'คอ บ่า ไหล่', frozen_shoulder: 'คอ บ่า ไหล่', herniated_disc: 'หลัง สะโพก', piriformis: 'หลัง สะโพก', trigger_finger: 'มือ แขน', knee: 'ขา เข่า', paralysis: 'ใบหน้า' };
+
+/**
+ * ท่ายืดที่แนะนำตามอาการที่ประเมิน = การ์ดในหน้ารวมท่ายืด ของบริเวณเดียวกัน
+ * ตรงกลุ่มอาการ → ท่าของกลุ่มนั้น · ไม่ตรง (เช่น เท้า ข้อมือ) → ท่าของบริเวณเดียวกันในหน้ารวมท่า (เท้า → ขา เข่า · ข้อมือ/ศอก → มือ แขน)
+ * ไม่อยู่ในบริเวณไหน (เช่น ท้อง) → ไม่แนะนำ
+ */
 export const stretchGroupFor = (symptoms: string[]): string | undefined => {
   const has = (re: RegExp) => symptoms.some((x) => re.test(x));
-  return symptoms.some((x) => /นิ้ว|มือ/.test(x) && !/ข้อมือ/.test(x)) ? 'trigger_finger'
-    : has(/ไหล่ติด/) ? 'frozen_shoulder'
+  return has(/ไหล่ติด/) ? 'frozen_shoulder'
     : has(/คอ|บ่า|ไหล่|สะบัก|ศีรษะ|ขมับ|ท้ายทอย/) ? 'office'
     : has(/สะโพก|ก้น/) ? 'piriformis'
     : has(/หลัง|เอว/) ? 'herniated_disc'
-    : has(/เข่า|ต้นขา|น่อง|^ปวดขา/) ? 'knee'
+    : has(/เข่า|ขา|น่อง|เท้า/) ? 'knee'
+    : has(/นิ้ว|มือ|แขน|ศอก/) ? 'trigger_finger'
     : undefined;
 };
