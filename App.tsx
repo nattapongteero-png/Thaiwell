@@ -25,7 +25,12 @@ import { AppLock } from './src/screens/client/AppLock';
 if (Platform.OS === 'web' && typeof document !== 'undefined' && !document.getElementById('tw-lock-viewport')) {
   const style = document.createElement('style');
   style.id = 'tw-lock-viewport';
-  style.textContent = 'html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}#root{position:fixed;inset:0;}';
+  // สูงเท่าส่วนที่มองเห็นจริง (100dvh) ไม่ใช่ทั้งจอ — Safari บน iPhone มีแถบเครื่องมือด้านล่างบังอยู่
+  // เดิม inset:0 = สูงเต็มจอรวมใต้แถบ → ช่องแชท/ปุ่มด้านล่าง/เมนูแท็บจมใต้แถบ · ป๊อปอัป/bottom sheet (aria-modal) ใช้ความสูงเดียวกัน
+  style.textContent =
+    'html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}' +
+    '#root{position:fixed;top:0;left:0;right:0;bottom:auto;height:100%;height:100dvh;}' +
+    '[aria-modal="true"]{bottom:auto!important;height:100%;height:100dvh!important;}';
   document.head.appendChild(style);
 }
 
