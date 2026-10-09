@@ -10,7 +10,7 @@ import { Text } from './Text';
 
 /**
  * BottomSheet — พื้นหลังจางขึ้นอยู่กับที่ · เฉพาะ sheet เลื่อนขึ้น · สูงคงที่ (เนื้อหาเลื่อนข้างใน)
- * ปิด: ปัดลง (ที่หัว หรือที่เนื้อหาเมื่อเลื่อนอยู่บนสุด) · แตะพื้นหลัง · ✕ · ปุ่มย้อนกลับของเครื่อง
+ * ปิด: ปัดลงที่หัว · แตะพื้นหลัง · ✕ · ปุ่มย้อนกลับของเครื่อง — ปัดที่เนื้อหา = เลื่อนรายการเสมอ (ไม่เผลอปิดตอนเลื่อนกลับขึ้น)
  * ลาก: แบบเดียวกับแผ่นการ์ดหน้าแรก — sheet ตามนิ้วบน native thread (gesture-handler + Animated native) · มีขั้นเดียวคือปิด
  */
 export function BottomSheet({
@@ -43,13 +43,6 @@ export function BottomSheet({
   const [mounted, setMounted] = React.useState(visible);
   const fade = React.useRef(new Animated.Value(0)).current;
   const slide = React.useRef(new Animated.Value(winH)).current;
-  /** เนื้อหาเลื่อนอยู่บนสุด → ปัดลงที่เนื้อหาลาก sheet ได้ · เลื่อนลงไปแล้ว = ปัดลงคือเลื่อนเนื้อหากลับขึ้น */
-  const [atTop, setAtTop] = React.useState(true);
-  const atTopRef = React.useRef(true);
-  const lastY = React.useRef(0);
-  const scrollRef = React.useRef(null);
-  const headPan = React.useRef(null);
-  const bodyPan = React.useRef(null);
   /** ระยะนิ้วลาก (native) — รวมกับ slide (เปิด/ปิด) · ลากขึ้นไม่เกินตำแหน่งเปิด */
   const drag = React.useRef(new Animated.Value(0)).current;
   const dragDown = React.useMemo(() => drag.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolateLeft: 'clamp' }), [drag]);
@@ -57,8 +50,6 @@ export function BottomSheet({
   React.useEffect(() => {
     if (visible) {
       setMounted(true);
-      atTopRef.current = true;
-      setAtTop(true);
       drag.setValue(0);
       slide.setValue(winH);
       Animated.parallel([
@@ -74,11 +65,6 @@ export function BottomSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const markTop = (top: boolean) => {
-    if (top === atTopRef.current) return;
-    atTopRef.current = top;
-    setAtTop(top);
-  };
   const sheetH = Math.round(winH * heightRatio);
   const onDrag = React.useMemo(() => Animated.event([{ nativeEvent: { translationY: drag } }], { useNativeDriver: true }), [drag]);
   // ปล่อยนิ้ว: เกิน 1/4 ของความสูง (อย่างน้อย 100) หรือปัดเร็ว = ปิด · ไม่ถึง = เด้งกลับ
@@ -121,8 +107,8 @@ export function BottomSheet({
           transform: [{ translateY: ty }],
         }}
       >
-        {/* หัว (ขีดจับ · หัวข้อ · ส่วนหัวเพิ่ม) ลากได้เสมอ */}
-        <PanGestureHandler ref={headPan} activeOffsetY={[-8, 8]} failOffsetX={[-14, 14]} onGestureEvent={onDrag} onHandlerStateChange={onDragState}>
+        {/* หัว (ขีดจับ · หัวข้อ · ส่วนหัวเพิ่ม) = ที่ลากปิด · เนื้อหาเลื่อนอย่างเดียว */}
+        <PanGestureHandler activeOffsetY={[-8, 8]} failOffsetX={[-14, 14]} onGestureEvent={onDrag} onHandlerStateChange={onDragState}>
         <Animated.View>
           <View style={{ alignItems: 'center', paddingTop: space[3], paddingBottom: space[1] }}>
             <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: colors.border.strong }} />
@@ -151,46 +137,14 @@ export function BottomSheet({
         </Animated.View>
         </PanGestureHandler>
         {/* เนื้อหาจางที่ขอบบน/ล่างตอนเลื่อนผ่าน (แทนเส้นคั่น) */}
-        {/* เนื้อหา: อยู่บนสุดแล้วปัดลง = ลาก sheet (เนื้อหาไม่เด้ง) · ปัดขึ้น = เลื่อนเนื้อหา · เลื่อนลงไปแล้ว = เลื่อนเนื้อหาอย่างเดียว */}
-        <PanGestureHandler
-          ref={bodyPan}
-          enabled={atTop}
-          activeOffsetY={10}
-          failOffsetY={-6}
-          failOffsetX={[-14, 14]}
-          simultaneousHandlers={scrollRef}
-          onGestureEvent={onDrag}
-          onHandlerStateChange={onDragState}
-        >
-        <Animated.View style={{ flex: 1 }}>
+        {/* เนื้อหา: เลื่อนรายการอย่างเดียว ไม่ลากปิด (ลากปิดที่หัว sheet) */}
         <EdgeFade>
           <ScrollView
-            ref={scrollRef}
-            simultaneousHandlers={bodyPan}
             style={{ flex: 1 }}
-            bounces={false}
-            overScrollMode="never"
-            scrollEventThrottle={16}
-            // เลื่อนลงจากบนสุด → ปิดการลาก sheet ทันที · กลับมาถึงบนสุด → เปิดเมื่อรายการหยุดนิ่งแล้วเท่านั้น
-            // (ปัดเลื่อนกลับขึ้นรัว ๆ แล้วแรงเฉื่อยพาถึงบนสุด → ปัดครั้งถัดไประหว่างยังไหลอยู่ ไม่กลายเป็นลากปิด)
-            onScroll={(e) => {
-              lastY.current = e.nativeEvent.contentOffset.y;
-              if (lastY.current > 0) markTop(false);
-            }}
-            onScrollEndDrag={(e) => {
-              if (e.nativeEvent.contentOffset.y > 0) return;
-              // ปล่อยนิ้วที่บนสุด: ไม่มีแรงเฉื่อยต่อ (ชนขอบ) → รอสั้น ๆ ให้หยุดนิ่งก่อน
-              setTimeout(() => lastY.current <= 0 && markTop(true), 250);
-            }}
-            onMomentumScrollEnd={(e) => {
-              if (e.nativeEvent.contentOffset.y <= 0) markTop(true);
-            }}
             contentContainerStyle={{ paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[3] }}>
             {children}
           </ScrollView>
         </EdgeFade>
-        </Animated.View>
-        </PanGestureHandler>
         {footer ? <View style={{ paddingHorizontal: space[5], paddingTop: space[2] }}>{footer}</View> : null}
       </Animated.View>
       </GestureHandlerRootView>
