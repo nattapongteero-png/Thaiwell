@@ -1,6 +1,5 @@
 import React from 'react';
-import { Alert, Platform, Pressable, View } from 'react-native';
-import { signOutAllDevices, thaiError } from '../../services/auth';
+import { Pressable, View } from 'react-native';
 import {
   AppBar,
   Avatar,
@@ -235,28 +234,6 @@ export function ProfileScreen() {
       </Panel>
 
       <Panel flush>
-        {account?.userId ? (
-          <RowLink
-            icon="smartphone"
-            title="ออกจากระบบทุกเครื่อง"
-            sub="เช่น มือถือหาย"
-            danger
-            onPress={() => {
-              // ยกเลิกการเข้าสู่ระบบทุกเครื่องที่ Supabase Auth แล้วออกจากเครื่องนี้ (ล้างข้อมูลในเครื่องเหมือนออกจากระบบ)
-              const go = () =>
-                void signOutAllDevices()
-                  .then(() => {
-                    nav.reset({ index: 0, routes: [{ name: 'Auth', params: { out: true } }] });
-                    setTimeout(() => signOut(true), 0);
-                  })
-                  .catch((e) => (Platform.OS === 'web' ? window.alert(thaiError(e)) : Alert.alert('ทำรายการไม่สำเร็จ', thaiError(e))));
-              const msg = 'ทุกเครื่องที่เข้าบัญชีนี้อยู่จะต้องเข้าสู่ระบบใหม่';
-              if (Platform.OS === 'web') {
-                if (window.confirm(msg)) go();
-              } else Alert.alert('ออกจากระบบทุกเครื่อง?', msg, [{ text: 'ยกเลิก', style: 'cancel' }, { text: 'ออกจากระบบ', style: 'destructive', onPress: go }]);
-            }}
-          />
-        ) : null}
         <RowLink
           icon="log-out"
           title="ออกจากระบบ"
