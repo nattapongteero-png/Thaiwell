@@ -11,16 +11,32 @@ import { cleanAddress, validPhone } from '../../services/idCard';
 const maskId = (id: string) => (id.length === 13 ? `x-xxxx-xxxxx-${id.slice(10, 12)}-${id.slice(12)}` : '-');
 
 /**
- * ที่อยู่ตามบัตร (มักติดกันเป็นสายยาว) → เว้นวรรคก่อน หมู่ ซอย ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด
- * ให้ตัดบรรทัดตรงรอยต่อของที่อยู่ ไม่ตัดกลางชื่อ
+ * ที่อยู่ตามบัตร → บรรทัดตามส่วนของที่อยู่: เลขที่ หมู่ ซอย ถนน / ตำบล(แขวง) อำเภอ(เขต) / จังหวัด
+ * ที่อยู่จากบัตรมักติดกันเป็นสายยาว → แยกที่คำนำหน้าแต่ละส่วนก่อน แล้วจัดเป็นบรรทัด
  */
-const addressText = (a?: string) =>
-  a
-    ? cleanAddress(a)
-        .replace(/\s*(หมู่ที่|หมู่|ม\.|ซอย|ซ\.|ถนน|ถ\.|ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต|จังหวัด|จ\.)\s*/g, ' $1')
-        .replace(/\s+/g, ' ')
-        .trim()
-    : '-';
+const addressLines = (a?: string): string[] => {
+  if (!a) return ['-'];
+  const KEY = /(หมู่ที่|หมู่|ม\.|ซอย|ซ\.|ถนน|ถ\.|ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต|จังหวัด|จ\.)/;
+  const parts = cleanAddress(a)
+    .replace(new RegExp(`\\s*${KEY.source}\\s*`, 'g'), '\n$1')
+    .split('\n')
+    .map((x) => x.replace(/^(หมู่ที่|หมู่)(\d)/, '$1 $2').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const area = /^(ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต)/;
+  const prov = /^(จังหวัด|จ\.)/;
+  const lines: string[][] = [[], [], []];
+  for (const p of parts) {
+    // ไม่มีคำว่าจังหวัด (เช่น "เขตคลองเตย กรุงเทพมหานคร") → ส่วนท้ายหลังชื่ออำเภอ/เขต = จังหวัด
+    const m = /^((?:อำเภอ|อ\.|เขต)\S+)\s+(.+)$/.exec(p);
+    if (m) {
+      lines[1].push(m[1]);
+      lines[2].push(m[2]);
+      continue;
+    }
+    lines[prov.test(p) ? 2 : area.test(p) ? 1 : 0].push(p);
+  }
+  return lines.map((l) => l.join(' ')).filter(Boolean);
+};
 
 /**
  * ข้อมูลส่วนตัว
@@ -74,12 +90,18 @@ export function ProfileInfoScreen() {
           <InfoRow k="เลขบัตรประชาชน" v={c ? maskId(c.citizenId) : '-'} />
           <InfoRow k="วันเกิด" v={`${c?.birthDate ?? account?.birthDate ?? '-'} · ${profile.age} ปี`} />
           <InfoRow k="เพศ" v={c?.sex || account?.sex || '-'} />
-          {/* ที่อยู่ยาว: หัวข้อบน ข้อความเต็มความกว้างชิดซ้าย (ชิดขวาหลายบรรทัดแล้วตัดบรรทัดแปลก) */}
-          <View style={{ gap: 2 }}>
+          {/* ที่อยู่: แถวเดียวกับหัวข้อ ชิดขวา · ขึ้นบรรทัดตามส่วนของที่อยู่ (เลขที่/หมู่/ซอย/ถนน → ตำบล/อำเภอ → จังหวัด) ไม่ตัดกลางชื่อ */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: space[3] }}>
             <Text variant="bodySm" tone="secondary">
               ที่อยู่
             </Text>
-            <Text variant="labelMd">{addressText(c?.address)}</Text>
+            <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
+              {addressLines(c?.address).map((l) => (
+                <Text key={l} variant="labelMd" style={{ textAlign: 'right' }}>
+                  {l}
+                </Text>
+              ))}
+            </View>
           </View>
         </View>
       </Panel>
