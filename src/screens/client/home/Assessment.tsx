@@ -92,19 +92,6 @@ export function AssessWidget({
 }) {
   const { colors } = useTheme();
   const [more, setMore] = React.useState(false);
-  // ตำแหน่งที่ปวด / อาการร่วม: ที่เลือกอยู่ (state อยู่ที่แชท) → กล่องแชท
-  const multiAll =
-    step === 'symptoms'
-      ? [...new Set([...symptoms, ...SYMPTOM_GROUPS.flatMap((g) => g.items.map(([l]) => l))])]
-      : step === 'related'
-        ? [...(relatedGroups ?? [{ title: '', options: related }]).flatMap((g) => g.options), ...(dangerSigns ?? [])]
-        : null;
-  const multiPicked = multiAll ? selectedIn(multiAll) : [];
-  React.useEffect(() => {
-    if (!multiAll) return;
-    onDraft?.(multiPicked.join(', '), multiPicked.length ? () => onNext(multiPicked.join(' · ')) : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, multiPicked.join('|')]);
   const draftOf = (_empty: string, key: 'health' | 'meds' | 'allergy') => (l: string[]) =>
     onDraft?.(l.join(', '), l.length ? () => onNext(l.join(', '), { [key]: l.join(' · ') }) : null);
 

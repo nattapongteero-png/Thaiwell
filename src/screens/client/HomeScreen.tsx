@@ -177,6 +177,8 @@ const GREET_STILL = 'ยังปวดอยู่';
 const GREET_PRE = 'เล่าอาการก่อนนัด';
 const GREET_NOT_YET = 'ยังไม่หาย';
 const GREET_KEY = 'thaiwell.greet.v1';
+/** สัดส่วนกว้าง/สูงที่เห็นหุ่นครบทั้งแขน (กล่องที่แคบกว่านี้ถอยกล้อง) */
+const BODY_FIT_ASPECT = 0.62;
 /** yyyy-mm-dd → "12 ต.ค." */
 const shortDate = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -2663,6 +2665,15 @@ export function HomeScreen() {
     // ไม่ทับสิ่งที่ผู้ใช้พิมพ์เอง: ล้างช่องเฉพาะตอนข้อความเดิมมาจากการเลือก
     if (text || had) setComposerFill((f) => ({ text, n: f.n + 1 }));
   };
+  // ตำแหน่งที่ปวด / อาการร่วม: ที่เลือก (state ของแชท) → กล่องพิมพ์ · คิดจาก state ล่าสุดที่นี่ (ในการ์ดคำถามค้างไปหนึ่งจังหวะ)
+  const relatedAllNow = assess.step === 'related' ? [...associatedFor(Object.keys(assess.sel).filter((k) => !HOME_CONTENT.related.includes(k))).flatMap((g) => g.options), ...HOME_CONTENT.related, ...DANGER_SIGNS] : [];
+  const multiPickedNow = !started ? [] : assess.step === 'symptoms' ? Object.keys(assess.sel) : assess.step === 'related' ? Object.keys(assess.sel).filter((k) => relatedAllNow.includes(k)) : [];
+  React.useEffect(() => {
+    if (assess.step !== 'symptoms' && assess.step !== 'related') return;
+    const picked = multiPickedNow;
+    draftFromPick(picked.join(', '), picked.length ? () => answerStep(picked.join(' · ')) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assess.step, multiPickedNow.join('|'), activeId]);
   // ขึ้นคำถามใหม่ → ล้างตัวเลือกค้าง
   React.useEffect(() => {
     if (!pickSubmit.current) return;
@@ -2765,7 +2776,7 @@ export function HomeScreen() {
   sendRef.current = send;
   // ทดสอบอัตโนมัติ (เว็บ + ?e2e เท่านั้น): สคริปต์ป้อนข้อความเข้าแชทแล้วอ่านผล (ข้อมูลที่จดได้ · ข้อความที่ AI ตอบ)
   if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.search.includes('e2e'))
-    (window as unknown as { __tw: unknown }).__tw = { nav, setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short) };
+    (window as unknown as { __tw: unknown }).__tw = { nav, setCaseAppointment, send, newChat, startAssess, assess, sel: Object.keys(assess.sel), prefill: prefill.current[activeId], thread, activeId, profile, drafts, cases: cases.map((c) => c.short), fill: composerFill };
   // บริบทให้ถอดเสียง/ตรวจคำที่ได้ยิน: ข้อความล่าสุดของผู้ช่วย + ตัวเลือกของข้อที่ถามอยู่ + ที่ผู้ใช้พูดก่อนหน้า
   ctxRef.current = () => {
     const lastAi = [...thread].reverse().find((m) => m.from === 'ai' && m.text);
@@ -3097,7 +3108,7 @@ export function HomeScreen() {
     </Animated.View>
     </View>
     ),
-    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases, shortcuts.join('|'), assess.step, caseToday, voice.phase, voice.hint, voice.muted],
+    [g.maxContentWidth, activeId, active.title, active.items.length, started, leaving, dockW, focus, chatHome, caseIdx, drafts, caseChats, sessions, urgentCases, shortcuts.join('|'), assess.step, caseToday, voice.phase, voice.hint, voice.muted, composerFill.n],
   );
 
   /* ---------- หน้าเริ่มต้น: ป้ายชี้บริเวณที่รักษาครั้งล่าสุดบนหุ่น ---------- */
@@ -3626,7 +3637,18 @@ export function HomeScreen() {
                       style={{ width: bw, height: bh }}
                     >
                       <View pointerEvents="none" style={{ flex: 1 }}>
-                        <Body3D ref={chatBodyRef} pins={pins} marks={marks} markColor={symptomColor} interactive={false} width={bw} height={bh} restAngle={0} />
+                        <Body3D
+                          ref={chatBodyRef}
+                          pins={pins}
+                          marks={marks}
+                          markColor={symptomColor}
+                          interactive={false}
+                          width={bw}
+                          height={bh}
+                          restAngle={0}
+                          // กล่องแคบกว่าสัดส่วนหุ่นกางแขน → ถอยกล้องให้เห็นแขนครบ (ไม่ถูกตัดข้าง)
+                          cameraZ={componentTokens.body3d.cameraZ * Math.max(1, BODY_FIT_ASPECT / (bw / bh))}
+                        />
                       </View>
                       {canPick ? (
                         <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space[2], height: 24, borderRadius: radius.full, backgroundColor: colors.text.primary }}>
