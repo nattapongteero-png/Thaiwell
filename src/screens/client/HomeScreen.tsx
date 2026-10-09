@@ -177,6 +177,8 @@ const GREET_STILL = 'ยังปวดอยู่';
 const GREET_PRE = 'เล่าอาการก่อนนัด';
 const GREET_NOT_YET = 'ยังไม่หาย';
 const GREET_KEY = 'thaiwell.greet.v1';
+/** ป้ายข้อควรระวังบนหุ่น: วงกลมสีอำพัน (ตัวหนังสือใช้สีเตือนของธีม) */
+const WARN_TINT = '#E08A00';
 /** สัดส่วนกว้าง/สูงที่เห็นหุ่นครบทั้งแขน (กล่องที่แคบกว่านี้ถอยกล้อง) */
 const BODY_FIT_ASPECT = 0.62;
 /** yyyy-mm-dd → "12 ต.ค." */
@@ -702,7 +704,7 @@ export function HomeScreen() {
           ...(selDraft ? safety.hits.filter((h) => h.level !== 'red').map((h) => SHORT_CAUTION[h.ruleId] ?? h.title) : []),
           // เรื่องที่รักษา: ข้อที่ปรับของครั้งถัดไป (ประเมินก่อนนวดแล้ว)
           ...(selCase && today ? nextVisitGuide(tcase, today).adjust : []),
-        ]),
+        ].flatMap((x) => x.split(' · '))),
       ]
         .filter((x) => x && !/^ไม่นวด/.test(x) && !(period && x === 'งดนวดท้อง'))
         .map((x) => ({ key: `c-${x}`, icon: 'alert-triangle' as const, label: x, tone: 'warn' as const, pin: undefined as BodyPin | undefined })),
@@ -3836,12 +3838,20 @@ export function HomeScreen() {
               </React.Fragment>
             ))}
             {modelTag.note ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingHorizontal: space[3], borderRadius: radius.full, backgroundColor: modelTag.noteTone === 'good' ? colors.brand.subtle : modelTag.noteTone === 'bad' ? colors.status.danger.bg : colors.surface.default, ...elevation[1] }}>
-                {modelTag.items.length ? null : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: modelTag.color }} />}
-                <Text variant="labelSm" tone="secondary" color={modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : undefined}>
-                  {modelTag.note}
-                </Text>
-              </View>
+              // ดีขึ้น/ปวดเพิ่ม: ชุดเดียวกับป้ายธาตุ — พื้นขาว + วงกลมสีมีไอคอนแนวโน้ม + ตัวหนังสือสีเดียวกับวง
+              (() => {
+                const tone = modelTag.noteTone === 'good' ? colors.brand.primary : modelTag.noteTone === 'bad' ? colors.status.danger.fg : colors.text.tertiary;
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, paddingLeft: 3, paddingRight: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, ...elevation[1] }}>
+                    <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: tone }}>
+                      <Icon name={modelTag.noteTone === 'good' ? 'trending-down' : modelTag.noteTone === 'bad' ? 'trending-up' : 'minus'} size="xxs" color={colors.text.inverse} />
+                    </View>
+                    <Text variant="labelSm" style={{ fontFamily: fontFamily.semibold }} color={tone}>
+                      {modelTag.note.replace(/^[↘↗]\s*/, '')}
+                    </Text>
+                  </View>
+                );
+              })()
             ) : null}
             {/* ข้อควรระวัง (c-) อยู่ฝั่งขวาใต้ธาตุ — ไม่กระจุกฝั่งซ้าย */}
             {bodyInfo?.extras.filter((x) => !x.key.startsWith('c-')).map((x) => (
@@ -3862,7 +3872,12 @@ export function HomeScreen() {
           </View>
           <View pointerEvents="box-none" style={{ alignItems: 'flex-end', gap: space[1] }}>
             {/* ธาตุ */}
-            {tagElement ? <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} /> : null}
+            {/* ป้ายธาตุจัด alignSelf ชิดซ้ายในตัว → ห่อให้ชิดขวาตามคอลัมน์ */}
+            {tagElement ? (
+              <View style={{ alignSelf: 'flex-end' }}>
+                <ElementPill element={tagElement} label={newPatient && !elementsDone ? 'ธาตุเจ้าเรือน' : 'ธาตุปัจจุบัน'} onPress={() => nav.navigate('ElementQuiz')} />
+              </View>
+            ) : null}
             {bodyInfo?.extras.filter((x) => x.key.startsWith('c-')).map((x) => (
               <BodyTagPill key={x.key} icon={x.icon} label={x.label} tone={x.tone} onPress={() => facePinOf(x.pin)} />
             ))}
@@ -6762,6 +6777,23 @@ function BodyTagPill({ dot, body, icon, label, tag, tone, onPress }: { /** ห�
   const fg = tone === 'warn' ? colors.status.warning.fg : tone === 'avoid' ? colors.text.secondary : colors.text.primary;
   const bg = tone === 'warn' ? colors.status.warning.bg : colors.surface.default;
   if (tag) return <TagPill tag={tag} icon={icon} label={label} warn={tone === 'warn'} onPress={onPress} />;
+  // ข้อควรระวัง: ชุดเดียวกับป้ายธาตุ — พื้นขาว + วงกลมสีอำพันมีไอคอนเตือน
+  if (tone === 'warn' && icon === 'alert-triangle')
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`ข้อควรระวัง ${label}`}
+        onPress={onPress}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space[1], height: 30, maxWidth: 220, paddingLeft: 3, paddingRight: space[3], borderRadius: radius.full, backgroundColor: colors.surface.default, opacity: pressed ? 0.7 : 1, ...elevation[1] })}
+      >
+        <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: WARN_TINT }}>
+          <Icon name="alert-triangle" size="xxs" color="#FFFFFF" />
+        </View>
+        <Text variant="labelSm" numberOfLines={1} style={{ flexShrink: 1, fontFamily: fontFamily.semibold }} color={colors.status.warning.fg}>
+          {label}
+        </Text>
+      </Pressable>
+    );
   return (
     <Pressable
       accessibilityRole="button"

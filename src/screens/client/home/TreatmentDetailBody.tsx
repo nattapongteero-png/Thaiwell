@@ -242,8 +242,9 @@ function Stat({ label, value, unit, color, small }: { label: string; value: stri
 export function Chip({ text, tone }: { text: string; tone?: 'good' }) {
   const { colors } = useTheme();
   return (
-    <View style={{ paddingHorizontal: space[2] + 2, height: 26, justifyContent: 'center', borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : colors.surface.sunken }}>
-      <Text variant="labelSm" color={tone === 'good' ? colors.brand.primary : colors.text.secondary}>
+    // บรรทัดเดียว ยาวเกินตัด … (ดูเต็มในหน้ารายละเอียด)
+    <View style={{ maxWidth: '100%', paddingHorizontal: space[2] + 2, height: 26, justifyContent: 'center', borderRadius: radius.full, backgroundColor: tone === 'good' ? colors.brand.subtle : colors.surface.sunken }}>
+      <Text variant="labelSm" numberOfLines={1} ellipsizeMode="tail" color={tone === 'good' ? colors.brand.primary : colors.text.secondary}>
         {text}
       </Text>
     </View>
