@@ -217,6 +217,18 @@ export const regionOf = (symptom: string) => { const k = guideOf(symptom)?.key; 
 const sideOf = (symptom: string): Side => (symptom.endsWith('ซ้าย') ? 'L' : symptom.endsWith('ขวา') ? 'R' : 'both');
 const pinsOf = (p: PointDef, side: Side): BodyPin[] => (!p.R ? p.L : side === 'L' ? p.L : side === 'R' ? p.R : [...p.L, ...p.R]);
 
+/**
+ * ชื่อบริเวณตามที่ผู้ใช้เลือกจริง (ตัวเลือก "ตรงไหนปวดมากที่สุด") — ไม่ใช่ชื่อกลุ่มแนวทาง (ศอก ≠ แขน · เท้า ≠ ข้อเท้า เท้า)
+ * ปวดไหล่ซ้าย → ไหล่ซ้าย · ไหล่ซ้าย + ไหล่ขวา → ไหล่ · คอ + บ่า → คอ บ่า
+ */
+const pickedLabel = (ss: string[]) => {
+  const side = (x: string) => (x.endsWith('ซ้าย') ? 'ซ้าย' : x.endsWith('ขวา') ? 'ขวา' : '');
+  const parts = [...new Set(ss.filter(Boolean).map((x) => x.replace(/^ปวด/, '').replace(/(ซ้าย|ขวา)$/, '').replace('-', ' ').trim()))];
+  const sides = new Set(ss.filter(Boolean).map(side));
+  const one = sides.size === 1 ? [...sides][0] : '';
+  return parts.length ? `${parts.slice(0, 3).join(' ')}${one}` : '';
+};
+
 /** ชื่อบริเวณ (ใช้ถาม "ตรงไหนปวดมากที่สุด" เมื่อปวดหลายจุด — จุดซ้าย/ขวาของบริเวณเดียวกันรวมเป็นข้อเดียว) */
 const REGION: Record<string, string> = {
   head: 'ศีรษะ',
@@ -304,7 +316,7 @@ export function guideFor(
     ),
   );
   const points = [...pts.keys()];
-  const areas = groups.map(({ g, ss, radiate: r }) => ({ symptom: ss[0], region: REGION[(guideOf(ss[0]) ?? g).key] ?? ss[0], symptoms: ss, condition: g.condition, points: g.points.map((p) => p.label), radiate: r }));
+  const areas = groups.map(({ g, ss, radiate: r }) => ({ symptom: ss[0], region: pickedLabel(ss) || REGION[(guideOf(ss[0]) ?? g).key] || ss[0], symptoms: ss, condition: g.condition, points: g.points.map((p) => p.label), radiate: r }));
   return {
     condition: groups[0].g.condition,
     // รวมไม่ซ้ำ · วิธีเดียวกันแต่ละเอียดกว่า (เช่น นวด 60 นาที ตามแนวเส้น…) = ใช้แบบละเอียดแบบเดียว
