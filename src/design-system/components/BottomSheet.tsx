@@ -17,6 +17,7 @@ export function BottomSheet({
   title,
   subtitle,
   header,
+  action,
   footer,
   heightRatio = 0.72,
   children,
@@ -27,6 +28,8 @@ export function BottomSheet({
   subtitle?: string;
   /** ส่วนหัวเพิ่มเติม (ไม่เลื่อน) เช่น ตัวกรอง */
   header?: React.ReactNode;
+  /** ปุ่มข้างหัวข้อ (ก่อน ✕) เช่น แชทใหม่ */
+  action?: React.ReactNode;
   /** ส่วนล่างติดขอบ (ไม่เลื่อน) เช่น ปุ่มบันทึก */
   footer?: React.ReactNode;
   heightRatio?: number;
@@ -40,6 +43,8 @@ export function BottomSheet({
   const slide = React.useRef(new Animated.Value(winH)).current;
   /** เนื้อหาเลื่อนอยู่บนสุด → ปัดลงที่เนื้อหาก็ปิดได้ (ไม่อย่างนั้นปัดลง = เลื่อนเนื้อหากลับขึ้น) */
   const atTop = React.useRef(true);
+  /** ตอนเริ่มแตะ เนื้อหาอยู่บนสุดไหม — ตัดสินครั้งเดียวต่อการลาก (เลื่อนรายการกลับขึ้นมาถึงบนสุดระหว่างลาก ≠ ลากปิด) */
+  const topAtStart = React.useRef(true);
 
   React.useEffect(() => {
     if (visible) {
@@ -64,9 +69,14 @@ export function BottomSheet({
   const pan = React.useMemo(() => {
     const grab = (g: { dy: number; dx: number }) => g.dy > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4;
     return PanResponder.create({
+      // จำสถานะตอนเริ่มแตะ (ไม่จับ) — ใช้ตัดสินทั้งการลากนี้
+      onStartShouldSetPanResponderCapture: () => {
+        topAtStart.current = atTop.current;
+        return false;
+      },
       onMoveShouldSetPanResponder: (_, g) => grab(g),
-      // จับก่อน ScrollView เฉพาะตอนเนื้อหาอยู่บนสุดและนิ้วลากลง
-      onMoveShouldSetPanResponderCapture: (_, g) => atTop.current && grab(g),
+      // จับก่อน ScrollView เฉพาะตอนเริ่มแตะขณะเนื้อหาอยู่บนสุด และนิ้วลากลง
+      onMoveShouldSetPanResponderCapture: (_, g) => topAtStart.current && atTop.current && grab(g),
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => {
         const dy = Math.max(0, g.dy);
@@ -123,6 +133,7 @@ export function BottomSheet({
                 </Text>
               ) : null}
             </View>
+            {action}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="ปิด"
@@ -141,6 +152,10 @@ export function BottomSheet({
             style={{ flex: 1 }}
             scrollEventThrottle={16}
             onScroll={(e) => (atTop.current = e.nativeEvent.contentOffset.y <= 0)}
+            // เริ่มเลื่อนรายการแล้ว → การลากนี้เป็นของรายการจนปล่อยนิ้ว
+            onScrollBeginDrag={(e) => {
+              if (e.nativeEvent.contentOffset.y > 0) topAtStart.current = false;
+            }}
             contentContainerStyle={{ paddingHorizontal: space[5], paddingTop: space[5], paddingBottom: space[6], gap: space[3] }}>
             {children}
           </ScrollView>

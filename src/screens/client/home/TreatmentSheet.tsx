@@ -9,12 +9,21 @@ import { SYMPTOM_GROUPS } from '../../../data/thaiMassageKnowledge';
 import { STRETCH_MOTION } from '../../../data/stretchMotion';
 import { useJourney } from '../../../state/JourneyContext';
 
+/** ค่าล่าสุดที่ไม่ใช่ null — ให้ sheet แสดงเนื้อหาเดิมระหว่างเลื่อนปิด */
+function useLast<T>(v: T | null): T | null {
+  const ref = React.useRef(v);
+  if (v != null) ref.current = v;
+  return ref.current;
+}
+
 /**
  * รายละเอียดการรักษา (bottom sheet จากแชท) — แทนการพาไปหน้ารายการประวัติ
  * สรุป (ดีขึ้นกี่ % · คอร์ส) → กราฟปวดก่อน/หลังทุกครั้ง → รายครั้ง → บริเวณที่รักษา · ผู้ให้บริการ · นัดถัดไป → ดูแลตัวเอง
  */
 export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { tc: TreatmentCase | null; visible: boolean; onClose: () => void; /** เปิดที่แท็บครั้งนั้น (การ์ดผลครั้งที่ N) · null = ภาพรวม (การ์ดแผนการรักษา) */ initialVisit?: number | null }) {
   const { caseToday } = useJourney();
+  // ปิดแล้ว (ผู้เรียกล้างค่า) → ใช้ค่าเดิมต่อระหว่าง sheet เลื่อนลง ไม่หายทันที
+  tc = useLast(tc);
   const [visit, setVisit] = React.useState<number | null>(initialVisit);
   React.useEffect(() => {
     if (visible) setVisit(initialVisit);
@@ -41,7 +50,7 @@ export function TreatmentSheet({ tc, visible, onClose, initialVisit = null }: { 
 /** ท่ายืด (bottom sheet จากแชท) — ภาพท่า + ขั้นตอน · ไม่ออกจากแชท */
 export function StretchSheet({ groupId, visible, onClose }: { groupId: string | null; visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
-  const group = SYMPTOM_GROUPS.find((g) => g.id === groupId);
+  const group = SYMPTOM_GROUPS.find((g) => g.id === useLast(groupId));
   if (!group) return null;
   const motion = STRETCH_MOTION[group.stretch.name];
   return (

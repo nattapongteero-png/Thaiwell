@@ -6151,55 +6151,37 @@ function ChatHistorySheet({
   onNew: () => void;
 }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const g = useGrid();
   const preview = (c: ChatSession) => [...c.items].reverse().find((m) => m.text && m.thinking !== 'working')?.text ?? '';
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable accessibilityLabel="ปิด" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.32)' }} />
-      <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          maxHeight: '75%',
-          alignSelf: 'center',
-          width: '100%',
-          maxWidth: g.maxContentWidth,
-          backgroundColor: colors.surface.default,
-          borderTopLeftRadius: componentTokens.dock.surfaceRadius,
-          borderTopRightRadius: componentTokens.dock.surfaceRadius,
-          paddingTop: space[2],
-          paddingBottom: insets.bottom + space[4],
-        }}
-      >
-        <View style={{ alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border.default }} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space[5], paddingVertical: space[3] }}>
-          <Text variant="titleMd" accessibilityRole="header">
-            ประวัติแชท
+    // bottom sheet แบบเดียวกับที่อื่น: เลื่อนขึ้น/ลง · ปัดลงปิด · ปุ่มแชทใหม่ข้างหัวข้อ
+    <BottomSheet
+      visible={open}
+      onClose={onClose}
+      title="ประวัติแชท"
+      heightRatio={0.75}
+      action={
+        <Pressable
+          accessibilityRole="button"
+          onPress={onNew}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space[1],
+            minHeight: 36,
+            paddingHorizontal: space[3],
+            borderRadius: radius.full,
+            backgroundColor: colors.brand.primary,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Icon name="edit" size="xs" color={colors.text.inverse} />
+          <Text variant="labelSm" color={colors.text.inverse}>
+            แชทใหม่
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onNew}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: space[1],
-              minHeight: 36,
-              paddingHorizontal: space[3],
-              borderRadius: radius.full,
-              backgroundColor: colors.brand.primary,
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <Icon name="edit" size="xs" color={colors.text.inverse} />
-            <Text variant="labelSm" color={colors.text.inverse}>
-              แชทใหม่
-            </Text>
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: space[3] }}>
+        </Pressable>
+      }
+    >
+      <View style={{ marginHorizontal: -space[2], marginTop: -space[3] }}>
           {sessions.map((c) => {
             const on = c.id === activeId;
             return (
@@ -6245,9 +6227,8 @@ function ChatHistorySheet({
               </Pressable>
             );
           })}
-        </ScrollView>
       </View>
-    </Modal>
+    </BottomSheet>
   );
 }
 
