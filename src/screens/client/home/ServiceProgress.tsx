@@ -1,6 +1,7 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import { Text, radius, space, useTheme } from '../../../design-system';
+import { elevation } from '../../../design-system/tokens';
 import { serviceMinutesOf } from '../../../data/serviceMinutes';
 
 /* กำลังรับบริการ: เวลาที่นวดไปแล้ว (เดินสด) · แถบความคืบหน้า เริ่ม → เสร็จประมาณ
@@ -17,6 +18,10 @@ export function useNow(active: boolean) {
 }
 /** ระยะเวลาบริการจากชื่อบริการ ("… · 90 นาที") · ไม่ระบุ = 60 นาที */
 export const serviceMinutes = (label?: string) => serviceMinutesOf(label);
+/** หัววิ่งของแถบ (ภาพการนวด) */
+const HEAD = 36;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const HEAD_IMG = require('../../../../assets/progress_head.png');
 const clockOf = (ms: number) => {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -36,10 +41,19 @@ export function ServiceProgress({ startedAt, minutes }: { startedAt: string; min
   const start = new Date(startedAt).getTime();
   const end = start + minutes * 60000;
   const frac = Math.min(1, Math.max(0, (now - start) / (end - start)));
+  const [w, setW] = React.useState(0);
   return (
     <View style={{ gap: space[1] }}>
-      <View style={{ height: 6, borderRadius: radius.full, backgroundColor: colors.surface.sunken, overflow: 'hidden' }}>
-        <View style={{ width: `${frac * 100}%`, height: '100%', borderRadius: radius.full, backgroundColor: colors.brand.primary }} />
+      {/* แถบความคืบหน้า + หัววิ่ง (ภาพการนวด) เคลื่อนตามเวลาที่ผ่านไป */}
+      <View style={{ height: HEAD, justifyContent: 'center' }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+        <View style={{ height: 6, borderRadius: radius.full, backgroundColor: colors.surface.sunken, overflow: 'hidden' }}>
+          <View style={{ width: w ? frac * (w - HEAD) + HEAD / 2 : `${frac * 100}%`, height: '100%', borderRadius: radius.full, backgroundColor: colors.brand.primary }} />
+        </View>
+        {w ? (
+          <View style={{ position: 'absolute', left: frac * (w - HEAD), width: HEAD, height: HEAD, borderRadius: HEAD / 2, borderWidth: 2, borderColor: colors.surface.default, backgroundColor: colors.surface.default, ...elevation[1] }}>
+            <Image source={HEAD_IMG} style={{ width: HEAD - 4, height: HEAD - 4, borderRadius: (HEAD - 4) / 2 }} />
+          </View>
+        ) : null}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text variant="bodyXs" tone="secondary">
